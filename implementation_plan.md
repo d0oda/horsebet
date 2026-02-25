@@ -434,3 +434,116 @@ For a first working demo, focus on:
 6. ❌ Skip: exotic bets, bankroll agent, LLM analyst, notifications
 
 This gets you from idea → testable hypothesis in **~3 weeks**.
+
+---
+
+## 2025 Model Evaluation Results
+
+> Evaluation run on 2025-02-25. Trained on 2024 data, validated on 2025 holdout races scraped from netkeiba.com.
+
+### Data Summary
+
+| Year | Races | Entries | Results | Source |
+|------|-------|---------|---------|--------|
+| 2024 | 181 | 2,332 | 2,312 | Sapporo, Hakodate, Fukushima, Niigata, Tokyo, Nakayama, Chukyo, Kyoto, Hanshin, Kokura |
+| 2025 | 100 | 1,209 | 1,196 | Sapporo, Hakodate (Jan 1–2) |
+| **Total** | **281** | **3,541** | **3,508** | |
+
+- Scrape command: `python -m scraper.batch_scrape --year 2025 --max-races 100`
+- 100% success rate, 0 failures, 0 not-found
+
+### Model Quality — 2025 Holdout
+
+| Metric | LightGBM | XGBoost | Ensemble (0.55/0.45) |
+|--------|:--------:|:-------:|:--------------------:|
+| **Log-Loss** | 0.2351 | 0.2294 | **0.2305** |
+| **AUC** | 0.8080 | 0.8217 | **0.8187** |
+| **Brier** | 0.0666 | 0.0656 | **0.0656** |
+
+- Training set: 2,332 entries (181 races, ≤2024), win rate 7.8%
+- Validation set: 1,209 entries (100 races, 2025), win rate 8.3%
+- LightGBM early-stopped at 32 iterations, XGBoost at 88
+
+### Calibration
+
+| Predicted P(win) | Actual Win Rate | n |
+|:-:|:-:|:-:|
+| 4% | 3.2% | 936 |
+| 14% | 16.7% | 132 |
+| 25% | 34.5% | 87 |
+| 34% | 30.6% | 36 |
+| 44% | 33.3% | 15 |
+| 53% | 66.7% | 3 |
+
+Well-calibrated in the 0–15% range (where most entries fall). Slightly overconfident in the 20–40% mid-range — model predicts higher win probability than observed.
+
+### Feature Importance (Top 15 by LightGBM Gain)
+
+| # | Feature | Gain |
+|---|---------|-----:|
+| 1 | `odds_win` | 1,972 |
+| 2 | `log_odds_z` | 294 |
+| 3 | `odds_win_z` | 293 |
+| 4 | `log_odds` | 278 |
+| 5 | `horse_weight_z` | 247 |
+| 6 | `horse_weight_change_z` | 227 |
+| 7 | `post_position_z` | 185 |
+| 8 | `sex_code_z` | 184 |
+| 9 | `weight_carried_z` | 184 |
+| 10 | `horse_weight` | 180 |
+| 11 | `popularity_z` | 151 |
+| 12 | `distance` | 129 |
+| 13 | `draw_z` | 121 |
+| 14 | `age_z` | 93 |
+| 15 | `popularity` | 88 |
+
+> [!WARNING]
+> `odds_win` dominates with 6.7× more importance than the next feature.  
+> The model is **heavily relying on market consensus** rather than finding independent alpha. This is the primary reason the backtest shows negative ROI — you can't consistently beat the market using the market's own odds as the main signal.
+
+### Backtest Results (5% EV Threshold, Quarter-Kelly)
+
+| Metric | Value |
+|--------|------:|
+| Races analysed | 100 |
+| Bets placed | 32 |
+| Hit rate | 15.6% |
+| Total staked | ¥71,963 |
+| Total payout | ¥58,992 |
+| **Total profit** | **¥-12,971** |
+| **ROI** | **-18.0%** |
+| Max drawdown | ¥29,985 (25.6%) |
+| Sharpe ratio | -20.61 |
+
+#### Notable Wins
+
+| Horse | P(win) | Odds | EV | Payout |
+|-------|:------:|:----:|:--:|-------:|
+| アンティミスト | 47.3% | 3.9× | +0.22 | +¥19,344 ✅ |
+| シンヒダカゴールド | 34.9% | 4.0× | +0.10 | +¥13,256 ✅ |
+| レッドスティンガー | 46.7% | 2.9× | +0.12 | +¥8,031 ✅ |
+
+### Recommendations for Next Iteration
+
+| Priority | Action | Rationale |
+|----------|--------|-----------|
+| 🔴 High | **Train without odds features** — build a separate model excluding `odds_win`/`log_odds` | Forces independent signal discovery; current model is just mirroring the market |
+| 🔴 High | **More training data** — scrape 2–3 full years (2022–2024) | 181 training races is too few for a 96-feature model; more data → better generalisation |
+| 🟡 Med | **Fix odds scraping** — some entries have `NaN` odds, causing flat ¥1,000 bets | ~10 bets placed with missing odds diluted results |
+| 🟡 Med | **Higher EV threshold** — try 10–15% to be more selective | Fewer but higher-conviction bets |
+| 🟡 Med | **Incorporate pace simulation** — Monte Carlo pace sim exists in `models/pace_sim.py` but isn't used | Unique alpha source that retail bettors don't model |
+| 🟢 Low | **Add rolling jockey/trainer stats** as features | More form signals beyond horse history |
+| 🟢 Low | **Cross-validate** rather than single time-based split | More robust metric estimates |
+
+### Running the Evaluation
+
+```bash
+# Re-run the full evaluation
+python -m models.test_2025
+
+# With higher EV threshold
+python -m models.test_2025 --ev-threshold 0.10
+
+# Save results to CSV
+python -m models.test_2025 --output /tmp/backtest_2025.csv
+```
