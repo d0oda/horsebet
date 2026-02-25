@@ -66,10 +66,18 @@ def prepare_data(
     df: pd.DataFrame,
     target: str = "target_win",
     val_date: Optional[str] = None,
+    exclude_features: Optional[list[str]] = None,
 ) -> tuple:
     """
     Split feature dataframe into train/val sets.
     Uses time-based split: train on everything before val_date.
+
+    Args:
+        df: Feature dataframe.
+        target: Target column name.
+        val_date: Validation cutoff date (YYYY-MM-DD).
+        exclude_features: Optional list of feature names to drop
+            (e.g. ODDS_FEATURES for odds-free model).
 
     Returns:
         (X_train, y_train, X_val, y_val, feature_cols, race_ids_val)
@@ -80,6 +88,12 @@ def prepare_data(
     # Get feature columns (everything except IDs and targets)
     exclude = {"race_id", "entry_id", "target_win", "target_place", "finish_pos", "date", "horse_name"}
     feature_cols = [c for c in df.columns if c not in exclude and df[c].dtype in [np.float64, np.float32, np.int64, float, int]]
+
+    # Exclude specified features (e.g. odds-derived features for odds-free model)
+    if exclude_features:
+        before = len(feature_cols)
+        feature_cols = [c for c in feature_cols if c not in set(exclude_features)]
+        log.info(f"Excluded {before - len(feature_cols)} features: {exclude_features}")
 
     # Remove any all-NaN columns
     valid_cols = [c for c in feature_cols if not df[c].isna().all()]
@@ -228,6 +242,52 @@ def ensemble_predict(lgb_preds, xgb_preds, weights=(0.55, 0.45)):
     return weights[0] * lgb_preds + weights[1] * xgb_preds
 
 
+def calibrate_predictions(
+    y_train: np.ndarray,
+    raw_preds_train: np.ndarray,
+    y_val: np.ndarray,
+    raw_preds_val: np.ndarray,
+    method: str = "isotonic",
+) -> tuple:
+    """
+    Calibrate model predictions using isotonic regression or Platt scaling.
+
+    Args:
+        y_train: True labels for calibration fitting.
+        raw_preds_train: Raw ensemble predictions on the training set.
+        y_val: True labels for validation.
+        raw_preds_val: Raw ensemble predictions on the validation set.
+        method: 'isotonic', 'platt', or 'none'.
+
+    Returns:
+        (calibrated_val_preds, calibrator_object_or_None)
+    """
+    if method == "none":
+        return raw_preds_val, None
+
+    from sklearn.isotonic import IsotonicRegression
+    from sklearn.linear_model import LogisticRegression
+
+    if method == "isotonic":
+        calibrator = IsotonicRegression(y_min=0, y_max=1, out_of_bounds="clip")
+        calibrator.fit(raw_preds_train, y_train)
+        calibrated = calibrator.predict(raw_preds_val)
+        log.info("Applied isotonic regression calibration")
+    elif method == "platt":
+        calibrator = LogisticRegression()
+        calibrator.fit(raw_preds_train.reshape(-1, 1), y_train)
+        calibrated = calibrator.predict_proba(raw_preds_val.reshape(-1, 1))[:, 1]
+        log.info("Applied Platt (sigmoid) calibration")
+    else:
+        raise ValueError(f"Unknown calibration method: {method}")
+
+    cal_logloss = log_loss(y_val, calibrated)
+    raw_logloss = log_loss(y_val, raw_preds_val)
+    log.info(f"Calibration effect — LogLoss: {raw_logloss:.4f} → {cal_logloss:.4f}")
+
+    return calibrated, calibrator
+
+
 def evaluate_ensemble(y_true, y_pred, label="Ensemble"):
     """Evaluate probabilities with multiple metrics."""
     logloss = log_loss(y_true, y_pred)
@@ -257,11 +317,127 @@ def evaluate_ensemble(y_true, y_pred, label="Ensemble"):
 
 
 # ---------------------------------------------------------------------------
+# Walk-Forward Cross-Validation
+# ---------------------------------------------------------------------------
+
+def walk_forward_cv(
+    df: pd.DataFrame,
+    feature_cols: list[str],
+    target: str = "target_win",
+    n_folds: int = 5,
+    min_train_races: int = 50,
+) -> list[dict]:
+    """
+    Expanding-window walk-forward cross-validation.
+
+    Splits races chronologically into n_folds+1 slices. For fold i,
+    train on slices 0..i, validate on slice i+1.
+
+    Args:
+        df: Feature dataframe with 'date' and 'race_id' columns.
+        feature_cols: Feature column names.
+        target: Target column.
+        n_folds: Number of validation folds.
+        min_train_races: Minimum races required to start training.
+
+    Returns:
+        List of per-fold metric dicts with keys:
+        logloss, auc, brier, n_train, n_val, val_start, val_end
+    """
+    if "date" not in df.columns:
+        raise ValueError("Walk-forward CV requires a 'date' column")
+
+    df = df.dropna(subset=[target]).copy()
+    df = df.sort_values("date")
+
+    # Get unique race dates and split into chunks
+    unique_dates = sorted(df["date"].unique())
+    total_dates = len(unique_dates)
+    chunk_size = max(1, total_dates // (n_folds + 1))
+
+    fold_results = []
+
+    for fold_i in range(n_folds):
+        # Train on chunks 0..(fold_i)
+        train_end_idx = (fold_i + 1) * chunk_size
+        # Validate on chunk (fold_i + 1)
+        val_start_idx = train_end_idx
+        val_end_idx = min(val_start_idx + chunk_size, total_dates)
+
+        if val_start_idx >= total_dates:
+            break
+
+        train_cutoff = unique_dates[min(train_end_idx, total_dates - 1)]
+        val_dates = unique_dates[val_start_idx:val_end_idx]
+
+        if not val_dates:
+            break
+
+        train_df = df[df["date"] < train_cutoff].copy()
+        val_df = df[df["date"].isin(val_dates)].copy()
+
+        n_train_races = train_df["race_id"].nunique()
+        if n_train_races < min_train_races:
+            log.info(f"Fold {fold_i + 1}: Skipping (only {n_train_races} train races)")
+            continue
+
+        # Fill NaN
+        for col in feature_cols:
+            median_val = train_df[col].median()
+            fill_val = median_val if not np.isnan(median_val) else 0
+            train_df[col] = train_df[col].fillna(fill_val)
+            val_df[col] = val_df[col].fillna(fill_val)
+
+        X_train = train_df[feature_cols].values
+        y_train = train_df[target].values
+        X_val = val_df[feature_cols].values
+        y_val = val_df[target].values
+
+        if len(X_val) < 10 or len(X_train) < 50:
+            continue
+
+        # Train LightGBM + XGBoost and ensemble
+        lgb_model, lgb_preds = train_lightgbm(X_train, y_train, X_val, y_val, feature_cols)
+        xgb_model, xgb_preds = train_xgboost(X_train, y_train, X_val, y_val, feature_cols)
+        ensemble_preds = ensemble_predict(lgb_preds, xgb_preds)
+
+        metrics = evaluate_ensemble(y_val, ensemble_preds, label=f"Fold {fold_i + 1}")
+        metrics["n_train"] = len(X_train)
+        metrics["n_val"] = len(X_val)
+        metrics["n_train_races"] = n_train_races
+        metrics["n_val_races"] = val_df["race_id"].nunique()
+        metrics["val_start"] = val_dates[0]
+        metrics["val_end"] = val_dates[-1]
+
+        fold_results.append(metrics)
+        log.info(
+            f"Fold {fold_i + 1}: train={n_train_races} races, "
+            f"val={metrics['n_val_races']} races ({val_dates[0]}→{val_dates[-1]}), "
+            f"AUC={metrics['auc']:.4f}"
+        )
+
+    # Summary
+    if fold_results:
+        aucs = [f["auc"] for f in fold_results]
+        losses = [f["logloss"] for f in fold_results]
+        log.info(f"\nWalk-Forward CV Summary ({len(fold_results)} folds):")
+        log.info(f"  AUC:     {np.mean(aucs):.4f} ± {np.std(aucs):.4f}")
+        log.info(f"  LogLoss: {np.mean(losses):.4f} ± {np.std(losses):.4f}")
+        log.info(f"  LogLoss variance: {np.var(losses):.6f}")
+
+    return fold_results
+
+
+# ---------------------------------------------------------------------------
 # Save / Load
 # ---------------------------------------------------------------------------
 
-def save_model(lgb_model, xgb_model, feature_cols, metrics, version=None):
-    """Save trained models and metadata."""
+def save_model(
+    lgb_model, xgb_model, feature_cols, metrics,
+    version=None, calibrator=None, odds_free: bool = False,
+    calibration_method: str = "none",
+):
+    """Save trained models, calibrator, and metadata."""
     if version is None:
         version = datetime.now().strftime("%Y%m%d_%H%M%S")
 
@@ -274,11 +450,18 @@ def save_model(lgb_model, xgb_model, feature_cols, metrics, version=None):
     # Save XGBoost
     xgb_model.save_model(str(model_dir / "xgb_model.json"))
 
+    # Save calibrator
+    if calibrator is not None:
+        with open(model_dir / "calibrator.pkl", "wb") as f:
+            pickle.dump(calibrator, f)
+
     # Save metadata
     meta = {
         "version": version,
         "feature_cols": feature_cols,
         "metrics": metrics,
+        "odds_free": odds_free,
+        "calibration_method": calibration_method,
         "created_at": datetime.now().isoformat(),
     }
     with open(model_dir / "metadata.json", "w") as f:
@@ -289,7 +472,7 @@ def save_model(lgb_model, xgb_model, feature_cols, metrics, version=None):
 
 
 def load_model(version: str = "latest"):
-    """Load a saved model by version name."""
+    """Load a saved model, calibrator, and metadata by version name."""
     lgb = _get_lgb()
     xgb = _get_xgb()
 
@@ -305,10 +488,19 @@ def load_model(version: str = "latest"):
     xgb_model = xgb.Booster()
     xgb_model.load_model(str(model_dir / "xgb_model.json"))
 
+    # Load calibrator if present
+    calibrator_path = model_dir / "calibrator.pkl"
+    calibrator = None
+    if calibrator_path.exists():
+        with open(calibrator_path, "rb") as f:
+            calibrator = pickle.load(f)
+        log.info("📐 Loaded calibrator")
+
     with open(model_dir / "metadata.json") as f:
         meta = json.load(f)
 
-    log.info(f"📦 Loaded model version: {meta['version']}")
+    meta["calibrator"] = calibrator
+    log.info(f"📦 Loaded model version: {meta['version']} (odds_free={meta.get('odds_free', False)})")
     return lgb_model, xgb_model, meta
 
 
@@ -350,6 +542,23 @@ def main():
     parser.add_argument("--val-date", type=str, help="Validation split date (YYYY-MM-DD)")
     parser.add_argument("--predict", action="store_true", help="Predict mode (requires --race-id)")
     parser.add_argument("--race-id", type=int, help="Race ID for prediction")
+    parser.add_argument(
+        "--exclude-odds", action="store_true",
+        help="Train odds-free model (exclude all odds-derived features)",
+    )
+    parser.add_argument(
+        "--calibration", type=str, default="none",
+        choices=["none", "platt", "isotonic"],
+        help="Calibration method (default: none)",
+    )
+    parser.add_argument(
+        "--walk-forward", action="store_true",
+        help="Run walk-forward CV before final training",
+    )
+    parser.add_argument(
+        "--n-folds", type=int, default=5,
+        help="Number of walk-forward CV folds (default: 5)",
+    )
     args = parser.parse_args()
 
     if args.predict:
@@ -365,9 +574,13 @@ def main():
         return
 
     # Training mode
-    from models.features import FeatureBuilder
+    from models.features import FeatureBuilder, ODDS_FEATURES
 
     log.info("=== UmaEdge Model Training ===")
+    odds_free = args.exclude_odds
+    if odds_free:
+        log.info("🚫 ODDS-FREE MODE — excluding all odds-derived features")
+
     fb = FeatureBuilder()
     df = fb.build_features_all()
 
@@ -375,8 +588,27 @@ def main():
         log.error("No training data — run the scraper first")
         return
 
+    exclude = ODDS_FEATURES if odds_free else None
+
+    # --- Walk-Forward CV (optional) ---
+    if args.walk_forward:
+        log.info("\n--- Walk-Forward Cross-Validation ---")
+        # Prepare feature cols for CV (need to compute once)
+        _, _, _, _, wf_feature_cols, _ = prepare_data(
+            df.copy(), target="target_win", val_date=args.val_date,
+            exclude_features=exclude,
+        )
+        cv_results = walk_forward_cv(
+            df.copy(), wf_feature_cols, target="target_win",
+            n_folds=args.n_folds,
+        )
+        if not cv_results:
+            log.warning("Walk-forward CV produced no folds (not enough data)")
+
+    # --- Final training ---
     X_train, y_train, X_val, y_val, feature_cols, race_ids_val = prepare_data(
-        df, target="target_win", val_date=args.val_date
+        df, target="target_win", val_date=args.val_date,
+        exclude_features=exclude,
     )
 
     if len(X_train) < 50:
@@ -393,10 +625,36 @@ def main():
     # Ensemble
     log.info("\n--- Ensemble ---")
     ensemble_preds = ensemble_predict(lgb_preds, xgb_preds)
+
+    # Calibration
+    calibrator = None
+    if args.calibration != "none":
+        log.info(f"\n--- Calibration ({args.calibration}) ---")
+        # Need training-set predictions for calibration fitting
+        lgb_train_preds = lgb_model.predict(X_train)
+        import xgboost as xgb_lib
+        xgb_train_preds = xgb_model.predict(
+            xgb_lib.DMatrix(X_train, feature_names=feature_cols)
+        )
+        ensemble_train_preds = ensemble_predict(lgb_train_preds, xgb_train_preds)
+
+        ensemble_preds, calibrator = calibrate_predictions(
+            y_train, ensemble_train_preds,
+            y_val, ensemble_preds,
+            method=args.calibration,
+        )
+
     metrics = evaluate_ensemble(y_val, ensemble_preds)
 
     # Save
-    version = save_model(lgb_model, xgb_model, feature_cols, metrics)
+    version_suffix = "odds_free" if odds_free else None
+    version = save_model(
+        lgb_model, xgb_model, feature_cols, metrics,
+        version=version_suffix,
+        calibrator=calibrator,
+        odds_free=odds_free,
+        calibration_method=args.calibration,
+    )
     log.info(f"\n✅ Training complete. Model version: {version}")
 
 

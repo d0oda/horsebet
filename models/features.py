@@ -46,6 +46,13 @@ GOING_MAP = {"良": 0, "稍重": 1, "重": 2, "不良": 3}
 SURFACE_MAP = {"turf": 0, "dirt": 1}
 SEX_MAP = {"牡": 0, "牝": 1, "セ": 2}  # male, female, gelding
 
+# All odds-derived features (raw + z-score normalised).
+# Excluding these forces the model to learn fundamental signals only.
+ODDS_FEATURES = [
+    "odds_win", "log_odds", "popularity",
+    "odds_win_z", "log_odds_z", "popularity_z",
+]
+
 
 class FeatureBuilder:
     """Build feature vectors for race entries from the database."""

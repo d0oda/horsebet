@@ -34,6 +34,7 @@ def predict_and_store(
     model_version: str = "latest",
     store_to_db: bool = True,
     ev_threshold: float = 0.05,
+    use_hybrid: bool = False,
 ) -> pd.DataFrame:
     """
     Full prediction pipeline for a race:
@@ -43,6 +44,13 @@ def predict_and_store(
     4. Combine model + pace sim probabilities
     5. Detect value bets (model_prob > implied_prob + threshold)
     6. Store predictions and value bets to DB
+
+    Args:
+        race_id: Database race ID.
+        model_version: Model version to use.
+        store_to_db: Whether to persist predictions.
+        ev_threshold: Minimum EV to flag as value bet.
+        use_hybrid: If True, use HybridEnsemble for divergence-based value.
 
     Returns:
         DataFrame with predictions per entry
@@ -61,24 +69,46 @@ def predict_and_store(
 
     # 2. Model inference
     log.info("Running model inference...")
-    try:
-        import xgboost as xgb
-        lgb_model, xgb_model, meta = load_model(model_version)
-        feature_cols = meta["feature_cols"]
+    fundamental_probs = None
 
-        # Align features — use 0 for missing columns
-        for col in feature_cols:
-            if col not in features_df.columns:
-                features_df[col] = 0
+    if use_hybrid:
+        # Hybrid ensemble: fundamental + market models
+        try:
+            from models.ensemble import HybridEnsemble, DivergenceDetector
+            hybrid = HybridEnsemble.load(version=model_version if model_version != "latest" else "hybrid")
+            preds = hybrid.predict(features_df)
+            model_probs = preds["combined"]
+            fundamental_probs = preds["fundamental"]
+            log.info("Using hybrid ensemble (fundamental + market)")
+        except (FileNotFoundError, Exception) as e:
+            log.warning(f"Hybrid model not available ({e}), falling back to standard model")
+            use_hybrid = False
 
-        X = features_df[feature_cols].fillna(0).values
-        lgb_probs = lgb_model.predict(X)
-        xgb_probs = xgb_model.predict(xgb.DMatrix(X, feature_names=feature_cols))
-        model_probs = ensemble_predict(lgb_probs, xgb_probs)
-    except FileNotFoundError:
-        log.warning("No trained model found — using uniform probabilities")
-        n = len(features_df)
-        model_probs = np.ones(n) / n
+    if not use_hybrid:
+        try:
+            import xgboost as xgb
+            lgb_model, xgb_model, meta = load_model(model_version)
+            feature_cols = meta["feature_cols"]
+
+            # Align features — use 0 for missing columns
+            for col in feature_cols:
+                if col not in features_df.columns:
+                    features_df[col] = 0
+
+            X = features_df[feature_cols].fillna(0).values
+            lgb_probs = lgb_model.predict(X)
+            xgb_probs = xgb_model.predict(xgb.DMatrix(X, feature_names=feature_cols))
+            model_probs = ensemble_predict(lgb_probs, xgb_probs)
+
+            # Apply calibrator if available
+            calibrator = meta.get("calibrator")
+            if calibrator is not None:
+                model_probs = calibrator.predict(model_probs)
+                log.info("Applied calibrator to predictions")
+        except FileNotFoundError:
+            log.warning("No trained model found — using uniform probabilities")
+            n = len(features_df)
+            model_probs = np.ones(n) / n
 
     # 3. Pace simulation
     log.info("Running pace simulation...")
@@ -108,6 +138,7 @@ def predict_and_store(
             odds = 0
 
         model_p = float(model_probs[i])
+        fund_p = float(fundamental_probs[i]) if fundamental_probs is not None else None
         pace_p = pace_results.get(horse_id, {}).get("win_prob", model_p)
         pace_place_p = pace_results.get(horse_id, {}).get("place_prob", None)
 
@@ -118,7 +149,7 @@ def predict_and_store(
         market_prob = (1.0 / odds) if odds > 0 else 0
         ev = combined_win - market_prob
 
-        result_rows.append({
+        row_data = {
             "race_id": race_id,
             "entry_id": entry_id,
             "horse_name": row.get("horse_name", ""),
@@ -130,7 +161,12 @@ def predict_and_store(
             "market_prob": round(market_prob, 4),
             "ev": round(ev, 4),
             "is_value": ev >= ev_threshold,
-        })
+        }
+
+        if fund_p is not None:
+            row_data["fundamental_win_prob"] = round(fund_p, 4)
+
+        result_rows.append(row_data)
 
     result_df = pd.DataFrame(result_rows)
     result_df = result_df.sort_values("combined_win_prob", ascending=False)
@@ -220,6 +256,7 @@ def main():
     parser.add_argument("--version", type=str, default="latest", help="Model version")
     parser.add_argument("--no-store", action="store_true", help="Don't store to DB")
     parser.add_argument("--ev-threshold", type=float, default=0.05, help="Min EV for value bet")
+    parser.add_argument("--hybrid", action="store_true", help="Use hybrid ensemble")
     args = parser.parse_args()
 
     result = predict_and_store(
@@ -227,6 +264,7 @@ def main():
         model_version=args.version,
         store_to_db=not args.no_store,
         ev_threshold=args.ev_threshold,
+        use_hybrid=args.hybrid,
     )
 
     if result.empty:

@@ -83,21 +83,33 @@ def print_db_stats():
 # Main Evaluation Pipeline
 # ---------------------------------------------------------------------------
 
-def run_2025_evaluation(ev_threshold: float = 0.05, output_path: str = None):
+def run_2025_evaluation(
+    ev_threshold: float = 0.05,
+    output_path: str = None,
+    exclude_odds: bool = False,
+    calibration_method: str = "none",
+):
     """
     Full pipeline:
       1. Build features for ALL data
       2. Train on pre-2025, validate on 2025
       3. Evaluate model quality
       4. Run backtest simulation on 2025 races
+
+    Args:
+        ev_threshold: Minimum EV to trigger a bet.
+        output_path: Path for CSV output.
+        exclude_odds: If True, train odds-free model.
+        calibration_method: 'none', 'platt', or 'isotonic'.
     """
-    from models.features import FeatureBuilder
+    from models.features import FeatureBuilder, ODDS_FEATURES
     from models.train import (
         prepare_data,
         train_lightgbm,
         train_xgboost,
         ensemble_predict,
         evaluate_ensemble,
+        calibrate_predictions,
         save_model,
     )
     from models.backtest import Backtester, BacktestConfig
@@ -107,6 +119,10 @@ def run_2025_evaluation(ev_threshold: float = 0.05, output_path: str = None):
 
     # --- Step 1: Build features ---
     log.info("\n📊 Step 1/4 — Building features for all races...")
+    odds_free = exclude_odds
+    if odds_free:
+        log.info("🚫 ODDS-FREE MODE — excluding all odds-derived features")
+
     fb = FeatureBuilder()
     df = fb.build_features_all()
 
@@ -123,9 +139,11 @@ def run_2025_evaluation(ev_threshold: float = 0.05, output_path: str = None):
             return
 
     # --- Step 2: Train on ≤2024, validate on 2025 ---
+    exclude = ODDS_FEATURES if odds_free else None
     log.info("\n🏋️ Step 2/4 — Training model (train ≤2024, val ≥2025)...")
     X_train, y_train, X_val, y_val, feature_cols, race_ids_val = prepare_data(
-        df, target="target_win", val_date="2025-01-01"
+        df, target="target_win", val_date="2025-01-01",
+        exclude_features=exclude,
     )
 
     if len(X_train) < 50:
@@ -146,22 +164,45 @@ def run_2025_evaluation(ev_threshold: float = 0.05, output_path: str = None):
     # Ensemble
     log.info("\n--- Ensemble Evaluation ---")
     ensemble_preds = ensemble_predict(lgb_preds, xgb_preds)
-    metrics = evaluate_ensemble(y_val, ensemble_preds, label="2025 Holdout")
+
+    # Calibration
+    calibrator = None
+    if calibration_method != "none":
+        log.info(f"\n--- Calibration ({calibration_method}) ---")
+        lgb_train_preds = lgb_model.predict(X_train)
+        import xgboost as xgb
+        xgb_train_preds = xgb_model.predict(
+            xgb.DMatrix(X_train, feature_names=feature_cols)
+        )
+        ens_train_preds = ensemble_predict(lgb_train_preds, xgb_train_preds)
+        ensemble_preds, calibrator = calibrate_predictions(
+            y_train, ens_train_preds,
+            y_val, ensemble_preds,
+            method=calibration_method,
+        )
+
+    label = "2025 Holdout (odds-free)" if odds_free else "2025 Holdout"
+    metrics = evaluate_ensemble(y_val, ensemble_preds, label=label)
 
     # Save model (try default dir, fall back to /tmp)
+    version_name = "2025_test_odds_free" if odds_free else "2025_test"
     try:
-        version = save_model(lgb_model, xgb_model, feature_cols, metrics, version="2025_test")
+        version = save_model(
+            lgb_model, xgb_model, feature_cols, metrics,
+            version=version_name, calibrator=calibrator,
+            odds_free=odds_free, calibration_method=calibration_method,
+        )
     except PermissionError:
         import tempfile
         from pathlib import Path as TmpPath
-        tmp_model_dir = TmpPath(tempfile.gettempdir()) / "umaedge_models" / "2025_test"
+        tmp_model_dir = TmpPath(tempfile.gettempdir()) / "umaedge_models" / version_name
         tmp_model_dir.mkdir(parents=True, exist_ok=True)
         lgb_model.save_model(str(tmp_model_dir / "lgb_model.txt"))
         xgb_model.save_model(str(tmp_model_dir / "xgb_model.json"))
         import json as _json
         with open(tmp_model_dir / "metadata.json", "w") as f:
-            _json.dump({"version": "2025_test", "feature_cols": feature_cols, "metrics": metrics}, f, indent=2)
-        version = "2025_test"
+            _json.dump({"version": version_name, "feature_cols": feature_cols, "metrics": metrics, "odds_free": odds_free}, f, indent=2)
+        version = version_name
         log.info(f"💾 Models saved to {tmp_model_dir} (fallback due to permissions)")
     log.info(f"Model saved as version: {version}")
 
@@ -289,6 +330,119 @@ def run_2025_evaluation(ev_threshold: float = 0.05, output_path: str = None):
 
 
 # ---------------------------------------------------------------------------
+# Hybrid Ensemble Evaluation
+# ---------------------------------------------------------------------------
+
+def run_hybrid_evaluation(
+    ev_threshold: float = 0.10,
+    output_path: str = None,
+    calibration_method: str = "isotonic",
+):
+    """
+    Train hybrid ensemble (fundamental + market) and backtest using
+    divergence-based bet selection.
+    """
+    from models.features import FeatureBuilder
+    from models.ensemble import HybridEnsemble, DivergenceDetector
+    from models.backtest import Backtester, BacktestConfig
+
+    # DB stats
+    print_db_stats()
+
+    # Build features
+    log.info("\n📊 Building features...")
+    fb = FeatureBuilder()
+    df = fb.build_features_all()
+    if df.empty:
+        log.error("No data available.")
+        return
+
+    # Train hybrid ensemble
+    log.info("\n🏋️ Training hybrid ensemble...")
+    hybrid = HybridEnsemble(calibration_method=calibration_method)
+    train_metrics = hybrid.train(df, val_date="2025-01-01")
+
+    # Generate predictions for 2025
+    log.info("\n📈 Generating hybrid predictions for 2025...")
+    val_df = df[df["date"] >= "2025-01-01"].copy()
+    preds = hybrid.predict(val_df)
+
+    val_df["win_prob"] = preds["combined"]
+    val_df["fund_prob"] = preds["fundamental"]
+    val_df["mkt_prob"] = preds["market"]
+
+    # Merge with odds and results for backtest
+    from scraper.db import get_session
+    from sqlalchemy import text as sql_text
+
+    with get_session() as session:
+        data = session.execute(sql_text("""
+            SELECT
+                e.id AS entry_id,
+                e.odds_win,
+                h.name_jp AS horse_name,
+                r.race_name_jp AS race_name,
+                res.finish_pos
+            FROM entries e
+            JOIN races r ON r.id = e.race_id
+            JOIN horses h ON h.id = e.horse_id
+            LEFT JOIN results res ON res.entry_id = e.id
+            WHERE r.date >= '2025-01-01'
+        """)).fetchall()
+
+    extra_df = pd.DataFrame(
+        data, columns=["entry_id", "odds_win", "horse_name", "race_name", "finish_pos"]
+    )
+    pred_df = val_df[["race_id", "entry_id", "win_prob", "fund_prob", "mkt_prob", "date"]].copy()
+    pred_df = pred_df.merge(extra_df, on="entry_id", how="left")
+
+    # Divergence-based filtering: only bet when fundamental diverges from market
+    detector = DivergenceDetector(min_divergence=ev_threshold)
+    market_odds = pred_df["odds_win"].fillna(0).values
+    signals = detector.detect(
+        entry_ids=pred_df["entry_id"].values,
+        fundamental_probs=pred_df["fund_prob"].values,
+        odds_aware_probs=pred_df["mkt_prob"].values,
+        market_odds=market_odds,
+    )
+
+    log.info(f"\n🎯 Divergence signals: {len(signals)} entries")
+    if signals:
+        for s in signals[:10]:
+            log.info(
+                f"  Entry {s.entry_id}: fund={s.fundamental_prob:.1%} "
+                f"mkt={s.market_prob:.1%} div={s.divergence:+.3f} "
+                f"alpha={s.alpha_score:.3f}"
+            )
+
+    # Run backtest
+    log.info("\n💰 Running backtest with divergence-based bet selection...")
+    config = BacktestConfig(ev_threshold=ev_threshold)
+    bt = Backtester(config)
+    result = bt.run(pred_df)
+
+    bt.print_report(result)
+
+    # Save hybrid model (best-effort)
+    try:
+        hybrid.save(version="2025_hybrid")
+    except (PermissionError, OSError) as e:
+        log.warning(f"Could not save hybrid model: {e}")
+
+    # Print summary
+    print("\n" + "=" * 60)
+    print("  Hybrid Ensemble — 2025 Evaluation")
+    print("=" * 60)
+    print(f"  Fundamental AUC: {train_metrics['fundamental']['auc']:.4f}")
+    print(f"  Market AUC:      {train_metrics['market']['auc']:.4f}")
+    print(f"  Divergence signals: {len(signals)}")
+    print(f"  Backtest ROI:    {result.roi_pct:+.1f}%")
+    print("=" * 60)
+
+    return result
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -302,12 +456,34 @@ def main():
         "--output", type=str, default=None,
         help="Output CSV path (default: data/backtest_2025_results.csv)"
     )
+    parser.add_argument(
+        "--exclude-odds", action="store_true",
+        help="Run evaluation with odds-free model",
+    )
+    parser.add_argument(
+        "--hybrid", action="store_true",
+        help="Run hybrid ensemble evaluation (fundamental vs market)",
+    )
+    parser.add_argument(
+        "--calibration", type=str, default="none",
+        choices=["none", "platt", "isotonic"],
+        help="Calibration method (default: none)",
+    )
     args = parser.parse_args()
 
-    run_2025_evaluation(
-        ev_threshold=args.ev_threshold,
-        output_path=args.output,
-    )
+    if args.hybrid:
+        run_hybrid_evaluation(
+            ev_threshold=args.ev_threshold,
+            output_path=args.output,
+            calibration_method=args.calibration,
+        )
+    else:
+        run_2025_evaluation(
+            ev_threshold=args.ev_threshold,
+            output_path=args.output,
+            exclude_odds=args.exclude_odds,
+            calibration_method=args.calibration,
+        )
 
 
 if __name__ == "__main__":

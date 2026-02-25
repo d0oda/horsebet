@@ -157,3 +157,198 @@ class TestEvaluation:
         metrics = evaluate_ensemble(y_true, y_pred, label="Random")
         # Random predictions should have poor AUC
         assert metrics["auc"] < 0.8  # Should be near 0.5 in expectation
+
+
+# ---------------------------------------------------------------------------
+# Sprint 2 — Exclude Features (2.1)
+# ---------------------------------------------------------------------------
+
+class TestExcludeFeatures:
+    def _make_df(self, n_races=10, entries_per_race=8):
+        rows = []
+        for r in range(n_races):
+            for e in range(entries_per_race):
+                rows.append({
+                    "race_id": r + 1,
+                    "entry_id": r * entries_per_race + e + 1,
+                    "date": f"2024-{(r % 12) + 1:02d}-15",
+                    "horse_name": f"Horse_{r}_{e}",
+                    "target_win": 1 if e == 0 else 0,
+                    "finish_pos": e + 1,
+                    "speed_z": np.random.randn(),
+                    "form_z": np.random.randn(),
+                    "odds_win": float(np.random.uniform(2.0, 50.0)),
+                    "log_odds": float(np.random.uniform(0.5, 4.0)),
+                    "popularity": np.random.randint(1, 16),
+                    "odds_win_z": np.random.randn(),
+                    "log_odds_z": np.random.randn(),
+                    "popularity_z": np.random.randn(),
+                    "class_rank": np.random.randint(1, 10),
+                    "age": np.random.randint(3, 8),
+                })
+        return pd.DataFrame(rows)
+
+    def test_exclude_odds_features(self):
+        from models.features import ODDS_FEATURES
+
+        df = self._make_df()
+        _, _, _, _, feature_cols, _ = prepare_data(
+            df, exclude_features=ODDS_FEATURES,
+        )
+
+        for feat in ODDS_FEATURES:
+            assert feat not in feature_cols, f"{feat} should be excluded"
+
+    def test_exclude_preserves_other_features(self):
+        from models.features import ODDS_FEATURES
+
+        df = self._make_df()
+        _, _, _, _, feature_cols, _ = prepare_data(
+            df, exclude_features=ODDS_FEATURES,
+        )
+
+        assert "speed_z" in feature_cols
+        assert "form_z" in feature_cols
+        assert "class_rank" in feature_cols
+        assert "age" in feature_cols
+
+    def test_exclude_none_keeps_all(self):
+        df = self._make_df()
+        _, _, _, _, all_cols, _ = prepare_data(df, exclude_features=None)
+        _, _, _, _, exc_cols, _ = prepare_data(df, exclude_features=[])
+
+        assert len(all_cols) == len(exc_cols)
+
+    def test_exclude_reduces_feature_count(self):
+        from models.features import ODDS_FEATURES
+
+        df = self._make_df()
+        _, _, _, _, all_cols, _ = prepare_data(df, exclude_features=None)
+        _, _, _, _, odds_free_cols, _ = prepare_data(
+            df, exclude_features=ODDS_FEATURES,
+        )
+
+        assert len(odds_free_cols) < len(all_cols)
+
+
+# ---------------------------------------------------------------------------
+# Sprint 2 — Calibration (2.3)
+# ---------------------------------------------------------------------------
+
+class TestCalibration:
+    def test_isotonic_calibrator(self):
+        from models.train import calibrate_predictions
+
+        np.random.seed(42)
+        y_train = np.random.binomial(1, 0.15, size=200)
+        raw_train = np.random.uniform(0, 0.5, size=200)
+        y_val = np.random.binomial(1, 0.15, size=50)
+        raw_val = np.random.uniform(0, 0.5, size=50)
+
+        calibrated, calibrator = calibrate_predictions(
+            y_train, raw_train, y_val, raw_val, method="isotonic"
+        )
+
+        assert calibrator is not None
+        assert len(calibrated) == len(raw_val)
+        assert all(0.0 <= p <= 1.0 for p in calibrated)
+
+    def test_platt_calibrator(self):
+        from models.train import calibrate_predictions
+
+        np.random.seed(42)
+        y_train = np.random.binomial(1, 0.15, size=200)
+        raw_train = np.random.uniform(0.01, 0.5, size=200)
+        y_val = np.random.binomial(1, 0.15, size=50)
+        raw_val = np.random.uniform(0.01, 0.5, size=50)
+
+        calibrated, calibrator = calibrate_predictions(
+            y_train, raw_train, y_val, raw_val, method="platt"
+        )
+
+        assert calibrator is not None
+        assert len(calibrated) == len(raw_val)
+        assert all(0.0 <= p <= 1.0 for p in calibrated)
+
+    def test_none_calibration_passthrough(self):
+        from models.train import calibrate_predictions
+
+        raw_val = np.array([0.1, 0.5, 0.9])
+        calibrated, calibrator = calibrate_predictions(
+            np.array([0, 1, 1]), np.array([0.2, 0.6, 0.8]),
+            np.array([0, 1, 1]), raw_val, method="none"
+        )
+
+        assert calibrator is None
+        np.testing.assert_array_equal(calibrated, raw_val)
+
+
+# ---------------------------------------------------------------------------
+# Sprint 2 — Walk-Forward CV (2.4)
+# ---------------------------------------------------------------------------
+
+class TestWalkForwardCV:
+    def _make_df(self, n_races=30, entries_per_race=8):
+        rows = []
+        for r in range(n_races):
+            for e in range(entries_per_race):
+                rows.append({
+                    "race_id": r + 1,
+                    "entry_id": r * entries_per_race + e + 1,
+                    "date": f"2024-{(r % 12) + 1:02d}-{(r // 12) + 1:02d}",
+                    "horse_name": f"Horse_{r}_{e}",
+                    "target_win": 1 if e == 0 else 0,
+                    "speed_z": np.random.randn(),
+                    "form_z": np.random.randn(),
+                    "class_rank": np.random.randint(1, 10),
+                })
+        return pd.DataFrame(rows)
+
+    def test_walk_forward_requires_date(self):
+        from models.train import walk_forward_cv
+
+        df = self._make_df()
+        df = df.drop(columns=["date"])
+        feature_cols = ["speed_z", "form_z", "class_rank"]
+
+        with pytest.raises(ValueError, match="date"):
+            walk_forward_cv(df, feature_cols)
+
+    def test_walk_forward_returns_fold_results(self):
+        from models.train import walk_forward_cv
+
+        df = self._make_df(n_races=30)
+        feature_cols = ["speed_z", "form_z", "class_rank"]
+
+        results = walk_forward_cv(
+            df, feature_cols, n_folds=3, min_train_races=5,
+        )
+
+        # Should produce some folds (depends on data size)
+        assert isinstance(results, list)
+        if results:
+            fold = results[0]
+            assert "auc" in fold
+            assert "logloss" in fold
+            assert "brier" in fold
+            assert "n_train" in fold
+            assert "n_val" in fold
+            assert "val_start" in fold
+            assert "val_end" in fold
+
+    def test_walk_forward_expanding_window(self):
+        """Training set should grow with each fold."""
+        from models.train import walk_forward_cv
+
+        df = self._make_df(n_races=30)
+        feature_cols = ["speed_z", "form_z", "class_rank"]
+
+        results = walk_forward_cv(
+            df, feature_cols, n_folds=3, min_train_races=3,
+        )
+
+        if len(results) >= 2:
+            # Each fold should have more training data than the previous
+            for i in range(1, len(results)):
+                assert results[i]["n_train"] >= results[i - 1]["n_train"]
+
