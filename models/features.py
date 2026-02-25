@@ -489,6 +489,77 @@ class FeatureBuilder:
         }
 
     # ------------------------------------------------------------------
+    # Feature Computation — Odds Movement (Sprint 4.4)
+    # ------------------------------------------------------------------
+
+    def _odds_movement_features(self, race_id: int, entry_id: int) -> dict:
+        """
+        Compute odds movement features from odds_snapshots table.
+        Falls back to NaN when no snapshot data exists.
+
+        Features:
+            odds_slope: regression slope of odds over time
+            odds_late_money: change in odds in last snapshot vs first
+            odds_vol: std dev of odds snapshots
+        """
+        null_feats = {
+            "odds_slope": np.nan,
+            "odds_late_money": np.nan,
+            "odds_vol": np.nan,
+        }
+
+        try:
+            from scraper.db import get_session
+            from sqlalchemy import text
+
+            with get_session() as session:
+                # Get the post_position (combination) for this entry
+                post = session.execute(
+                    text("SELECT post_position FROM entries WHERE id = :eid"),
+                    {"eid": entry_id},
+                ).scalar()
+
+                if not post:
+                    return null_feats
+
+                rows = session.execute(text("""
+                    SELECT odds_value, captured_at
+                    FROM odds_snapshots
+                    WHERE race_id = :race_id
+                      AND bet_type = 'win'
+                      AND combination = :combo
+                    ORDER BY captured_at
+                """), {
+                    "race_id": race_id,
+                    "combo": str(post),
+                }).fetchall()
+
+            if not rows or len(rows) < 2:
+                return null_feats
+
+            odds_values = [r[0] for r in rows]
+
+            # Slope: simple linear regression over normalised time
+            x = np.arange(len(odds_values), dtype=float)
+            y = np.array(odds_values)
+            slope = np.polyfit(x, y, 1)[0] if len(x) >= 2 else np.nan
+
+            # Late money: last odds minus first odds (negative = money coming in)
+            late_money = odds_values[-1] - odds_values[0]
+
+            # Volatility
+            vol = np.std(odds_values)
+
+            return {
+                "odds_slope": slope,
+                "odds_late_money": late_money,
+                "odds_vol": vol,
+            }
+
+        except Exception:
+            return null_feats
+
+    # ------------------------------------------------------------------
     # Feature Computation — Race-Level (Static)
     # ------------------------------------------------------------------
 

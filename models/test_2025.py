@@ -84,7 +84,7 @@ def print_db_stats():
 # ---------------------------------------------------------------------------
 
 def run_2025_evaluation(
-    ev_threshold: float = 0.05,
+    ev_threshold: float = 0.10,
     output_path: str = None,
     exclude_odds: bool = False,
     calibration_method: str = "none",
@@ -449,8 +449,8 @@ def run_hybrid_evaluation(
 def main():
     parser = argparse.ArgumentParser(description="UmaEdge — 2025 Model Evaluation")
     parser.add_argument(
-        "--ev-threshold", type=float, default=0.05,
-        help="Minimum EV to trigger a bet (default: 0.05 = 5%%)"
+        "--ev-threshold", type=float, default=0.10,
+        help="Minimum EV to trigger a bet (default: 0.10 = 10%%)"
     )
     parser.add_argument(
         "--output", type=str, default=None,
@@ -469,9 +469,18 @@ def main():
         choices=["none", "platt", "isotonic"],
         help="Calibration method (default: none)",
     )
+    parser.add_argument(
+        "--ev-sweep", action="store_true",
+        help="Run backtest at multiple EV thresholds (5%%, 8%%, 10%%, 12%%, 15%%)",
+    )
     args = parser.parse_args()
 
-    if args.hybrid:
+    if args.ev_sweep:
+        run_ev_sweep(
+            exclude_odds=args.exclude_odds,
+            calibration_method=args.calibration,
+        )
+    elif args.hybrid:
         run_hybrid_evaluation(
             ev_threshold=args.ev_threshold,
             output_path=args.output,
@@ -484,6 +493,44 @@ def main():
             exclude_odds=args.exclude_odds,
             calibration_method=args.calibration,
         )
+
+
+def run_ev_sweep(
+    exclude_odds: bool = False,
+    calibration_method: str = "none",
+):
+    """
+    Sprint 3.1: Run backtest at multiple EV thresholds and compare.
+    """
+    thresholds = [0.05, 0.08, 0.10, 0.12, 0.15]
+    results = []
+
+    for ev in thresholds:
+        print(f"\n{'=' * 60}")
+        print(f"  EV Threshold = {ev:.0%}")
+        print(f"{'=' * 60}")
+        result = run_2025_evaluation(
+            ev_threshold=ev,
+            exclude_odds=exclude_odds,
+            calibration_method=calibration_method,
+        )
+        if result:
+            results.append((ev, result))
+
+    # Summary table
+    if results:
+        print(f"\n\n{'=' * 70}")
+        print("  EV Sweep Summary")
+        print(f"{'=' * 70}")
+        print(f"  {'EV Thresh':>10} {'Bets':>6} {'Wins':>5} {'Hit%':>6} {'ROI':>7} {'Profit':>10} {'Sharpe':>7}")
+        print(f"  {'-' * 62}")
+        for ev, r in results:
+            print(
+                f"  {ev:>9.0%} {r.total_bets:>6} {r.winning_bets:>5} "
+                f"{r.hit_rate:>5.1f}% {r.roi_pct:>6.1f}% "
+                f"\u00a5{r.total_profit:>9,} {r.sharpe:>6.2f}"
+            )
+        print(f"{'=' * 70}")
 
 
 if __name__ == "__main__":
