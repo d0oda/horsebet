@@ -115,6 +115,9 @@ class FeatureBuilder:
         if df.empty:
             log.warning("No race data loaded")
         else:
+            # Ensure date is string for consistent comparison
+            if "date" in df.columns:
+                df["date"] = df["date"].astype(str)
             log.info(f"Loaded {len(df)} entries across {df['race_id'].nunique()} races")
         return df
 
@@ -151,7 +154,11 @@ class FeatureBuilder:
             rows = result.fetchall()
             columns = result.keys()
 
-        return pd.DataFrame(rows, columns=columns)
+        df = pd.DataFrame(rows, columns=columns)
+        # Ensure date is string for consistent comparison
+        if "date" in df.columns:
+            df["date"] = df["date"].astype(str)
+        return df
 
     # ------------------------------------------------------------------
     # Feature Computation — Per Horse Rolling History
@@ -414,7 +421,12 @@ class FeatureBuilder:
         feature_rows = []
 
         for idx, row in race_df.iterrows():
-            features = {"race_id": row["race_id"], "entry_id": row["entry_id"]}
+            features = {
+                "race_id": row["race_id"],
+                "entry_id": row["entry_id"],
+                "date": str(row["date"]) if row.get("date") else None,
+                "horse_name": row.get("horse_name", ""),
+            }
 
             # Target variable (for training)
             if row.get("finish_pos") is not None:
@@ -453,7 +465,7 @@ class FeatureBuilder:
         # Per-race z-score normalisation
         numeric_cols = [
             c for c in df.columns
-            if c not in ["race_id", "entry_id", "target_win", "target_place", "finish_pos"]
+            if c not in ["race_id", "entry_id", "target_win", "target_place", "finish_pos", "date", "horse_name"]
             and df[c].dtype in [np.float64, np.float32, np.int64, float, int]
         ]
         df = self.normalise_per_race(df, numeric_cols)
@@ -468,7 +480,7 @@ class FeatureBuilder:
     @staticmethod
     def get_feature_columns(df: pd.DataFrame) -> list[str]:
         """Return the list of feature columns (excluding IDs and targets)."""
-        exclude = {"race_id", "entry_id", "target_win", "target_place", "finish_pos"}
+        exclude = {"race_id", "entry_id", "target_win", "target_place", "finish_pos", "date", "horse_name"}
         return [c for c in df.columns if c not in exclude]
 
 

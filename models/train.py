@@ -78,7 +78,7 @@ def prepare_data(
     df = df.dropna(subset=[target]).copy()
 
     # Get feature columns (everything except IDs and targets)
-    exclude = {"race_id", "entry_id", "target_win", "target_place", "finish_pos", "date"}
+    exclude = {"race_id", "entry_id", "target_win", "target_place", "finish_pos", "date", "horse_name"}
     feature_cols = [c for c in df.columns if c not in exclude and df[c].dtype in [np.float64, np.float32, np.int64, float, int]]
 
     # Remove any all-NaN columns
