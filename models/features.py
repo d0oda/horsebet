@@ -59,6 +59,7 @@ class FeatureBuilder:
 
     def __init__(self):
         self._horse_history_cache = {}
+        self._pace_cache = {}  # race_id -> {horse_id: {win_prob, place_prob, style}}
 
     # ------------------------------------------------------------------
     # Data Loading
@@ -95,6 +96,7 @@ class FeatureBuilder:
                 h.sex,
                 h.birth_year,
                 h.netkeiba_id AS horse_nk_id,
+                h.trainer_id,
                 j.name_jp AS jockey_name,
                 res.finish_pos,
                 res.margin,
@@ -149,9 +151,11 @@ class FeatureBuilder:
                 res.time_secs,
                 res.last_3f_secs,
                 res.corner_positions,
-                r.field_size
+                r.field_size,
+                h.trainer_id
             FROM entries e
             JOIN races r ON r.id = e.race_id
+            JOIN horses h ON h.id = e.horse_id
             LEFT JOIN results res ON res.entry_id = e.id
             WHERE res.finish_pos IS NOT NULL
             ORDER BY e.horse_id, r.date
@@ -315,28 +319,174 @@ class FeatureBuilder:
     # ------------------------------------------------------------------
 
     def _jockey_features(self, jockey_id: Optional[int], race_date: str, history_df: pd.DataFrame) -> dict:
-        """Compute jockey-level features from their recent history."""
-        features = {}
+        """Compute rolling jockey features with 5/10 windows and ROI."""
+        null_feats = {
+            "jockey_win_pct_5": np.nan,
+            "jockey_win_pct_10": np.nan,
+            "jockey_place_pct_5": np.nan,
+            "jockey_place_pct_10": np.nan,
+            "jockey_roi_10": np.nan,
+            "jockey_recent_wins": np.nan,
+        }
 
         if jockey_id is None:
-            return {
-                "jockey_win_pct": np.nan,
-                "jockey_place_pct": np.nan,
-                "jockey_recent_wins": np.nan,
-            }
+            return null_feats
 
         hist = history_df[
             (history_df["jockey_id"] == jockey_id)
             & (history_df["date"] < race_date)
         ].sort_values("date", ascending=False)
 
-        recent = hist.head(30)  # last 30 rides
+        if hist.empty:
+            return null_feats
 
-        features["jockey_win_pct"] = (recent["finish_pos"] == 1).mean() if len(recent) > 0 else np.nan
-        features["jockey_place_pct"] = (recent["finish_pos"] <= 3).mean() if len(recent) > 0 else np.nan
-        features["jockey_recent_wins"] = (recent.head(10)["finish_pos"] == 1).sum() if len(recent) > 0 else 0
+        features = {}
+
+        for n in [5, 10]:
+            recent = hist.head(n)
+            features[f"jockey_win_pct_{n}"] = (recent["finish_pos"] == 1).mean()
+            features[f"jockey_place_pct_{n}"] = (recent["finish_pos"] <= 3).mean()
+
+        # ROI for last 10 (sum of 1/odds when win, divided by N, minus 1)
+        recent10 = hist.head(10)
+        wins = recent10[recent10["finish_pos"] == 1]
+        if len(recent10) > 0:
+            odds_payoff = wins["odds_win"].dropna().sum()
+            features["jockey_roi_10"] = (odds_payoff / len(recent10)) - 1.0
+        else:
+            features["jockey_roi_10"] = np.nan
+
+        features["jockey_recent_wins"] = (hist.head(10)["finish_pos"] == 1).sum()
 
         return features
+
+    # ------------------------------------------------------------------
+    # Feature Computation — Trainer Rolling History
+    # ------------------------------------------------------------------
+
+    def _trainer_features(self, trainer_id: Optional[int], race_date: str, history_df: pd.DataFrame) -> dict:
+        """Compute rolling trainer features from their recent runners."""
+        null_feats = {
+            "trainer_win_pct_10": np.nan,
+            "trainer_place_pct_10": np.nan,
+            "trainer_roi_10": np.nan,
+        }
+
+        if trainer_id is None or "trainer_id" not in history_df.columns:
+            return null_feats
+
+        hist = history_df[
+            (history_df["trainer_id"] == trainer_id)
+            & (history_df["date"] < race_date)
+        ].sort_values("date", ascending=False)
+
+        if hist.empty:
+            return null_feats
+
+        recent = hist.head(10)
+        features = {}
+        features["trainer_win_pct_10"] = (recent["finish_pos"] == 1).mean()
+        features["trainer_place_pct_10"] = (recent["finish_pos"] <= 3).mean()
+
+        # ROI
+        wins = recent[recent["finish_pos"] == 1]
+        odds_payoff = wins["odds_win"].dropna().sum()
+        features["trainer_roi_10"] = (odds_payoff / len(recent)) - 1.0
+
+        return features
+
+    # ------------------------------------------------------------------
+    # Feature Computation — Pace Simulation
+    # ------------------------------------------------------------------
+
+    def _get_pace_features(self, race_id: int, horse_id: int, race_df: pd.DataFrame, history_df: pd.DataFrame) -> dict:
+        """
+        Get pace simulation features for a horse-in-race.
+        Runs PaceSimulator once per race (cached) and returns per-horse features.
+        """
+        from models.pace_sim import PaceSimulator, STYLE_FRONT, STYLE_STALK, STYLE_CLOSER, STYLE_DEEP
+
+        null_feats = {
+            "pace_win_prob": np.nan,
+            "pace_place_prob": np.nan,
+            "pace_style_front": 0,
+            "pace_style_stalk": 0,
+            "pace_style_closer": 0,
+            "pace_style_deep": 0,
+        }
+
+        # Check cache
+        if race_id not in self._pace_cache:
+            # Build entries list for this race
+            race_entries = race_df[race_df["race_id"] == race_id]
+            if race_entries.empty:
+                self._pace_cache[race_id] = {}
+                return null_feats
+
+            sim_entries = []
+            distance = 2000
+            for _, row in race_entries.iterrows():
+                hid = row["horse_id"]
+                distance = row.get("distance") or 2000
+
+                # Get historical stats for pace simulation
+                horse_hist = history_df[
+                    (history_df["horse_id"] == hid)
+                    & (history_df["date"] < str(row["date"]))
+                ].sort_values("date", ascending=False)
+
+                if not horse_hist.empty:
+                    finishes = horse_hist["finish_pos"].dropna()
+                    last_3fs = horse_hist["last_3f_secs"].dropna()
+                    corners = []
+                    for cp in horse_hist["corner_positions"].dropna():
+                        try:
+                            corners.append(int(str(cp).split("-")[0].strip()))
+                        except (ValueError, IndexError):
+                            pass
+
+                    career_win_pct = (finishes == 1).mean() if len(finishes) > 0 else 0
+                    last3_avg_finish = finishes.head(3).mean() if len(finishes) > 0 else None
+                    avg_last_3f = last_3fs.mean() if len(last_3fs) > 0 else None
+                    avg_first_corner = np.mean(corners) if corners else None
+                else:
+                    career_win_pct = 0
+                    last3_avg_finish = None
+                    avg_last_3f = None
+                    avg_first_corner = None
+
+                sim_entries.append({
+                    "horse_id": hid,
+                    "avg_first_corner": avg_first_corner,
+                    "avg_last_3f": avg_last_3f,
+                    "career_win_pct": career_win_pct,
+                    "last3_avg_finish": last3_avg_finish,
+                    "odds_win": row.get("odds_win"),
+                })
+
+            # Run simulation (use fewer iterations during feature building for speed)
+            try:
+                sim = PaceSimulator(n_simulations=2000, seed=race_id % 10000)
+                pace_results = sim.simulate_race(sim_entries, distance=int(distance))
+                self._pace_cache[race_id] = pace_results
+            except Exception as e:
+                log.debug(f"Pace sim failed for race {race_id}: {e}")
+                self._pace_cache[race_id] = {}
+
+        # Look up this horse's pace result
+        pace_data = self._pace_cache.get(race_id, {}).get(horse_id)
+        if pace_data is None:
+            return null_feats
+
+        style = pace_data.get("style", "")
+        return {
+            "pace_win_prob": pace_data.get("win_prob", np.nan),
+            "pace_place_prob": pace_data.get("place_prob", np.nan),
+            "pace_style_front": 1 if style == STYLE_FRONT else 0,
+            "pace_style_stalk": 1 if style == STYLE_STALK else 0,
+            "pace_style_closer": 1 if style == STYLE_CLOSER else 0,
+            "pace_style_deep": 1 if style == STYLE_DEEP else 0,
+        }
 
     # ------------------------------------------------------------------
     # Feature Computation — Race-Level (Static)
@@ -464,6 +614,24 @@ class FeatureBuilder:
                     history_df=history_df,
                 )
             )
+
+            # Trainer features
+            features.update(
+                self._trainer_features(
+                    trainer_id=row.get("trainer_id"),
+                    race_date=str(row["date"]),
+                    history_df=history_df,
+                )
+            )
+
+            # Pace simulation features (cached per race)
+            pace_feats = self._get_pace_features(
+                race_id=row["race_id"],
+                horse_id=row["horse_id"],
+                race_df=race_df,
+                history_df=history_df,
+            )
+            features.update(pace_feats)
 
             feature_rows.append(features)
 

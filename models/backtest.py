@@ -83,6 +83,7 @@ class BacktestResult:
     sharpe: float = 0.0
     avg_ev: float = 0.0
     avg_odds: float = 0.0
+    nan_odds_skipped: int = 0
     bets: list = field(default_factory=list)
     daily_pnl: list = field(default_factory=list)
     balance_curve: list = field(default_factory=list)
@@ -135,7 +136,10 @@ class Backtester:
                 model_prob = row.get("win_prob", 0)
                 odds = row.get("odds_win", 0)
 
-                if not odds or odds <= 0 or not model_prob or model_prob <= 0:
+                if not odds or odds <= 0 or (isinstance(odds, float) and np.isnan(odds)):
+                    result.nan_odds_skipped += 1
+                    continue
+                if not model_prob or model_prob <= 0:
                     continue
 
                 # Implied probability from market odds (after take)
@@ -253,6 +257,7 @@ class Backtester:
         print("=" * 60)
         print(f"  Races analysed:     {result.total_races:>8}")
         print(f"  Bets placed:        {result.total_bets:>8}")
+        print(f"  NaN-odds skipped:   {result.nan_odds_skipped:>8}")
         print(f"  Hit rate:           {result.hit_rate:>7.1f}%")
         print(f"  Avg EV per bet:     {result.avg_ev:>7.3f}")
         print(f"  Avg odds:           {result.avg_odds:>7.1f}x")

@@ -209,7 +209,8 @@ class TestJockeyFeatures:
 
     def test_null_jockey(self):
         features = self.fb._jockey_features(None, "2024-01-01", pd.DataFrame())
-        assert np.isnan(features["jockey_win_pct"])
+        assert np.isnan(features["jockey_win_pct_5"])
+        assert np.isnan(features["jockey_win_pct_10"])
 
     def test_jockey_with_history(self):
         history = pd.DataFrame({
@@ -217,7 +218,86 @@ class TestJockeyFeatures:
             "date": pd.date_range("2024-01-01", periods=10, freq="7D").astype(str),
             "finish_pos": [1, 2, 1, 3, 5, 1, 4, 2, 1, 6],
             "horse_id": list(range(10)),
+            "odds_win": [5.0, 10.0, 3.0, 8.0, 15.0, 4.0, 20.0, 6.0, 2.5, 30.0],
         })
         features = self.fb._jockey_features(10, "2024-04-01", history)
-        assert features["jockey_win_pct"] > 0
-        assert features["jockey_place_pct"] > 0
+        assert features["jockey_win_pct_5"] > 0
+        assert features["jockey_place_pct_5"] > 0
+        assert features["jockey_win_pct_10"] > 0
+        assert features["jockey_place_pct_10"] > 0
+        assert "jockey_roi_10" in features
+        assert features["jockey_recent_wins"] > 0
+
+    def test_jockey_roi_calculation(self):
+        """ROI should be sum(odds_win for wins) / N - 1."""
+        history = pd.DataFrame({
+            "jockey_id": [10] * 5,
+            "date": pd.date_range("2024-01-01", periods=5, freq="7D").astype(str),
+            "finish_pos": [1, 2, 3, 4, 5],
+            "horse_id": list(range(5)),
+            "odds_win": [5.0, 10.0, 3.0, 8.0, 15.0],
+        })
+        features = self.fb._jockey_features(10, "2024-04-01", history)
+        # 1 win (odds=5.0) out of 5 races → ROI = 5.0/5 - 1 = 0.0
+        assert features["jockey_roi_10"] == pytest.approx(0.0, abs=0.01)
+
+
+# ---------------------------------------------------------------------------
+# Trainer Features
+# ---------------------------------------------------------------------------
+
+class TestTrainerFeatures:
+    def setup_method(self):
+        self.fb = FeatureBuilder()
+
+    def test_null_trainer(self):
+        features = self.fb._trainer_features(None, "2024-01-01", pd.DataFrame())
+        assert np.isnan(features["trainer_win_pct_10"])
+        assert np.isnan(features["trainer_place_pct_10"])
+        assert np.isnan(features["trainer_roi_10"])
+
+    def test_trainer_with_history(self):
+        history = pd.DataFrame({
+            "trainer_id": [20] * 10,
+            "date": pd.date_range("2024-01-01", periods=10, freq="7D").astype(str),
+            "finish_pos": [1, 3, 2, 5, 1, 8, 4, 1, 6, 2],
+            "odds_win": [3.0, 6.0, 5.0, 12.0, 4.0, 20.0, 8.0, 2.5, 15.0, 7.0],
+        })
+        features = self.fb._trainer_features(20, "2024-04-01", history)
+        assert features["trainer_win_pct_10"] > 0
+        assert features["trainer_place_pct_10"] > 0
+        assert "trainer_roi_10" in features
+
+    def test_trainer_no_history_column(self):
+        """No trainer_id column in history should return NaN."""
+        history = pd.DataFrame({
+            "date": ["2024-01-01"],
+            "finish_pos": [1],
+        })
+        features = self.fb._trainer_features(20, "2024-04-01", history)
+        assert np.isnan(features["trainer_win_pct_10"])
+
+
+# ---------------------------------------------------------------------------
+# Pace Features
+# ---------------------------------------------------------------------------
+
+class TestPaceFeatures:
+    def setup_method(self):
+        self.fb = FeatureBuilder()
+
+    def test_pace_features_structure(self):
+        """Pace features should return the expected keys."""
+        # Test with empty race_df (should return null features)
+        race_df = pd.DataFrame({"race_id": [], "horse_id": []})
+        history_df = pd.DataFrame()
+
+        features = self.fb._get_pace_features(999, 1, race_df, history_df)
+
+        assert "pace_win_prob" in features
+        assert "pace_place_prob" in features
+        assert "pace_style_front" in features
+        assert "pace_style_stalk" in features
+        assert "pace_style_closer" in features
+        assert "pace_style_deep" in features
+

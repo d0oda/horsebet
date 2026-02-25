@@ -166,14 +166,40 @@ def _print_summary(stats: dict):
 
 def main():
     parser = argparse.ArgumentParser(description="UmaEdge — Batch Historical Scraper")
-    parser.add_argument("--year", type=int, required=True, help="Year to scrape (e.g. 2024)")
+    parser.add_argument("--year", type=int, help="Year to scrape (e.g. 2024)")
+    parser.add_argument("--years", type=str, help="Comma-separated years (e.g. 2022,2023,2024)")
     parser.add_argument("--courses", type=str, help="Comma-separated course codes (e.g. 05,06)")
     parser.add_argument("--dry-run", action="store_true", help="Only show candidate IDs, don't scrape")
-    parser.add_argument("--max-races", type=int, default=50, help="Stop after N new races (default: 50)")
+    parser.add_argument("--max-races", type=int, default=50, help="Stop after N new races per year (default: 50)")
 
     args = parser.parse_args()
     courses = args.courses.split(",") if args.courses else None
-    batch_scrape(args.year, courses=courses, dry_run=args.dry_run, max_races=args.max_races)
+
+    if args.years:
+        years = [int(y.strip()) for y in args.years.split(",")]
+    elif args.year:
+        years = [args.year]
+    else:
+        parser.error("Either --year or --years is required")
+        return
+
+    total_stats = {"races_scraped": 0, "races_not_found": 0, "races_failed": 0}
+    for year in years:
+        log.info(f"\n{'=' * 50}")
+        log.info(f"  Scraping year {year}")
+        log.info(f"{'=' * 50}")
+        stats = batch_scrape(year, courses=courses, dry_run=args.dry_run, max_races=args.max_races)
+        for k in total_stats:
+            total_stats[k] += stats.get(k, 0)
+
+    if len(years) > 1:
+        print(f"\n{'=' * 50}")
+        print(f"  Multi-Year Total ({', '.join(str(y) for y in years)})")
+        print(f"{'=' * 50}")
+        print(f"  Races scraped:   {total_stats['races_scraped']:>6}")
+        print(f"  Not found (404): {total_stats['races_not_found']:>6}")
+        print(f"  Failed:          {total_stats['races_failed']:>6}")
+        print(f"{'=' * 50}")
 
 
 if __name__ == "__main__":

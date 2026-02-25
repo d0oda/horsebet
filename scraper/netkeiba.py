@@ -335,11 +335,17 @@ def parse_race_page(soup: BeautifulSoup, race_id: str) -> Optional[RaceData]:
             popularity = None
             try:
                 if len(cells) > 12:
-                    odds_win = float(cells[12].get_text(strip=True))
+                    odds_text = cells[12].get_text(strip=True)
+                    # Handle empty, dashes, cancelled entries
+                    if odds_text and odds_text not in ("", "---", "--", "-", "取消", "除外", "中止"):
+                        odds_win = float(odds_text.replace(",", ""))
+                    elif odds_text in ("取消", "除外", "中止"):
+                        log.debug(f"Entry cancelled/excluded in race {race_id}: odds='{odds_text}'")
                 if len(cells) > 13:
                     pop_text = cells[13].get_text(strip=True)
                     popularity = int(pop_text) if pop_text.isdigit() else None
             except (ValueError, IndexError):
+                log.debug(f"Could not parse odds in race {race_id}: '{cells[12].get_text(strip=True) if len(cells) > 12 else '?'}'")
                 pass
 
             # Horse weight
