@@ -363,12 +363,33 @@ def parse_race_page(soup: BeautifulSoup, race_id: str) -> Optional[RaceData]:
             if len(cells) > 10:
                 corners = cells[10].get_text(strip=True)
 
+            # Sire name — some race pages include it in horse cell title
+            sire_name = None
+            if horse_cell:
+                title = horse_cell.get("title") or ""
+                # Title sometimes has format: "父: [SireName]" or "SireName産駒"
+                import re as _re
+                sire_m = _re.search(r'父[：:]\s*([^/\n]+)', title)
+                if sire_m:
+                    sire_name = sire_m.group(1).strip()
+                else:
+                    # Also try to find sire from later columns (index 17/18 vary)
+                    for ci in range(15, min(len(cells), 21)):
+                        ctext = cells[ci].get_text(strip=True)
+                        if ctext and not ctext.isdigit() and len(ctext) > 1:
+                            # Heuristic: sire appears in column ~18 on some pages
+                            parent = cells[ci].find("a", href=_re.compile(r'/horse/ped/'))
+                            if parent:
+                                sire_name = parent.get_text(strip=True)
+                                break
+
             horse = HorseData(
                 name=horse_name_jp,  # will transliterate later
                 name_jp=horse_name_jp,
                 sex=sex,
                 birth_year=birth_year,
                 netkeiba_id=horse_id or f"unknown_{post_pos}",
+                sire_name=sire_name,
             )
 
             entry = EntryData(
@@ -473,11 +494,12 @@ def save_race_to_db(race: RaceData) -> bool:
             horse = entry.horse
             horse_result = session.execute(
                 text("""
-                    INSERT INTO horses (name, name_jp, sex, birth_year, netkeiba_id)
-                    VALUES (:name, :name_jp, :sex, :birth_year, :netkeiba_id)
+                    INSERT INTO horses (name, name_jp, sex, birth_year, netkeiba_id, sire_name)
+                    VALUES (:name, :name_jp, :sex, :birth_year, :netkeiba_id, :sire_name)
                     ON CONFLICT (netkeiba_id) DO UPDATE SET
                         name = EXCLUDED.name,
-                        name_jp = EXCLUDED.name_jp
+                        name_jp = EXCLUDED.name_jp,
+                        sire_name = COALESCE(EXCLUDED.sire_name, horses.sire_name)
                     RETURNING id
                 """),
                 {
@@ -486,6 +508,7 @@ def save_race_to_db(race: RaceData) -> bool:
                     "sex": horse.sex,
                     "birth_year": horse.birth_year,
                     "netkeiba_id": horse.netkeiba_id,
+                    "sire_name": horse.sire_name,
                 },
             )
             horse_db_id = horse_result.fetchone()[0]

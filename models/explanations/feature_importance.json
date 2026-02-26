@@ -1,0 +1,122 @@
+[
+  {
+    "feature": "odds_win",
+    "lgb_importance": 0.3156987588280374,
+    "xgb_importance": 0.06983135065294156,
+    "combined": 0.20505842514924427
+  },
+  {
+    "feature": "popularity",
+    "lgb_importance": 0.033951168375044104,
+    "xgb_importance": 0.18404708956626123,
+    "combined": 0.1014943329110918
+  },
+  {
+    "feature": "log_odds",
+    "lgb_importance": 0.013306177474907087,
+    "xgb_importance": 0.19607568846665202,
+    "combined": 0.09555245742119231
+  },
+  {
+    "feature": "odds_win_z",
+    "lgb_importance": 0.11338647115748189,
+    "xgb_importance": 0.03742745540826634,
+    "combined": 0.07920491407033489
+  },
+  {
+    "feature": "log_odds_z",
+    "lgb_importance": 0.06608301761917694,
+    "xgb_importance": 0.052960485981257084,
+    "combined": 0.06017787838211301
+  },
+  {
+    "feature": "horse_weight_z",
+    "lgb_importance": 0.06072595790144225,
+    "xgb_importance": 0.020756502752526173,
+    "combined": 0.042739703084430015
+  },
+  {
+    "feature": "popularity_z",
+    "lgb_importance": 0.04904887792806974,
+    "xgb_importance": 0.023084688374234195,
+    "combined": 0.03736499262884374
+  },
+  {
+    "feature": "horse_weight",
+    "lgb_importance": 0.046490070766578996,
+    "xgb_importance": 0.018001213764663886,
+    "combined": 0.0336700851157172
+  },
+  {
+    "feature": "weight_carried_z",
+    "lgb_importance": 0.043401418943231115,
+    "xgb_importance": 0.01934768803155475,
+    "combined": 0.032577240032976754
+  },
+  {
+    "feature": "sex_code_z",
+    "lgb_importance": 0.037312067198536844,
+    "xgb_importance": 0.022484123771721855,
+    "combined": 0.030639492656470098
+  },
+  {
+    "feature": "horse_weight_change_z",
+    "lgb_importance": 0.03481237030060801,
+    "xgb_importance": 0.02071083281859581,
+    "combined": 0.028466678433702524
+  },
+  {
+    "feature": "post_position_z",
+    "lgb_importance": 0.035253607355492995,
+    "xgb_importance": 0.019080994508448124,
+    "combined": 0.027975931574322804
+  },
+  {
+    "feature": "age_z",
+    "lgb_importance": 0.024867706736919588,
+    "xgb_importance": 0.020172046910091376,
+    "combined": 0.022754659814846895
+  },
+  {
+    "feature": "distance",
+    "lgb_importance": 0.014979980616682622,
+    "xgb_importance": 0.02561035503245706,
+    "combined": 0.01976364910378112
+  },
+  {
+    "feature": "post_position",
+    "lgb_importance": 0.016239513364708438,
+    "xgb_importance": 0.024048166554775742,
+    "combined": 0.019753407300238727
+  },
+  {
+    "feature": "draw_z",
+    "lgb_importance": 0.020311937690207425,
+    "xgb_importance": 0.018953113722115035,
+    "combined": 0.019700466904565853
+  },
+  {
+    "feature": "horse_weight_change",
+    "lgb_importance": 0.015447911497267913,
+    "xgb_importance": 0.023876102261607194,
+    "combined": 0.01924059734122059
+  },
+  {
+    "feature": "surface_code",
+    "lgb_importance": 0.0,
+    "xgb_importance": 0.0367826608998565,
+    "combined": 0.016552197404935423
+  },
+  {
+    "feature": "last_time_secs_z",
+    "lgb_importance": 0.0037293071899896883,
+    "xgb_importance": 0.026838284667142685,
+    "combined": 0.014128347054708537
+  },
+  {
+    "feature": "field_size",
+    "lgb_importance": 0.005858899403804607,
+    "xgb_importance": 0.02201197851608424,
+    "combined": 0.013127785004330442
+  }
+]

@@ -153,10 +153,38 @@ def _print_analysis(modes: dict[str, FailureMode], total_losing: int):
 # CLI
 # ---------------------------------------------------------------------------
 
+def main():
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="UmaEdge — Losing Bet Failure Mode Analysis"
+    )
+    parser.add_argument(
+        "--ev-threshold", type=float, default=0.05,
+        help="EV threshold for bet selection (default: 0.05 = 5%%)",
+    )
+    parser.add_argument(
+        "--calibration", type=str, default="isotonic",
+        choices=["none", "platt", "isotonic"],
+        help="Calibration method (default: isotonic)",
+    )
+    args = parser.parse_args()
+
+    from models.test_2025 import run_2025_evaluation
+
+    log.info(f"Running evaluation with EV threshold {args.ev_threshold:.0%}...")
+    result = run_2025_evaluation(
+        ev_threshold=args.ev_threshold,
+        calibration_method=args.calibration,
+    )
+
+    if result and result.bets:
+        modes = analyse_losing_bets(result)
+        if not modes:
+            log.info("No losing bets — all bets were winners!")
+    else:
+        log.warning("No bets found at the given EV threshold.")
+
+
 if __name__ == "__main__":
-    print("Run a backtest first, then call analyse_losing_bets(result)")
-    print("Example:")
-    print("  from models.test_2025 import run_2025_evaluation")
-    print("  from models.analyse_bets import analyse_losing_bets")
-    print("  result = run_2025_evaluation()")
-    print("  analyse_losing_bets(result)")
+    main()

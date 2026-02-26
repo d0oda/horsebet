@@ -45,6 +45,7 @@ CLASS_RANK = {
 GOING_MAP = {"良": 0, "稍重": 1, "重": 2, "不良": 3}
 SURFACE_MAP = {"turf": 0, "dirt": 1}
 SEX_MAP = {"牡": 0, "牝": 1, "セ": 2}  # male, female, gelding
+WEATHER_MAP = {"晴": 0, "曇": 1, "小雨": 2, "雨": 3, "小雪": 3, "雪": 3}
 
 # All odds-derived features (raw + z-score normalised).
 # Excluding these forces the model to learn fundamental signals only.
@@ -311,6 +312,13 @@ class FeatureBuilder:
             "best_class_rank", "career_runs", "career_wins",
             "career_win_pct", "career_place_pct",
             "avg_first_corner", "weight_trend",
+            # Sprint 7 features
+            "weather_code", "going_x_surface", "going_x_distance",
+            "horse_going_win_pct", "horse_wet_track_advantage",
+            "draw_bias_at_course", "draw_low_win_pct", "draw_high_win_pct",
+            "draw_bias_score", "course_month_bias",
+            "sire_runners", "sire_win_pct", "sire_win_pct_surface",
+            "sire_win_pct_distance", "sire_avg_finish",
         ]
         return {k: np.nan for k in keys}
 
@@ -560,6 +568,265 @@ class FeatureBuilder:
             return null_feats
 
     # ------------------------------------------------------------------
+    # Feature Computation — Weather Interactions (Sprint 7.2)
+    # ------------------------------------------------------------------
+
+    def _weather_interaction_features(
+        self, row: pd.Series, history_df: pd.DataFrame
+    ) -> dict:
+        """
+        Compute weather × surface × distance interaction features.
+        Some horses are 'heavy track specialists' — this captures that.
+        """
+        features = {}
+        weather = row.get("weather")
+        going = row.get("going")
+        surface = row.get("surface")
+        distance = row.get("distance") or 0
+        horse_id = row.get("horse_id")
+        race_date = str(row.get("date", ""))
+
+        # Encode weather
+        features["weather_code"] = WEATHER_MAP.get(weather, np.nan)
+
+        # Interaction: going × surface (dirt handles rain differently)
+        going_code = GOING_MAP.get(going, np.nan)
+        surface_code = SURFACE_MAP.get(surface, np.nan)
+        features["going_x_surface"] = (
+            going_code * surface_code
+            if not (np.isnan(going_code) if isinstance(going_code, float) else False)
+            and not (np.isnan(surface_code) if isinstance(surface_code, float) else False)
+            else np.nan
+        )
+
+        # Interaction: going × distance (heavy going hurts more in long races)
+        features["going_x_distance"] = (
+            going_code * (distance / 1000.0)
+            if not (np.isnan(going_code) if isinstance(going_code, float) else False)
+            and distance > 0
+            else np.nan
+        )
+
+        # Horse-specific going performance from history
+        hist = history_df[
+            (history_df["horse_id"] == horse_id)
+            & (history_df["date"] < race_date)
+        ] if horse_id is not None else pd.DataFrame()
+
+        if not hist.empty and "going" in hist.columns:
+            # Win% on current going type
+            going_hist = hist[hist["going"] == going]
+            features["horse_going_win_pct"] = (
+                (going_hist["finish_pos"] == 1).mean()
+                if len(going_hist) > 0 else np.nan
+            )
+
+            # Wet track advantage: win% on heavy/bad − win% on good
+            good = hist[hist["going"] == "良"]
+            wet = hist[hist["going"].isin(["重", "不良", "稍重"])]
+            good_wr = (good["finish_pos"] == 1).mean() if len(good) >= 2 else np.nan
+            wet_wr = (wet["finish_pos"] == 1).mean() if len(wet) >= 2 else np.nan
+            features["horse_wet_track_advantage"] = (
+                wet_wr - good_wr
+                if not np.isnan(wet_wr) and not np.isnan(good_wr)
+                else np.nan
+            )
+        else:
+            features["horse_going_win_pct"] = np.nan
+            features["horse_wet_track_advantage"] = np.nan
+
+        return features
+
+    # ------------------------------------------------------------------
+    # Feature Computation — Track Bias (Sprint 7.3)
+    # ------------------------------------------------------------------
+
+    def _track_bias_features(
+        self, row: pd.Series, history_df: pd.DataFrame
+    ) -> dict:
+        """
+        Compute draw/track bias features from historical results.
+        Inside/outside draw advantage varies by course and month.
+        """
+        features = {}
+        course_id = row.get("course_id")
+        draw = row.get("draw")
+        race_date = str(row.get("date", ""))
+        race_month = None
+        try:
+            race_month = int(race_date[5:7]) if len(race_date) >= 7 else None
+        except (ValueError, TypeError):
+            pass
+
+        if course_id is None or "course_id" not in history_df.columns:
+            features["draw_bias_at_course"] = np.nan
+            features["draw_low_win_pct"] = np.nan
+            features["draw_high_win_pct"] = np.nan
+            features["draw_bias_score"] = np.nan
+            features["course_month_bias"] = np.nan
+            return features
+
+        # Historical data at this course BEFORE this race
+        course_hist = history_df[
+            (history_df["course_id"] == course_id)
+            & (history_df["date"] < race_date)
+        ]
+
+        if course_hist.empty or "draw" not in course_hist.columns:
+            features["draw_bias_at_course"] = np.nan
+            features["draw_low_win_pct"] = np.nan
+            features["draw_high_win_pct"] = np.nan
+            features["draw_bias_score"] = np.nan
+            features["course_month_bias"] = np.nan
+            return features
+
+        # Avg finish position for this draw at this course
+        if draw is not None:
+            draw_hist = course_hist[course_hist["draw"] == draw]
+            features["draw_bias_at_course"] = (
+                draw_hist["finish_pos"].mean() if len(draw_hist) >= 3 else np.nan
+            )
+        else:
+            features["draw_bias_at_course"] = np.nan
+
+        # Inner draws (1-4) vs outer draws (9+) win rates
+        inner = course_hist[course_hist["draw"].between(1, 4)]
+        outer = course_hist[course_hist["draw"] >= 9]
+        inner_wr = (inner["finish_pos"] == 1).mean() if len(inner) >= 10 else np.nan
+        outer_wr = (outer["finish_pos"] == 1).mean() if len(outer) >= 10 else np.nan
+        features["draw_low_win_pct"] = inner_wr
+        features["draw_high_win_pct"] = outer_wr
+
+        # Bias score: positive means horse's draw is advantaged
+        if draw is not None and not np.isnan(inner_wr) and not np.isnan(outer_wr):
+            if draw <= 4:
+                features["draw_bias_score"] = inner_wr - outer_wr
+            elif draw >= 9:
+                features["draw_bias_score"] = outer_wr - inner_wr
+            else:
+                features["draw_bias_score"] = 0.0  # middle draws
+        else:
+            features["draw_bias_score"] = np.nan
+
+        # Seasonal bias: avg finish for this draw in this calendar month
+        if draw is not None and race_month is not None:
+            month_draw_hist = course_hist[
+                (course_hist["draw"] == draw)
+            ]
+            # Extract month from date strings
+            if not month_draw_hist.empty:
+                try:
+                    months = month_draw_hist["date"].str[5:7].astype(int)
+                    same_month = month_draw_hist[months == race_month]
+                    features["course_month_bias"] = (
+                        same_month["finish_pos"].mean()
+                        if len(same_month) >= 3 else np.nan
+                    )
+                except Exception:
+                    features["course_month_bias"] = np.nan
+            else:
+                features["course_month_bias"] = np.nan
+        else:
+            features["course_month_bias"] = np.nan
+
+        return features
+
+    # ------------------------------------------------------------------
+    # Feature Computation — Pedigree (Sprint 7.4)
+    # ------------------------------------------------------------------
+
+    def _pedigree_features(
+        self, horse_id: int, race_date: str, distance: int,
+        surface: str, history_df: pd.DataFrame
+    ) -> dict:
+        """
+        Compute sire-based pedigree features.
+        Uses sire_name matching against historical results to find
+        sibling performance patterns.
+        """
+        null_feats = {
+            "sire_runners": np.nan,
+            "sire_win_pct": np.nan,
+            "sire_win_pct_surface": np.nan,
+            "sire_win_pct_distance": np.nan,
+            "sire_avg_finish": np.nan,
+        }
+
+        # Look up sire name for this horse from DB
+        sire_name = self._get_sire_name(horse_id)
+        if not sire_name:
+            return null_feats
+
+        # Find all offspring of the same sire in history
+        sibling_ids = self._get_sire_offspring(sire_name, horse_id)
+        if not sibling_ids:
+            return null_feats
+
+        # Filter history to siblings only, before current race
+        sib_hist = history_df[
+            (history_df["horse_id"].isin(sibling_ids))
+            & (history_df["date"] < race_date)
+        ]
+
+        if sib_hist.empty:
+            return null_feats
+
+        features = {}
+        features["sire_runners"] = len(sib_hist)
+        features["sire_win_pct"] = (sib_hist["finish_pos"] == 1).mean()
+        features["sire_avg_finish"] = sib_hist["finish_pos"].mean()
+
+        # Sire × surface affinity
+        surf_hist = sib_hist[sib_hist["surface"] == surface]
+        features["sire_win_pct_surface"] = (
+            (surf_hist["finish_pos"] == 1).mean()
+            if len(surf_hist) >= 3 else np.nan
+        )
+
+        # Sire × distance affinity (±200m)
+        dist_hist = sib_hist[
+            (sib_hist["distance"] >= distance - 200)
+            & (sib_hist["distance"] <= distance + 200)
+        ]
+        features["sire_win_pct_distance"] = (
+            (dist_hist["finish_pos"] == 1).mean()
+            if len(dist_hist) >= 3 else np.nan
+        )
+
+        return features
+
+    def _get_sire_name(self, horse_id: int) -> Optional[str]:
+        """Look up sire_name from DB cache."""
+        if not hasattr(self, "_sire_cache"):
+            self._sire_cache = {}
+            try:
+                with get_session() as session:
+                    rows = session.execute(
+                        text("SELECT id, sire_name FROM horses WHERE sire_name IS NOT NULL")
+                    ).fetchall()
+                    self._sire_cache = {r[0]: r[1] for r in rows}
+            except Exception:
+                pass
+        return self._sire_cache.get(horse_id)
+
+    def _get_sire_offspring(self, sire_name: str, exclude_horse_id: int) -> list[int]:
+        """Find all horse IDs that share the same sire_name."""
+        if not hasattr(self, "_offspring_cache"):
+            self._offspring_cache = {}
+            try:
+                with get_session() as session:
+                    rows = session.execute(
+                        text("SELECT id, sire_name FROM horses WHERE sire_name IS NOT NULL")
+                    ).fetchall()
+                    for hid, sname in rows:
+                        self._offspring_cache.setdefault(sname, []).append(hid)
+            except Exception:
+                pass
+
+        offspring = self._offspring_cache.get(sire_name, [])
+        return [h for h in offspring if h != exclude_horse_id]
+
+    # ------------------------------------------------------------------
     # Feature Computation — Race-Level (Static)
     # ------------------------------------------------------------------
 
@@ -703,6 +970,33 @@ class FeatureBuilder:
                 history_df=history_df,
             )
             features.update(pace_feats)
+
+            # Weather interaction features (Sprint 7.2)
+            features.update(
+                self._weather_interaction_features(
+                    row=row,
+                    history_df=history_df,
+                )
+            )
+
+            # Track bias features (Sprint 7.3)
+            features.update(
+                self._track_bias_features(
+                    row=row,
+                    history_df=history_df,
+                )
+            )
+
+            # Pedigree features (Sprint 7.4)
+            features.update(
+                self._pedigree_features(
+                    horse_id=row["horse_id"],
+                    race_date=str(row["date"]),
+                    distance=row["distance"] or 0,
+                    surface=row["surface"] or "",
+                    history_df=history_df,
+                )
+            )
 
             feature_rows.append(features)
 

@@ -105,15 +105,17 @@ python -m models.backtest_trio --budget 5000 --top-n 10
 
 ---
 
-## Sprint 7 — Advanced Features & Real Deployment (ongoing)
+## Sprint 7 — Advanced Features ✅ (7.2–7.4 done, 7.1 & 7.5 ongoing)
 
-| # | Action | Detail |
-|---|--------|--------|
-| 7.1 | **Expand to 2019–2021** | 5+ year training window for 3,000+ races |
-| 7.2 | **Weather interaction features** | Surface × weather × distance interactions |
-| 7.3 | **Track bias features** | Inside/outside draw advantage per track per month |
-| 7.4 | **Pedigree features** | Sire × surface/distance success rates |
-| 7.5 | **Real-money deployment** | After 4+ profitable paper trading weekends, start with minimum ¥100 stakes |
+| # | Action | Detail | Status |
+|---|--------|--------|--------|
+| 7.1 | **Expand to 2019–2021** | 5+ year training window for 3,000+ races | 🔲 |
+| 7.2 | **Weather interaction features** | `weather_code`, `going_x_surface`, `going_x_distance`, `horse_going_win_pct`, `horse_wet_track_advantage` | ✅ |
+| 7.3 | **Track bias features** | `draw_bias_at_course`, `draw_low/high_win_pct`, `draw_bias_score`, `course_month_bias` | ✅ |
+| 7.4 | **Pedigree features** | `sire_runners`, `sire_win_pct`, `sire_win_pct_surface/distance`, `sire_avg_finish` + backfill script | ✅ |
+| 7.5 | **Real-money deployment** | After 4+ profitable paper trading weekends, start with minimum ¥100 stakes | 🔲 |
+
+**Sprint 7 adds 15 new features → model now uses ~148 features total.**
 
 ---
 

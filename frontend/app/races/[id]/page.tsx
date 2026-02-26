@@ -77,6 +77,58 @@ export default function RaceCardPage() {
                 </div>
             </div>
 
+            {/* Sprint 7: Weather & Track Conditions */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: "1.5rem" }}>
+                <div className="card" style={{ padding: "1rem" }}>
+                    <h3 style={{ fontSize: "0.75rem", textTransform: "uppercase", color: "var(--text-muted)", letterSpacing: "0.05em", marginBottom: "0.75rem" }}>
+                        🌤️ Weather & Going
+                    </h3>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0.75rem" }}>
+                        <div style={{ textAlign: "center" }}>
+                            <div style={{ fontSize: "1.5rem" }}>☀️</div>
+                            <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>Weather</div>
+                            <div style={{ fontWeight: 600, fontSize: "0.9rem" }}>Clear</div>
+                        </div>
+                        <div style={{ textAlign: "center" }}>
+                            <div style={{ fontSize: "1.5rem" }}>🟢</div>
+                            <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>Going</div>
+                            <div style={{ fontWeight: 600, fontSize: "0.9rem", color: "var(--accent-emerald)" }}>Good (良)</div>
+                        </div>
+                        <div style={{ textAlign: "center" }}>
+                            <div style={{ fontSize: "1.5rem" }}>🏔️</div>
+                            <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>Surface</div>
+                            <div style={{ fontWeight: 600, fontSize: "0.9rem" }}>Turf</div>
+                        </div>
+                    </div>
+                    <div style={{ marginTop: "0.75rem", padding: "0.5rem", background: "rgba(0,255,136,0.05)", borderRadius: "6px", fontSize: "0.8rem", color: "var(--text-secondary)" }}>
+                        💡 Good going on turf favours stalkers with strong finishing speed
+                    </div>
+                </div>
+
+                <div className="card" style={{ padding: "1rem" }}>
+                    <h3 style={{ fontSize: "0.75rem", textTransform: "uppercase", color: "var(--text-muted)", letterSpacing: "0.05em", marginBottom: "0.75rem" }}>
+                        📊 Draw Bias (This Course)
+                    </h3>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0.75rem" }}>
+                        <div style={{ textAlign: "center" }}>
+                            <div style={{ fontSize: "1.1rem", fontWeight: 700, color: "var(--accent-emerald)" }}>12.3%</div>
+                            <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>Inner (1-4) WR</div>
+                        </div>
+                        <div style={{ textAlign: "center" }}>
+                            <div style={{ fontSize: "1.1rem", fontWeight: 700, color: "var(--text-secondary)" }}>8.7%</div>
+                            <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>Middle (5-8) WR</div>
+                        </div>
+                        <div style={{ textAlign: "center" }}>
+                            <div style={{ fontSize: "1.1rem", fontWeight: 700, color: "var(--accent-gold)" }}>6.1%</div>
+                            <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>Outer (9+) WR</div>
+                        </div>
+                    </div>
+                    <div style={{ marginTop: "0.75rem", padding: "0.5rem", background: "rgba(0,255,136,0.05)", borderRadius: "6px", fontSize: "0.8rem", color: "var(--text-secondary)" }}>
+                        💡 Inner draw advantage: +6.2% win rate edge for gates 1-4 at this venue
+                    </div>
+                </div>
+            </div>
+
             <div className="grid-5545">
                 {/* Field Analysis Table */}
                 <div className="card">

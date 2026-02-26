@@ -226,7 +226,8 @@ def main():
 
     # Build predictions from feature pipeline
     from models.features import FeatureBuilder
-    from models.train import prepare_data, train_lgb, train_xgb, ensemble_predict
+    from models.train import prepare_data, train_lightgbm, train_xgboost, ensemble_predict
+    import xgboost as xgb
 
     log.info("Building features...")
     fb = FeatureBuilder()
@@ -235,16 +236,23 @@ def main():
         print("No data — run scraper first")
         return
 
-    feature_cols = FeatureBuilder.get_feature_columns(df)
-    X_train, X_val, y_train, y_val, feature_cols = prepare_data(df, feature_cols)
+    log.info("Preparing data...")
+    X_train, y_train, X_val, y_val, feature_cols, _ = prepare_data(
+        df, target="target_win", val_date="2025-01-01"
+    )
 
     log.info("Training models...")
-    lgb_model = train_lgb(X_train, y_train, X_val, y_val, feature_cols)
-    xgb_model = train_xgb(X_train, y_train, X_val, y_val, feature_cols)
+    lgb_model, lgb_preds = train_lightgbm(X_train, y_train, X_val, y_val, feature_cols)
+    xgb_model, xgb_preds = train_xgboost(X_train, y_train, X_val, y_val, feature_cols)
 
     # Predict on validation set
-    preds = ensemble_predict(lgb_model, xgb_model, X_val, feature_cols)
-    val_df = df.loc[X_val.index].copy()
+    lgb_val_preds = lgb_model.predict(X_val)
+    xgb_val_preds = xgb_model.predict(xgb.DMatrix(X_val, feature_names=feature_cols))
+    preds = ensemble_predict(lgb_val_preds, xgb_val_preds)
+
+    # Build validation dataframe with predictions
+    val_mask = df["date"] >= "2025-01-01"
+    val_df = df[val_mask].copy()
     val_df["win_prob"] = preds
 
     result = run_trio_backtest(

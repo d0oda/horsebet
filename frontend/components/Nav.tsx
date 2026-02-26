@@ -4,41 +4,42 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const links = [
-    { href: "/", label: "Dashboard" },
-    { href: "/backtest", label: "Backtest" },
-    { href: "/bankroll", label: "Bankroll" },
-    { href: "/settings", label: "Settings" },
+  { href: "/", label: "Dashboard" },
+  { href: "/backtest", label: "Backtest" },
+  { href: "/bankroll", label: "Bankroll" },
+  { href: "/insights", label: "Insights" },
+  { href: "/settings", label: "Settings" },
 ];
 
 export default function Nav() {
-    const pathname = usePathname();
+  const pathname = usePathname();
 
-    return (
-        <nav className="nav-bar">
-            <div className="nav-inner">
-                <Link href="/" className="nav-logo">
-                    <span className="logo-icon">⚡</span>
-                    <span className="logo-text">UmaEdge</span>
-                </Link>
+  return (
+    <nav className="nav-bar">
+      <div className="nav-inner">
+        <Link href="/" className="nav-logo">
+          <span className="logo-icon">⚡</span>
+          <span className="logo-text">UmaEdge</span>
+        </Link>
 
-                <div className="nav-links">
-                    {links.map((link) => (
-                        <Link
-                            key={link.href}
-                            href={link.href}
-                            className={`nav-link ${pathname === link.href ? "active" : ""}`}
-                        >
-                            {link.label}
-                        </Link>
-                    ))}
-                </div>
+        <div className="nav-links">
+          {links.map((link) => (
+            <Link
+              key={link.href}
+              href={link.href}
+              className={`nav-link ${pathname === link.href ? "active" : ""}`}
+            >
+              {link.label}
+            </Link>
+          ))}
+        </div>
 
-                <div className="nav-right">
-                    <div className="nav-avatar">R</div>
-                </div>
-            </div>
+        <div className="nav-right">
+          <div className="nav-avatar">R</div>
+        </div>
+      </div>
 
-            <style jsx>{`
+      <style jsx>{`
         .nav-bar {
           background: rgba(10, 13, 20, 0.85);
           backdrop-filter: blur(16px);
@@ -111,6 +112,6 @@ export default function Nav() {
           color: #0a0d14;
         }
       `}</style>
-        </nav>
-    );
+    </nav>
+  );
 }
