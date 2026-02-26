@@ -64,7 +64,11 @@ def step_verify_data() -> dict:
     print(f"  {'Year':<6} {'Races':>6}  {'Target':>7}  {'Status':>6}")
     print("  " + "-" * 32)
 
-    targets = {2022: 500, 2023: 500, 2024: 500, 2025: 100}
+    targets = {
+        2019: 500, 2020: 500, 2021: 500,
+        2022: 500, 2023: 500, 2024: 500, 2025: 100,
+    }
+    total_target = sum(targets.values())  # 3100
 
     for year, races in rows:
         counts[int(year)] = races
@@ -74,7 +78,7 @@ def step_verify_data() -> dict:
         print(f"  {int(year):<6} {races:>6}  {target:>7}  {status:>6}")
 
     print("  " + "-" * 32)
-    print(f"  {'Total':<6} {total:>6}  {'1600':>7}  {'✅' if total >= 1600 else '⚠️':>6}")
+    print(f"  {'Total':<6} {total:>6}  {total_target:>7}  {'✅' if total >= total_target else '⚠️':>6}")
 
     return counts
 

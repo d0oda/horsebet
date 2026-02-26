@@ -1,0 +1,34 @@
+# ==========================================
+# UmaEdge — Render Blueprint
+# ==========================================
+# Deploy: https://render.com/docs/blueprint-spec
+
+services:
+  - type: web
+    name: umaedge-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: PORT
+        value: "8000"
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: GOOGLE_API_KEY
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+      - key: LINE_CHANNEL_TOKEN
+        sync: false
+      - key: LINE_USER_ID
+        sync: false
+      - key: CORS_ORIGINS
+        value: "https://umaedge.vercel.app"
+    healthCheckPath: /api/health
+    plan: starter
+    region: singapore

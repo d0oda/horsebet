@@ -129,6 +129,22 @@ class PaperTrader:
 
         self._save_trades()
         log.info(f"📝 Placed {len(bets)} paper bets for race {race_id}")
+
+        # Notify
+        try:
+            from notifications.dispatcher import notify_bet_placed
+            for bet in bets:
+                notify_bet_placed({
+                    "horse_name": bet.horse_name,
+                    "model_prob": bet.model_prob,
+                    "odds": bet.odds,
+                    "ev": bet.ev,
+                    "stake": bet.hypothetical_stake,
+                    "live": False,
+                })
+        except Exception:
+            pass  # notifications are best-effort
+
         return bets
 
     def reconcile(self) -> dict:
@@ -184,6 +200,14 @@ class PaperTrader:
         }
 
         log.info(f"✅ Reconciled {reconciled} trades")
+
+        # Notify
+        try:
+            from notifications.dispatcher import notify_reconciliation
+            notify_reconciliation(summary)
+        except Exception:
+            pass  # notifications are best-effort
+
         return summary
 
     def print_summary(self):

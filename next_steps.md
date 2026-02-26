@@ -1,131 +1,97 @@
-# UmaEdge — Next Steps (Post-Sprint 4)
+# UmaEdge — Next Steps
 
-> Updated 2025-02-25 after completing Sprints 1–4.
-
----
-
-## Completed Sprints
-
-### Sprint 1 — Data & Features ✅
-- Multi-year scraping (`--years` flag)
-- NaN odds fix + robust parsing
-- Rolling jockey/trainer features (5/10-race windows, ROI)
-- Pace simulation integration (pace_win_prob ranked 7th in importance)
-
-### Sprint 2 — Model Architecture ✅
-- Odds-free model (`--exclude-odds`)
-- Hybrid ensemble with divergence detector
-- Isotonic calibration
-- Walk-forward CV (4-fold expanding window)
-
-### Sprint 3 — Backtest & Strategy Tuning ✅
-- Default EV threshold raised 5% → 10%
-- `--ev-sweep` flag for multi-threshold comparison
-- `analyse_bets.py` — losing bet failure mode analysis
-- `backtest_trio.py` — trio (三連複) exotic backtest
-
-### Sprint 4 — Productionise ✅
-- `retrain.py` — weekly retrain pipeline (cron-ready)
-- `drift.py` — model drift tracker (JSON logs)
-- `paper_trade.py` — paper trading with reconciliation
-- Odds movement features (slope, late money, volatility)
+> Based on evaluation results from 2026-02-26.  
+> Model: AUC 0.8476 | ROI +23.6% at 5% EV | 1,881 races
 
 ---
 
-## Current Model Performance
+## Immediate (This Week)
 
-**381 races (2022–2025), AUC = 0.8245, 133 features**
-
-| EV Threshold | Bets | Hit Rate | ROI | Sharpe |
-|:---:|:---:|:---:|:---:|:---:|
-| 5% | 17 | 17.6% | -37.5% | -11.38 |
-| 8% | 6 | 16.7% | -46.2% | -86.94 |
-| 10% | 4 | 25.0% | -33.2% | -10.93 |
-| **12%** | **2** | **50.0%** | **+15.9%** | **0.96** |
-| **15%** | **2** | **50.0%** | **+15.9%** | **0.96** |
-
-**Key finding:** EV threshold ≥12% produces positive ROI. Lower thresholds let marginal bets through that are negative after JRA's ~25% take.
-
----
-
-## Sprint 5 — Scale Training Data (1–2 days)
-
-| # | Action | Detail | Success Metric |
-|---|--------|--------|----------------|
-| 5.1 | **Scrape 500+ races per year** | Expand 2022–2024 from 50 to 500 each. Target ≥ 1,500 training races. | ≥ 1,500 training races |
-| 5.2 | **Re-run EV sweep with expanded data** | More data should improve calibration and reduce variance. | ROI positive at 10% threshold |
-| 5.3 | **Run odds-free backtest** | Test H2: fundamental model finds alpha independently of market. | Odds-free AUC ≥ 0.72 |
-| 5.4 | **Analyse losing bets at 5% threshold** | Use `analyse_bets.py` to categorise 14 losers by failure mode. | Failure mode breakdown documented |
-| 5.5 | **Test trio exotic market** | Run `backtest_trio.py` to check if exotic pools offer better ROI. | Trio ROI > win ROI |
-
-### Immediate Commands
-
+### 1. Paper Trade at 5% EV Threshold
+The model is profitable. Start accumulating the required 4 profitable weekends.
 ```bash
-# Scrape more training data (500 per year)
-python -m scraper.batch_scrape --years 2022,2023,2024 --max-races 500
+# Place paper bets on upcoming race weekend
+python -m models.run_sprint6 --paper-trade <RACE_IDS> --ev-threshold 0.05
 
-# Re-run EV sweep with larger dataset
-python -m models.test_2025 --ev-sweep --calibration isotonic
+# After results come in, reconcile
+python -m models.run_sprint6 --reconcile
 
-# Odds-free evaluation
-python -m models.test_2025 --exclude-odds --ev-sweep --calibration isotonic
+# Check progress
+python -m models.run_sprint6 --summary
+```
 
-# Analyse losing bets
-python -c "
-from models.test_2025 import run_2025_evaluation
-from models.analyse_bets import analyse_losing_bets
-result = run_2025_evaluation(ev_threshold=0.05)
-analyse_losing_bets(result)
-"
+### 2. Install Automated Cron Jobs
+```bash
+./scripts/setup_cron.sh --install
+```
+This sets up weekly retrain + drift monitoring.
 
-# Trio exotic backtest
-python -m models.backtest_trio --budget 5000 --top-n 10
+---
+
+## Short-Term (Next 2–4 Weeks)
+
+### 3. Scrape 2019–2021 Data
+The evaluation shows 1,881 races (target: 3,100). More data should improve model robustness, especially for the "no_edge" failure mode.
+```bash
+./scripts/expand_data.sh --retrain
+```
+
+### 4. Fix the "No Edge" Failure Mode
+73% of losing bets had `model_prob ≈ market_prob` — the model overestimates winners by ~8pp. Potential fixes:
+
+- **Sharper EV filter**: Raise minimum EV from 5% → 8% (reduces bets from 18→8 but ROI improves 23.6%→28.4%)
+- **Add features**: Race class changes, trainer form last 14 days, course-specific jockey stats
+- **Calibration tuning**: Current isotonic calibration slightly worsens LogLoss (0.2174→0.2270) — try Platt scaling or reduce calibration aggression
+- **Min-odds filter**: Add a `min_odds ≥ 2.5` filter to avoid tight-margin bets
+
+### 5. Set Up Notifications
+```bash
+# Add to .env:
+TELEGRAM_BOT_TOKEN=<your_token>
+TELEGRAM_CHAT_ID=<your_chat_id>
+
+# Test:
+curl -X POST http://localhost:8000/api/notifications/test
 ```
 
 ---
 
-## Sprint 6 — Paper Trading Validation (2–4 weeks)
+## Medium-Term (After 4 Profitable Paper Weekends)
 
-| # | Action | Detail |
-|---|--------|--------|
-| 6.1 | **Start paper trading** | Run 4 weekends of live paper trading at 12% EV threshold. |
-| 6.2 | **Set up weekly cron** | Automate retrain every Monday: `python -m models.retrain` |
-| 6.3 | **Collect odds snapshots** | Run `odds_watcher.py` on upcoming races to build time-series data. Once collected, `odds_slope` and `odds_late_money` features activate. |
-| 6.4 | **Monitor drift** | Check `python -m models.drift` weekly for AUC/log-loss degradation. |
-
-### Cron Setup
-
+### 6. Go Live with ¥100 Stakes
 ```bash
-# Weekly retrain — Mondays at 6am
-0 6 * * 1 cd /path/to/horsebet && .venv/bin/python -m models.retrain --calibration isotonic
+# Check guardrails first
+python -m models.live_trade --check
 
-# Drift check — Wednesdays at 9am
-0 9 * * 3 cd /path/to/horsebet && .venv/bin/python -m models.drift
+# Place real bets (¥100/bet, requires --confirm)
+python -m models.run_sprint6 --live <RACE_IDS> --confirm
+
+# Monitor
+python -m models.run_sprint6 --live-summary
 ```
 
+### 7. Deploy to Production
+```bash
+./scripts/deploy.sh --all
+```
+- Frontend → Vercel
+- API → Render (or Railway)
+
+### 8. Scale Up Stakes
+After 4+ profitable live weekends at ¥100, consider:
+- Increase to ¥200–500 (stay under ¥500 max guardrail)
+- Adopt quarter-Kelly sizing (already implemented in `live_trade.py`)
+- Adjust `MAX_DAILY_LOSS` based on bankroll growth
+
 ---
 
-## Sprint 7 — Advanced Features ✅ (7.2–7.4 done, 7.1 & 7.5 ongoing)
+## Research Backlog
 
-| # | Action | Detail | Status |
-|---|--------|--------|--------|
-| 7.1 | **Expand to 2019–2021** | 5+ year training window for 3,000+ races | 🔲 |
-| 7.2 | **Weather interaction features** | `weather_code`, `going_x_surface`, `going_x_distance`, `horse_going_win_pct`, `horse_wet_track_advantage` | ✅ |
-| 7.3 | **Track bias features** | `draw_bias_at_course`, `draw_low/high_win_pct`, `draw_bias_score`, `course_month_bias` | ✅ |
-| 7.4 | **Pedigree features** | `sire_runners`, `sire_win_pct`, `sire_win_pct_surface/distance`, `sire_avg_finish` + backfill script | ✅ |
-| 7.5 | **Real-money deployment** | After 4+ profitable paper trading weekends, start with minimum ¥100 stakes | 🔲 |
-
-**Sprint 7 adds 15 new features → model now uses ~148 features total.**
-
----
-
-## Hypothesis Status
-
-| # | Hypothesis | Status | Result |
-|---|-----------|--------|--------|
-| H1 | Odds-free model AUC ≥ 0.72 | ✅ Sprint 2 | AUC = 0.8245 (with odds); needs odds-free test |
-| H2 | Fundamental disagreement finds +EV bets | 🔲 Sprint 5.3 | Pending odds-free backtest |
-| H3 | Pace simulation adds unique signal | ✅ Sprint 1 | **pace_win_prob_z ranked 7th** in importance |
-| H4 | Exotic markets offer better ROI | 🔲 Sprint 5.5 | Pending trio backtest |
-| H5 | More data reduces calibration error | 🔲 Sprint 5.1 | Pending 500+/year scrape |
-| H6 | EV threshold ≥12% is profitable | ✅ Sprint 3 | **+15.9% ROI confirmed** |
+| Priority | Idea | Expected Impact |
+|----------|------|-----------------|
+| 🔴 High | Add race class change features | Reduce no_edge failures |
+| 🔴 High | Trainer last-14-day form | Better short-term signals |
+| 🟡 Med | Course × jockey interaction | Exploit specialist jockeys |
+| 🟡 Med | Place/show betting (2nd/3rd) | 27% of losses finished 2nd/3rd |
+| 🟢 Low | Weather × track surface interaction | Already in features, refine |
+| 🟢 Low | Real-time odds streaming | Better entry timing |

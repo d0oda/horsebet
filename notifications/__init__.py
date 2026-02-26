@@ -1,0 +1,1 @@
+"""UmaEdge — Notifications package."""

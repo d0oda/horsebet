@@ -144,6 +144,60 @@ def do_summary():
 
 
 # ---------------------------------------------------------------------------
+# 7.5 — Live Trading
+# ---------------------------------------------------------------------------
+
+def do_live_trade(
+    race_ids: list[str],
+    ev_threshold: float = 0.12,
+    flat_stake: int = 100,
+    confirm: bool = False,
+):
+    """Place REAL bets on the given races."""
+    banner("Sprint 7.5 — 🔴 LIVE Trading")
+
+    from models.live_trade import LiveTrader
+
+    trader = LiveTrader(stake=flat_stake, ev_threshold=ev_threshold)
+    total_bets = 0
+
+    for race_id in race_ids:
+        log.info(f"Processing race {race_id}...")
+        try:
+            rid = int(race_id) if race_id.isdigit() else race_id
+            bets = trader.place_live_bets(
+                race_id=rid,
+                confirm=confirm,
+            )
+            total_bets += len(bets)
+            log.info(f"  🔴 Placed {len(bets)} LIVE bets for race {race_id}")
+        except Exception as e:
+            log.error(f"  Failed for race {race_id}: {e}")
+
+    log.info(f"\n🔴 Total LIVE bets placed: {total_bets}")
+    trader.print_summary()
+
+
+def do_live_summary():
+    """Print live trading summary."""
+    banner("🔴 Live Trading Summary")
+
+    from models.live_trade import LiveTrader
+    trader = LiveTrader()
+    trader.print_summary()
+
+
+def do_live_reconcile():
+    """Reconcile pending live trades."""
+    banner("Sprint 7.5 — Reconcile Live Trades")
+
+    from models.live_trade import LiveTrader
+    trader = LiveTrader()
+    trader.reconcile()
+    trader.print_summary()
+
+
+# ---------------------------------------------------------------------------
 # Weekend Workflow
 # ---------------------------------------------------------------------------
 
@@ -204,6 +258,18 @@ def main():
         "--weekend", nargs="+", metavar="RACE_ID",
         help="Full weekend workflow: reconcile → retrain → paper-trade",
     )
+    mode.add_argument(
+        "--live", nargs="+", metavar="RACE_ID",
+        help="🔴 Place REAL bets (requires --confirm)",
+    )
+    mode.add_argument(
+        "--live-summary", action="store_true",
+        help="Print live trading summary",
+    )
+    mode.add_argument(
+        "--live-reconcile", action="store_true",
+        help="Reconcile pending live trades",
+    )
 
     # Options
     parser.add_argument(
@@ -222,6 +288,10 @@ def main():
     parser.add_argument(
         "--skip-scrape", action="store_true",
         help="Skip scraping in retrain step",
+    )
+    parser.add_argument(
+        "--confirm", action="store_true",
+        help="Confirm live trading (required for --live)",
     )
 
     args = parser.parse_args()
@@ -245,6 +315,17 @@ def main():
             flat_stake=args.flat_stake,
             calibration=args.calibration,
         )
+    elif args.live:
+        do_live_trade(
+            args.live,
+            ev_threshold=args.ev_threshold,
+            flat_stake=args.flat_stake,
+            confirm=args.confirm,
+        )
+    elif args.live_summary:
+        do_live_summary()
+    elif args.live_reconcile:
+        do_live_reconcile()
 
     elapsed = datetime.now() - start
     log.info(f"\nDone in {elapsed.total_seconds():.1f}s")

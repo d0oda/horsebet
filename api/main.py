@@ -35,9 +35,13 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 app = FastAPI(title="UmaEdge API", version="1.0.0")
 
+# CORS: read from env or fall back to localhost
+_cors_origins_str = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:3001")
+_cors_origins = [o.strip() for o in _cors_origins_str.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3001"],
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -370,6 +374,50 @@ def get_odds(race_id: int, bet_type: str = "win"):
     ).eq("bet_type", bet_type).order("captured_at").execute()
 
     return {"odds": res.data}
+
+
+# ===================================================================
+# 8. NOTIFICATIONS
+# ===================================================================
+
+@app.get("/api/notifications/status")
+def notification_status():
+    """Check which notification backends are configured."""
+    from notifications.dispatcher import get_status
+    return get_status()
+
+
+@app.post("/api/notifications/test")
+def test_notifications():
+    """Send a test message to all configured notification backends."""
+    from notifications.dispatcher import notify_message, get_status
+
+    status = get_status()
+    if not status["any_configured"]:
+        raise HTTPException(
+            400,
+            "No notification backends configured. "
+            "Set TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID or "
+            "LINE_CHANNEL_TOKEN + LINE_USER_ID in .env"
+        )
+
+    sent = notify_message("🏇 UmaEdge test notification — everything is working!")
+    return {"sent": sent, "backends": status}
+
+
+# ===================================================================
+# 9. LIVE TRADING STATUS
+# ===================================================================
+
+@app.get("/api/live/status")
+def live_trading_status():
+    """Current live trading status and guardrail checks."""
+    from models.live_trade import check_paper_track_record, check_daily_loss
+
+    return {
+        "paper_track_record": check_paper_track_record(),
+        "daily_loss": check_daily_loss(),
+    }
 
 
 # ===================================================================

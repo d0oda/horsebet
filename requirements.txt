@@ -27,6 +27,7 @@ shap>=0.43
 # --- API Server ---
 fastapi>=0.104
 uvicorn>=0.24
+gunicorn>=21.0
 pydantic>=2.5
 
 # --- LLM / Agent ---
