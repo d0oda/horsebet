@@ -16,6 +16,8 @@ import argparse
 import logging
 import os
 import re
+import signal
+import sys
 import time
 from datetime import datetime
 from typing import Optional
@@ -172,18 +174,66 @@ def watch_race(race_id: str, interval_secs: int = 300, max_snapshots: int = 100)
     log.info(f"✅ Finished watching race {race_id}")
 
 
+def stream_odds(race_ids: list[str], interval_secs: int = 60):
+    """
+    Continuously stream odds for multiple races until interrupted (SIGINT).
+    Polls each race at the given interval for better odds_slope / odds_late_money features.
+
+    Args:
+        race_ids: List of netkeiba race IDs (12-digit)
+        interval_secs: Seconds between poll cycles (default 60)
+    """
+    running = True
+
+    def _handle_sigint(sig, frame):
+        nonlocal running
+        log.info("\n⏹ Stopping odds streaming (SIGINT received)")
+        running = False
+
+    signal.signal(signal.SIGINT, _handle_sigint)
+
+    log.info(f"📡 Streaming odds for {len(race_ids)} race(s) every {interval_secs}s")
+    log.info(f"   Races: {', '.join(race_ids)}")
+    log.info(f"   Press Ctrl+C to stop.")
+
+    cycle = 0
+    while running:
+        cycle += 1
+        for rid in race_ids:
+            if not running:
+                break
+            odds = fetch_win_odds(rid)
+            if odds:
+                count = save_odds_snapshot(rid, odds)
+                fav = min(o["odds_value"] for o in odds)
+                log.info(f"  [cycle {cycle}] {rid}: {count} horses, fav={fav:.1f}x")
+            else:
+                log.warning(f"  [cycle {cycle}] {rid}: no odds data")
+
+        if running:
+            time.sleep(interval_secs)
+
+    log.info(f"✅ Streaming stopped after {cycle} cycle(s)")
+
+
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
 def main():
     parser = argparse.ArgumentParser(description="UmaEdge — Odds Snapshot Watcher")
-    parser.add_argument("--race", type=str, required=True, help="Race ID to watch (12-digit)")
+    parser.add_argument("--race", type=str, nargs="+", required=True, help="Race ID(s) to watch (12-digit)")
     parser.add_argument("--interval", type=int, default=300, help="Seconds between snapshots (default 300)")
     parser.add_argument("--max", type=int, default=100, help="Max snapshots before stopping")
+    parser.add_argument("--stream", action="store_true", help="Continuous streaming mode (runs until Ctrl+C)")
 
     args = parser.parse_args()
-    watch_race(args.race, args.interval, args.max)
+
+    if args.stream:
+        stream_odds(args.race, interval_secs=args.interval)
+    else:
+        for race_id in args.race:
+            watch_race(race_id, args.interval, args.max)
 
 
 if __name__ == "__main__":

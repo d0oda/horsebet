@@ -264,3 +264,78 @@ class TestEmptyFeatures:
         for key in sprint7_keys:
             assert key in empty, f"Missing key: {key}"
             assert np.isnan(empty[key]), f"Key {key} should be NaN"
+
+    def test_empty_features_has_research_backlog_keys(self, fb):
+        """_empty_horse_features should include Research Backlog feature keys."""
+        empty = fb._empty_horse_features()
+        research_keys = [
+            "class_change", "class_drops_last5", "class_rises_last5", "class_at_last_win",
+            "horse_heavy_speed_diff", "going_x_dist_x_surface",
+            "jockey_course_runs", "jockey_course_win_pct", "jockey_course_place_pct",
+        ]
+        for key in research_keys:
+            assert key in empty, f"Missing research backlog key: {key}"
+            assert np.isnan(empty[key]), f"Key {key} should be NaN"
+
+
+# ---------------------------------------------------------------------------
+# Weather Refinement (Research Backlog #5)
+# ---------------------------------------------------------------------------
+
+class TestWeatherRefinement:
+    def test_heavy_speed_diff_with_history(self, fb, history_df):
+        """Horse with wet/dry history should have speed diff."""
+        row = pd.Series({
+            "weather": "雨",
+            "going": "重",
+            "surface": "turf",
+            "distance": 2000,
+            "horse_id": 1,
+            "date": "2024-06-01",
+        })
+        feats = fb._weather_interaction_features(row, history_df)
+        assert "horse_heavy_speed_diff" in feats
+        # Horse 1 has 良 (good) and 稍重/重 (wet) races with time_secs
+        # May be NaN if insufficient wet/dry samples, but key should exist
+
+    def test_three_way_interaction(self, fb, history_df):
+        """going_x_dist_x_surface should be computed correctly."""
+        row = pd.Series({
+            "weather": "雨",
+            "going": "重",      # going_code = 2
+            "surface": "dirt",   # surface_code = 1
+            "distance": 1600,    # dist/1000 = 1.6
+            "horse_id": 1,
+            "date": "2024-06-01",
+        })
+        feats = fb._weather_interaction_features(row, history_df)
+        # 重(2) × 1.6 × dirt(1) = 3.2
+        assert feats["going_x_dist_x_surface"] == pytest.approx(3.2, rel=0.01)
+
+    def test_three_way_interaction_turf(self, fb, history_df):
+        """going_x_dist_x_surface with turf(0) should be 0."""
+        row = pd.Series({
+            "weather": "晴",
+            "going": "良",       # going_code = 0
+            "surface": "turf",   # surface_code = 0
+            "distance": 2000,
+            "horse_id": 1,
+            "date": "2024-06-01",
+        })
+        feats = fb._weather_interaction_features(row, history_df)
+        assert feats["going_x_dist_x_surface"] == pytest.approx(0.0)
+
+    def test_no_history_heavy_speed_diff(self, fb):
+        """No history should give NaN for horse_heavy_speed_diff."""
+        row = pd.Series({
+            "weather": "晴",
+            "going": "良",
+            "surface": "turf",
+            "distance": 2000,
+            "horse_id": 999,
+            "date": "2024-02-01",
+        })
+        feats = fb._weather_interaction_features(row, pd.DataFrame(columns=[
+            "horse_id", "date", "going", "finish_pos", "time_secs",
+        ]))
+        assert np.isnan(feats["horse_heavy_speed_diff"])

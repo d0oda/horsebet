@@ -271,6 +271,40 @@ class FeatureBuilder:
             else 10
         )
 
+        # --- Class change features (Research Backlog #1) ---
+        current_class_rank = CLASS_RANK.get(row.get("race_class") if hasattr(row, 'get') else None, 10) if 'row' in dir() else 10
+        class_ranks = hist["race_class"].map(CLASS_RANK).dropna()
+        if not class_ranks.empty:
+            last_class_rank = class_ranks.iloc[0]
+            current_rank = CLASS_RANK.get(
+                hist.iloc[0]["race_class"] if pd.notna(hist.iloc[0].get("race_class")) else None, 10
+            )
+            # Negative = dropped in class (easier race), positive = rising
+            features["class_change"] = current_rank - last_class_rank if len(class_ranks) >= 2 else 0
+            if len(class_ranks) >= 2:
+                diffs = class_ranks.diff(-1).dropna()  # sorted desc, so diff(-1) = newer - older
+                recent_diffs = diffs.head(5)
+                features["class_change"] = float(class_ranks.iloc[0] - class_ranks.iloc[1]) if len(class_ranks) >= 2 else 0.0
+                features["class_drops_last5"] = int((recent_diffs < 0).sum())  # dropped = lower rank number = stronger
+                features["class_rises_last5"] = int((recent_diffs > 0).sum())  # risen = higher rank number = weaker
+            else:
+                features["class_change"] = 0.0
+                features["class_drops_last5"] = 0
+                features["class_rises_last5"] = 0
+
+            # Class at most recent win
+            wins = hist[hist["finish_pos"] == 1]
+            if not wins.empty:
+                win_class = CLASS_RANK.get(wins.iloc[0]["race_class"], np.nan)
+                features["class_at_last_win"] = win_class
+            else:
+                features["class_at_last_win"] = np.nan
+        else:
+            features["class_change"] = np.nan
+            features["class_drops_last5"] = np.nan
+            features["class_rises_last5"] = np.nan
+            features["class_at_last_win"] = np.nan
+
         # --- Career stats ---
         features["career_runs"] = len(hist)
         features["career_wins"] = (hist["finish_pos"] == 1).sum()
@@ -312,13 +346,19 @@ class FeatureBuilder:
             "best_class_rank", "career_runs", "career_wins",
             "career_win_pct", "career_place_pct",
             "avg_first_corner", "weight_trend",
+            # Research backlog: class change
+            "class_change", "class_drops_last5", "class_rises_last5", "class_at_last_win",
             # Sprint 7 features
             "weather_code", "going_x_surface", "going_x_distance",
             "horse_going_win_pct", "horse_wet_track_advantage",
+            # Research backlog: weather refinement
+            "horse_heavy_speed_diff", "going_x_dist_x_surface",
             "draw_bias_at_course", "draw_low_win_pct", "draw_high_win_pct",
             "draw_bias_score", "course_month_bias",
             "sire_runners", "sire_win_pct", "sire_win_pct_surface",
             "sire_win_pct_distance", "sire_avg_finish",
+            # Research backlog: course × jockey
+            "jockey_course_runs", "jockey_course_win_pct", "jockey_course_place_pct",
         ]
         return {k: np.nan for k in keys}
 
@@ -378,6 +418,9 @@ class FeatureBuilder:
             "trainer_win_pct_10": np.nan,
             "trainer_place_pct_10": np.nan,
             "trainer_roi_10": np.nan,
+            "trainer_14d_runs": np.nan,
+            "trainer_14d_win_pct": np.nan,
+            "trainer_14d_place_pct": np.nan,
         }
 
         if trainer_id is None or "trainer_id" not in history_df.columns:
@@ -400,6 +443,56 @@ class FeatureBuilder:
         wins = recent[recent["finish_pos"] == 1]
         odds_payoff = wins["odds_win"].dropna().sum()
         features["trainer_roi_10"] = (odds_payoff / len(recent)) - 1.0
+
+        # --- Trainer last-14-day form (Research Backlog #2) ---
+        try:
+            cutoff = str(pd.to_datetime(race_date) - pd.Timedelta(days=14))
+            recent_14d = hist[hist["date"] >= cutoff]
+            features["trainer_14d_runs"] = len(recent_14d)
+            if len(recent_14d) > 0:
+                features["trainer_14d_win_pct"] = (recent_14d["finish_pos"] == 1).mean()
+                features["trainer_14d_place_pct"] = (recent_14d["finish_pos"] <= 3).mean()
+            else:
+                features["trainer_14d_win_pct"] = np.nan
+                features["trainer_14d_place_pct"] = np.nan
+        except Exception:
+            features["trainer_14d_runs"] = np.nan
+            features["trainer_14d_win_pct"] = np.nan
+            features["trainer_14d_place_pct"] = np.nan
+
+        return features
+
+    # ------------------------------------------------------------------
+    # Feature Computation — Course × Jockey Interaction (Research Backlog #3)
+    # ------------------------------------------------------------------
+
+    def _course_jockey_features(
+        self, jockey_id: Optional[int], course_id: Optional[int],
+        race_date: str, history_df: pd.DataFrame
+    ) -> dict:
+        """Compute course-specific jockey performance. Specialist jockeys dominate certain courses."""
+        null_feats = {
+            "jockey_course_runs": np.nan,
+            "jockey_course_win_pct": np.nan,
+            "jockey_course_place_pct": np.nan,
+        }
+
+        if jockey_id is None or course_id is None or "course_id" not in history_df.columns:
+            return null_feats
+
+        hist = history_df[
+            (history_df["jockey_id"] == jockey_id)
+            & (history_df["course_id"] == course_id)
+            & (history_df["date"] < race_date)
+        ]
+
+        if hist.empty:
+            return null_feats
+
+        features = {}
+        features["jockey_course_runs"] = len(hist)
+        features["jockey_course_win_pct"] = (hist["finish_pos"] == 1).mean()
+        features["jockey_course_place_pct"] = (hist["finish_pos"] <= 3).mean()
 
         return features
 
@@ -631,9 +724,28 @@ class FeatureBuilder:
                 if not np.isnan(wet_wr) and not np.isnan(good_wr)
                 else np.nan
             )
+
+            # --- Weather refinement (Research Backlog #5) ---
+            # Speed differential on heavy vs good ground
+            good_times = good["time_secs"].dropna()
+            wet_times = wet["time_secs"].dropna()
+            if len(good_times) >= 2 and len(wet_times) >= 2:
+                features["horse_heavy_speed_diff"] = wet_times.mean() - good_times.mean()
+            else:
+                features["horse_heavy_speed_diff"] = np.nan
         else:
             features["horse_going_win_pct"] = np.nan
             features["horse_wet_track_advantage"] = np.nan
+            features["horse_heavy_speed_diff"] = np.nan
+
+        # Three-way interaction: going × distance × surface
+        features["going_x_dist_x_surface"] = (
+            going_code * (distance / 1000.0) * surface_code
+            if not (np.isnan(going_code) if isinstance(going_code, float) else False)
+            and not (np.isnan(surface_code) if isinstance(surface_code, float) else False)
+            and distance > 0
+            else np.nan
+        )
 
         return features
 
@@ -994,6 +1106,16 @@ class FeatureBuilder:
                     race_date=str(row["date"]),
                     distance=row["distance"] or 0,
                     surface=row["surface"] or "",
+                    history_df=history_df,
+                )
+            )
+
+            # Course × jockey interaction (Research Backlog #3)
+            features.update(
+                self._course_jockey_features(
+                    jockey_id=row.get("jockey_id"),
+                    course_id=row.get("course_id"),
+                    race_date=str(row["date"]),
                     history_df=history_df,
                 )
             )

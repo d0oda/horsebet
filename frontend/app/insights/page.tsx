@@ -41,6 +41,19 @@ const SPRINT7_FEATURES = [
     { name: "sire_win_pct_surface", category: "Pedigree", desc: "Sire × surface affinity" },
     { name: "sire_win_pct_distance", category: "Pedigree", desc: "Sire × distance affinity" },
     { name: "sire_avg_finish", category: "Pedigree", desc: "Sire offspring avg finish" },
+    // Research Backlog features
+    { name: "class_change", category: "Class Change", desc: "Direction: dropped (−) or rising (+) in class" },
+    { name: "class_drops_last5", category: "Class Change", desc: "# of class drops in last 5 races" },
+    { name: "class_rises_last5", category: "Class Change", desc: "# of class rises in last 5 races" },
+    { name: "class_at_last_win", category: "Class Change", desc: "Class rank at most recent win" },
+    { name: "trainer_14d_runs", category: "Trainer Form", desc: "Trainer runners in last 14 days" },
+    { name: "trainer_14d_win_pct", category: "Trainer Form", desc: "Trainer 14-day win rate" },
+    { name: "trainer_14d_place_pct", category: "Trainer Form", desc: "Trainer 14-day place rate" },
+    { name: "jockey_course_runs", category: "Course×Jockey", desc: "Jockey rides at this specific course" },
+    { name: "jockey_course_win_pct", category: "Course×Jockey", desc: "Jockey win rate at this course" },
+    { name: "jockey_course_place_pct", category: "Course×Jockey", desc: "Jockey place rate at this course" },
+    { name: "horse_heavy_speed_diff", category: "Weather+", desc: "Speed delta: wet vs dry races" },
+    { name: "going_x_dist_x_surface", category: "Weather+", desc: "3-way: going × distance × surface" },
 ];
 
 const CATEGORY_COLORS: Record<string, string> = {
@@ -50,6 +63,10 @@ const CATEGORY_COLORS: Record<string, string> = {
     "Weather": "#4da6ff",
     "Track Bias": "#00ff88",
     "Pedigree": "#ffaa33",
+    "Class Change": "#ff88cc",
+    "Trainer Form": "#bb88ff",
+    "Course×Jockey": "#88ffdd",
+    "Weather+": "#66bbff",
 };
 
 /** Decision matrix from evaluation */

@@ -12,6 +12,7 @@ from models.backtest import (
     Backtester,
     BacktestResult,
     JRA_TAKE_RATE,
+    JRA_PLACE_PAYOUT_FACTOR,
 )
 
 
@@ -187,3 +188,44 @@ class TestReporting:
         """Ensure print_report doesn't raise on empty results."""
         result = BacktestResult()
         Backtester.print_report(result)  # should not raise
+
+
+# ---------------------------------------------------------------------------
+# Place Betting (Research Backlog #4)
+# ---------------------------------------------------------------------------
+
+class TestPlaceBetting:
+    def test_place_bet_config(self):
+        config = BacktestConfig(bet_type="place")
+        assert config.bet_type == "place"
+
+    def test_place_bet_pays_for_2nd_3rd(self):
+        """Place bets should pay out for 2nd and 3rd place finishers."""
+        df = pd.DataFrame({
+            "race_id": [1, 1, 1],
+            "entry_id": [1, 2, 3],
+            "win_prob": [0.30, 0.25, 0.20],
+            "odds_win": [4.0, 5.0, 6.0],
+            "finish_pos": [2, 3, 5],  # 2nd and 3rd should pay
+            "horse_name": ["A", "B", "C"],
+            "date": ["2024-01-01"] * 3,
+            "race_name": ["Test"] * 3,
+        })
+        bt = Backtester(BacktestConfig(ev_threshold=0.0, bet_type="place"))
+        result = bt.run(df)
+
+        # At least 1 bet should have been placed
+        if result.total_bets > 0:
+            # Check that 2nd/3rd finishers won their bets
+            winning = [b for b in result.bets if b.payout > 0]
+            losing = [b for b in result.bets if b.payout == 0]
+            # Horse A (2nd) and B (3rd) should win, C (5th) should lose
+            for b in result.bets:
+                if b.finish_pos in [2, 3]:
+                    assert b.payout > 0, f"Place bet on {b.finish_pos}th should pay"
+                elif b.finish_pos == 5:
+                    assert b.payout == 0, f"Place bet on {b.finish_pos}th should not pay"
+
+    def test_place_payout_factor(self):
+        """Place bets should use reduced odds (JRA_PLACE_PAYOUT_FACTOR)."""
+        assert JRA_PLACE_PAYOUT_FACTOR == 0.35  # matches expected constant

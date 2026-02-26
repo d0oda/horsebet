@@ -35,6 +35,7 @@ log = logging.getLogger("backtest")
 # ---------------------------------------------------------------------------
 
 JRA_TAKE_RATE = 0.25  # JRA takes ~25% of the pool
+JRA_PLACE_PAYOUT_FACTOR = 0.35  # Place pays ~35% of win odds on average
 
 
 @dataclass
@@ -142,6 +143,14 @@ class Backtester:
                 if not model_prob or model_prob <= 0:
                     continue
 
+                # --- Place bet adjustments (Research Backlog #4) ---
+                is_place = self.config.bet_type == "place"
+                if is_place:
+                    # Use place_prob if available, else estimate from win_prob
+                    model_prob = row.get("place_prob", model_prob * 2.5)
+                    model_prob = min(model_prob, 0.99)  # cap at 99%
+                    odds = odds * JRA_PLACE_PAYOUT_FACTOR  # approximate place odds
+
                 # Implied probability from market odds (after take)
                 market_prob = 1.0 / odds
 
@@ -163,7 +172,10 @@ class Backtester:
 
                 # Determine outcome
                 finish = row.get("finish_pos")
-                won = finish == 1 if finish is not None else False
+                if is_place:
+                    won = finish is not None and finish <= 3
+                else:
+                    won = finish == 1 if finish is not None else False
                 payout = int(stake * odds) if won else 0
                 profit = payout - stake
 
@@ -316,6 +328,7 @@ def run_full_backtest(
     model_version: str = "latest",
     ev_threshold: float = 0.05,
     output_path: Optional[str] = None,
+    bet_type: str = "win",
 ):
     """
     Run a full backtest using saved model predictions on historical data.
@@ -365,7 +378,7 @@ def run_full_backtest(
     pred_df = pred_df.merge(extra_df, on="entry_id", how="left")
 
     # Run backtest
-    config = BacktestConfig(ev_threshold=ev_threshold)
+    config = BacktestConfig(ev_threshold=ev_threshold, bet_type=bet_type)
     bt = Backtester(config)
     result = bt.run(pred_df)
 
@@ -388,12 +401,15 @@ def main():
     parser.add_argument("--version", type=str, default="latest", help="Model version to use")
     parser.add_argument("--ev-threshold", type=float, default=0.05, help="Min EV to trigger bet")
     parser.add_argument("--output", type=str, help="Output CSV path")
+    parser.add_argument("--bet-type", type=str, default="win", choices=["win", "place"],
+                        help="Bet type: 'win' or 'place' (default: win)")
     args = parser.parse_args()
 
     run_full_backtest(
         model_version=args.version,
         ev_threshold=args.ev_threshold,
         output_path=args.output,
+        bet_type=args.bet_type,
     )
 
 

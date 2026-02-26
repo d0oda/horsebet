@@ -87,11 +87,11 @@ After 4+ profitable live weekends at ¥100, consider:
 
 ## Research Backlog
 
-| Priority | Idea | Expected Impact |
-|----------|------|-----------------|
-| 🔴 High | Add race class change features | Reduce no_edge failures |
-| 🔴 High | Trainer last-14-day form | Better short-term signals |
-| 🟡 Med | Course × jockey interaction | Exploit specialist jockeys |
-| 🟡 Med | Place/show betting (2nd/3rd) | 27% of losses finished 2nd/3rd |
-| 🟢 Low | Weather × track surface interaction | Already in features, refine |
-| 🟢 Low | Real-time odds streaming | Better entry timing |
+| Priority | Idea | Expected Impact | Status |
+|----------|------|-----------------|--------|
+| 🔴 High | Add race class change features | Reduce no_edge failures | ✅ Done |
+| 🔴 High | Trainer last-14-day form | Better short-term signals | ✅ Done |
+| 🟡 Med | Course × jockey interaction | Exploit specialist jockeys | ✅ Done |
+| 🟡 Med | Place/show betting (2nd/3rd) | 27% of losses finished 2nd/3rd | ✅ Done |
+| 🟢 Low | Weather × track surface interaction | Already in features, refine | ✅ Done |
+| 🟢 Low | Real-time odds streaming | Better entry timing | ✅ Done |

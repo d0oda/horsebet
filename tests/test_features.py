@@ -301,3 +301,140 @@ class TestPaceFeatures:
         assert "pace_style_closer" in features
         assert "pace_style_deep" in features
 
+
+# ---------------------------------------------------------------------------
+# Class Change Features (Research Backlog #1)
+# ---------------------------------------------------------------------------
+
+class TestClassChangeFeatures:
+    def setup_method(self):
+        self.fb = FeatureBuilder()
+
+    def _make_history_with_class(self):
+        """Create history with varying class levels."""
+        return pd.DataFrame({
+            "horse_id": [1] * 5,
+            "jockey_id": [10] * 5,
+            "date": pd.date_range("2024-01-01", periods=5, freq="14D").astype(str),
+            "distance": [2000] * 5,
+            "surface": ["turf"] * 5,
+            "going": ["良"] * 5,
+            "race_class": ["G1", "G2", "G3", "OP", "3勝"],  # newest first after sort
+            "grade": ["G1", "G2", "G3", None, None],
+            "course_id": [5] * 5,
+            "draw": [3] * 5,
+            "weight_carried": [57.0] * 5,
+            "horse_weight": [480] * 5,
+            "odds_win": [5.0] * 5,
+            "finish_pos": [1, 3, 2, 5, 1],
+            "time_secs": [120.5, 121.0, 120.8, 122.0, 120.3],
+            "last_3f_secs": [34.0, 34.5, 33.8, 35.0, 33.5],
+            "corner_positions": ["2-2-1-1", "5-4-3-3", "3-3-2-2", "8-7-5-5", "1-1-1-1"],
+            "field_size": [16] * 5,
+        })
+
+    def test_class_change_computed(self):
+        """Horse with class history should have class_change feature."""
+        history = self._make_history_with_class()
+        features = self.fb._horse_rolling_features(
+            horse_id=1, race_date="2024-04-01",
+            distance=2000, surface="turf", course_id=5,
+            history_df=history,
+        )
+        assert "class_change" in features
+        assert "class_drops_last5" in features
+        assert "class_rises_last5" in features
+        assert "class_at_last_win" in features
+
+    def test_class_at_last_win(self):
+        """class_at_last_win should reflect the class rank of the most recent win."""
+        history = self._make_history_with_class()
+        features = self.fb._horse_rolling_features(
+            horse_id=1, race_date="2024-04-01",
+            distance=2000, surface="turf", course_id=5,
+            history_df=history,
+        )
+        # First-time runner has NaN
+        assert not np.isnan(features["class_at_last_win"])
+
+    def test_first_time_runner_class_nan(self):
+        """First-time runner should have NaN class features."""
+        empty = self.fb._empty_horse_features()
+        assert np.isnan(empty["class_change"])
+        assert np.isnan(empty["class_drops_last5"])
+        assert np.isnan(empty["class_rises_last5"])
+        assert np.isnan(empty["class_at_last_win"])
+
+
+# ---------------------------------------------------------------------------
+# Trainer 14-Day Form (Research Backlog #2)
+# ---------------------------------------------------------------------------
+
+class TestTrainer14DayForm:
+    def setup_method(self):
+        self.fb = FeatureBuilder()
+
+    def test_trainer_14d_with_recent_activity(self):
+        """Trainer with runs in last 14 days should have non-NaN features."""
+        history = pd.DataFrame({
+            "trainer_id": [20] * 10,
+            "date": pd.date_range("2024-03-18", periods=10, freq="2D").astype(str),
+            "finish_pos": [1, 3, 2, 5, 1, 8, 4, 1, 6, 2],
+            "odds_win": [3.0, 6.0, 5.0, 12.0, 4.0, 20.0, 8.0, 2.5, 15.0, 7.0],
+        })
+        features = self.fb._trainer_features(20, "2024-04-08", history)
+        assert features["trainer_14d_runs"] > 0
+        assert not np.isnan(features["trainer_14d_win_pct"])
+        assert not np.isnan(features["trainer_14d_place_pct"])
+
+    def test_trainer_14d_no_recent_activity(self):
+        """Trainer with no runs in last 14 days should have 0 runs and NaN rates."""
+        history = pd.DataFrame({
+            "trainer_id": [20] * 3,
+            "date": ["2024-01-01", "2024-01-15", "2024-02-01"],
+            "finish_pos": [1, 3, 2],
+            "odds_win": [3.0, 6.0, 5.0],
+        })
+        features = self.fb._trainer_features(20, "2024-04-01", history)
+        assert features["trainer_14d_runs"] == 0
+        assert np.isnan(features["trainer_14d_win_pct"])
+
+
+# ---------------------------------------------------------------------------
+# Course × Jockey Features (Research Backlog #3)
+# ---------------------------------------------------------------------------
+
+class TestCourseJockeyFeatures:
+    def setup_method(self):
+        self.fb = FeatureBuilder()
+
+    def test_jockey_with_course_history(self):
+        """Jockey with course-specific history should have computed stats."""
+        history = pd.DataFrame({
+            "jockey_id": [10] * 10,
+            "course_id": [5, 5, 5, 5, 5, 8, 8, 8, 8, 8],
+            "date": pd.date_range("2024-01-01", periods=10, freq="7D").astype(str),
+            "finish_pos": [1, 2, 1, 3, 5, 1, 4, 2, 1, 6],
+        })
+        features = self.fb._course_jockey_features(10, 5, "2024-04-01", history)
+        assert features["jockey_course_runs"] == 5
+        assert features["jockey_course_win_pct"] == pytest.approx(0.4, rel=0.01)  # 2/5
+
+    def test_null_jockey(self):
+        """Null jockey should return NaN features."""
+        features = self.fb._course_jockey_features(None, 5, "2024-04-01", pd.DataFrame())
+        assert np.isnan(features["jockey_course_runs"])
+        assert np.isnan(features["jockey_course_win_pct"])
+        assert np.isnan(features["jockey_course_place_pct"])
+
+    def test_jockey_at_new_course(self):
+        """Jockey with no runs at this course should return NaN."""
+        history = pd.DataFrame({
+            "jockey_id": [10] * 5,
+            "course_id": [8] * 5,
+            "date": pd.date_range("2024-01-01", periods=5, freq="7D").astype(str),
+            "finish_pos": [1, 2, 3, 4, 5],
+        })
+        features = self.fb._course_jockey_features(10, 5, "2024-04-01", history)
+        assert np.isnan(features["jockey_course_runs"])
+
