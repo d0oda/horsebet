@@ -100,6 +100,7 @@ class EntryData:
     horse: HorseData
     jockey_name: Optional[str] = None
     jockey_name_jp: Optional[str] = None
+    trainer_name_jp: Optional[str] = None  # 調教師
     weight_carried: Optional[float] = None
     horse_weight: Optional[int] = None
     horse_weight_change: Optional[int] = None
@@ -162,6 +163,58 @@ def _fetch(url: str, retries: int = 3) -> Optional[BeautifulSoup]:
             time.sleep(5 * (attempt + 1))
 
     log.error(f"Failed to fetch {url} after {retries} attempts")
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Parsing — Race Class Extraction
+# ---------------------------------------------------------------------------
+
+def _extract_race_class(race_name_jp: Optional[str], grade: Optional[str]) -> Optional[str]:
+    """
+    Extract race class from the Japanese race name.
+
+    Patterns:
+        '東京優駿(G1)'     → 'G1'   (via grade)
+        'クローバー賞(OP)' → 'OP'
+        'STV賞(3勝)'      → '3勝'
+        '積丹特別(2勝)'    → '2勝'
+        'ニセコ特別(1勝)'  → '1勝'
+        'BSN賞(L)'         → 'L'
+        '3歳未勝利'        → '未勝利'
+        '2歳新馬'          → '新馬'
+        '障害4歳以上オープン' → 'OP'
+        '3歳以上1勝クラス'  → '1勝'
+    """
+    # If a grade was already detected, use it
+    if grade:
+        return grade
+
+    if not race_name_jp:
+        return None
+
+    name = race_name_jp
+
+    # Parenthesised class: e.g. '(OP)', '(3勝)', '(L)'
+    paren_match = re.search(r'[（(](G[1-3I]+|OP|L|[1-3]勝)[）)]', name)
+    if paren_match:
+        cls = paren_match.group(1)
+        # Normalise GI→G1 etc.
+        cls = cls.replace('GI', 'G1').replace('GII', 'G2').replace('GIII', 'G3')
+        return cls
+
+    # Direct patterns in the name
+    if '新馬' in name:
+        return '新馬'
+    if '未勝利' in name:
+        return '未勝利'
+    if 'オープン' in name:
+        return 'OP'
+    # e.g. '3歳以上1勝クラス'
+    class_match = re.search(r'([1-3]勝)クラス', name)
+    if class_match:
+        return class_match.group(1)
+
     return None
 
 
@@ -271,6 +324,9 @@ def parse_race_page(soup: BeautifulSoup, race_id: str) -> Optional[RaceData]:
             race.grade = g.replace("Ｇ", "G").replace("I", "1").replace("II", "2").replace("III", "3")
             break
 
+    # Class detection (covers all levels, not just graded races)
+    race.class_ = _extract_race_class(race.race_name_jp, race.grade)
+
     # --- Parse result table ---
     result_table = soup.find("table", class_="race_table_01")
     if not result_table:
@@ -363,13 +419,21 @@ def parse_race_page(soup: BeautifulSoup, race_id: str) -> Optional[RaceData]:
             if len(cells) > 10:
                 corners = cells[10].get_text(strip=True)
 
+            # Trainer — typically in cells[18] (調教師 column) with link to /trainer/XXXXX/
+            trainer_name_jp = None
+            for ci in [18, 19, 17, 16, 15]:
+                if ci < len(cells):
+                    trainer_link = cells[ci].find("a", href=re.compile(r'/trainer/'))
+                    if trainer_link:
+                        trainer_name_jp = trainer_link.get_text(strip=True)
+                        break
+
             # Sire name — some race pages include it in horse cell title
             sire_name = None
             if horse_cell:
                 title = horse_cell.get("title") or ""
                 # Title sometimes has format: "父: [SireName]" or "SireName産駒"
-                import re as _re
-                sire_m = _re.search(r'父[：:]\s*([^/\n]+)', title)
+                sire_m = re.search(r'父[：:]\s*([^/\n]+)', title)
                 if sire_m:
                     sire_name = sire_m.group(1).strip()
                 else:
@@ -377,8 +441,7 @@ def parse_race_page(soup: BeautifulSoup, race_id: str) -> Optional[RaceData]:
                     for ci in range(15, min(len(cells), 21)):
                         ctext = cells[ci].get_text(strip=True)
                         if ctext and not ctext.isdigit() and len(ctext) > 1:
-                            # Heuristic: sire appears in column ~18 on some pages
-                            parent = cells[ci].find("a", href=_re.compile(r'/horse/ped/'))
+                            parent = cells[ci].find("a", href=re.compile(r'/horse/ped/'))
                             if parent:
                                 sire_name = parent.get_text(strip=True)
                                 break
@@ -397,6 +460,7 @@ def parse_race_page(soup: BeautifulSoup, race_id: str) -> Optional[RaceData]:
                 draw=draw,
                 horse=horse,
                 jockey_name_jp=jockey_name_jp,
+                trainer_name_jp=trainer_name_jp,
                 weight_carried=weight_carried,
                 horse_weight=horse_weight,
                 horse_weight_change=horse_weight_change,
@@ -442,7 +506,7 @@ def save_race_to_db(race: RaceData) -> bool:
                 text("""
                     INSERT INTO courses (name, name_jp, surface, direction)
                     VALUES (:name, :name_jp, :surface, :direction)
-                    ON CONFLICT DO NOTHING
+                    ON CONFLICT (name_jp) DO NOTHING
                     RETURNING id
                 """),
                 course_info,
@@ -490,16 +554,38 @@ def save_race_to_db(race: RaceData) -> bool:
 
         # Insert entries + results
         for entry in race.entries:
-            # Upsert horse
+            # Upsert trainer
+            trainer_db_id = None
+            if entry.trainer_name_jp:
+                trainer_result = session.execute(
+                    text("""
+                        INSERT INTO trainers (name, name_jp)
+                        VALUES (:name, :name_jp)
+                        ON CONFLICT (name_jp) DO NOTHING
+                        RETURNING id
+                    """),
+                    {"name": entry.trainer_name_jp, "name_jp": entry.trainer_name_jp},
+                ).fetchone()
+
+                if trainer_result:
+                    trainer_db_id = trainer_result[0]
+                else:
+                    trainer_db_id = session.execute(
+                        text("SELECT id FROM trainers WHERE name_jp = :name_jp"),
+                        {"name_jp": entry.trainer_name_jp},
+                    ).scalar()
+
+            # Upsert horse (with trainer_id)
             horse = entry.horse
             horse_result = session.execute(
                 text("""
-                    INSERT INTO horses (name, name_jp, sex, birth_year, netkeiba_id, sire_name)
-                    VALUES (:name, :name_jp, :sex, :birth_year, :netkeiba_id, :sire_name)
+                    INSERT INTO horses (name, name_jp, sex, birth_year, netkeiba_id, sire_name, trainer_id)
+                    VALUES (:name, :name_jp, :sex, :birth_year, :netkeiba_id, :sire_name, :trainer_id)
                     ON CONFLICT (netkeiba_id) DO UPDATE SET
                         name = EXCLUDED.name,
                         name_jp = EXCLUDED.name_jp,
-                        sire_name = COALESCE(EXCLUDED.sire_name, horses.sire_name)
+                        sire_name = COALESCE(EXCLUDED.sire_name, horses.sire_name),
+                        trainer_id = COALESCE(EXCLUDED.trainer_id, horses.trainer_id)
                     RETURNING id
                 """),
                 {
@@ -509,6 +595,7 @@ def save_race_to_db(race: RaceData) -> bool:
                     "birth_year": horse.birth_year,
                     "netkeiba_id": horse.netkeiba_id,
                     "sire_name": horse.sire_name,
+                    "trainer_id": trainer_db_id,
                 },
             )
             horse_db_id = horse_result.fetchone()[0]
@@ -520,7 +607,7 @@ def save_race_to_db(race: RaceData) -> bool:
                     text("""
                         INSERT INTO jockeys (name, name_jp)
                         VALUES (:name, :name_jp)
-                        ON CONFLICT DO NOTHING
+                        ON CONFLICT (name_jp) DO NOTHING
                         RETURNING id
                     """),
                     {"name": entry.jockey_name_jp, "name_jp": entry.jockey_name_jp},

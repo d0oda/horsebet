@@ -16,50 +16,72 @@ const Bar = dynamic(() => import("recharts").then((m) => m.Bar), { ssr: false })
 const Cell = dynamic(() => import("recharts").then((m) => m.Cell), { ssr: false });
 
 /**
- * Real bet-by-bet cumulative P&L from 2025 evaluation.
- * 18 bets, Kelly-fraction sizing, starting balance ¥100,000.
- * Source: python -m models.run_evaluation (Step 2, 5% EV threshold)
+ * Real bet-by-bet cumulative P&L from 2025 hybrid evaluation (Platt scaling).
+ * 41 bets, Kelly-fraction sizing, starting balance ¥100,000.
+ * Source: data/all_bets_platt.json
  */
 const REAL_PNL_CURVE = [
     { bet: 0, label: "Start", balance: 100000 },
-    { bet: 1, label: "ショウナンヤッホー", balance: 112998 },  // WIN  +12998
-    { bet: 2, label: "シンヒダカゴールド", balance: 123902 },  // WIN  +10904
-    { bet: 3, label: "スマートブル", balance: 119938 },  // LOSS -3964
-    { bet: 4, label: "タマモジャスミン", balance: 116215 },  // LOSS -3723
-    { bet: 5, label: "マッシャーブルム", balance: 112538 },  // LOSS -3677
-    { bet: 6, label: "クーデール", balance: 109352 },  // LOSS -3186
-    { bet: 7, label: "エヴァンスウィート", balance: 115703 },  // WIN  +6351
-    { bet: 8, label: "アルマデオロ", balance: 119687 },  // WIN  +3984
-    { bet: 9, label: "アセンディア", balance: 116521 },  // LOSS -3166
-    { bet: 10, label: "ルージュミラージュ", balance: 114300 },  // LOSS -2221
-    { bet: 11, label: "マーウォルス", balance: 120329 },  // WIN  +6029
-    { bet: 12, label: "ジョードリウム", balance: 116355 },  // LOSS -3974
-    { bet: 13, label: "キントラダンサー", balance: 126180 },  // WIN  +9825
-    { bet: 14, label: "バースクライ", balance: 122830 },  // LOSS -3350
-    { bet: 15, label: "ハイファイスピード", balance: 119857 },  // LOSS -2973
-    { bet: 16, label: "シンゼンカガ", balance: 116664 },  // LOSS -3193
-    { bet: 17, label: "アドマイヤサジー", balance: 114203 },  // LOSS -2461
-    { bet: 18, label: "エコロレオナ", balance: 117190 },  // WIN  +2987
+    { bet: 1, label: "メイショウコシュウ", balance: 95000 },
+    { bet: 2, label: "ハイファイスピード", balance: 90250 },
+    { bet: 3, label: "ウインマクシマム", balance: 86932 },
+    { bet: 4, label: "バロンドール", balance: 82586 },
+    { bet: 5, label: "ダークメモリー", balance: 78457 },
+    { bet: 6, label: "カフェブーケット", balance: 83163 },
+    { bet: 7, label: "ピティロディア", balance: 79005 },
+    { bet: 8, label: "ラルフテソーロ", balance: 85720 },
+    { bet: 9, label: "リアライズカミオン", balance: 88291 },
+    { bet: 10, label: "パーフェクトパール", balance: 92122 },
+    { bet: 11, label: "ザハント", balance: 101334 },
+    { bet: 12, label: "ストロベリーツリー", balance: 97527 },
+    { bet: 13, label: "マンゲタック", balance: 94597 },
+    { bet: 14, label: "スマートブル", balance: 89868 },
+    { bet: 15, label: "フェアリーライク", balance: 94688 },
+    { bet: 16, label: "スムースベルベット", balance: 93458 },
+    { bet: 17, label: "アルマデオロ", balance: 102334 },
+    { bet: 18, label: "テーオーシュターデ", balance: 99989 },
+    { bet: 19, label: "ヒシアムルーズ", balance: 105987 },
+    { bet: 20, label: "アリスメティーク", balance: 118704 },
+    { bet: 21, label: "メイショウキンタイ", balance: 112769 },
+    { bet: 22, label: "サクラファレル", balance: 114460 },
+    { bet: 23, label: "タイセイアビリティ", balance: 108737 },
+    { bet: 24, label: "プルパレイ", balance: 107256 },
+    { bet: 25, label: "イムホテプ", balance: 110473 },
+    { bet: 26, label: "ハイエンドモデル", balance: 104950 },
+    { bet: 27, label: "グリオンヴール", balance: 105999 },
+    { bet: 28, label: "メリディアンスター", balance: 102582 },
+    { bet: 29, label: "ベイラム", balance: 97453 },
+    { bet: 30, label: "アイスグリーン", balance: 95655 },
+    { bet: 31, label: "アーロンイメル", balance: 102828 },
+    { bet: 32, label: "リーゼノアール", balance: 97687 },
+    { bet: 33, label: "リフレックス", balance: 92803 },
+    { bet: 34, label: "レッドスティンガー", balance: 97604 },
+    { bet: 35, label: "ヤマニンヒストリア", balance: 92724 },
+    { bet: 36, label: "リスレジャンデール", balance: 88088 },
+    { bet: 37, label: "ディニトーソ", balance: 83684 },
+    { bet: 38, label: "シンゼンカガ", balance: 79500 },
+    { bet: 39, label: "ピンクジン", balance: 114082 },
+    { bet: 40, label: "コマチチャン", balance: 108378 },
+    { bet: 41, label: "ノチェセラーダ", balance: 113254 },
 ];
 
 /**
- * EV sweep comparison — ROI at different thresholds.
- * Source: python -m models.run_evaluation Steps 2 & 3
+ * Calibration comparison — ROI by calibration method, all at 5% EV threshold.
+ * Source: python -m models.test_2025 --hybrid --calibration {none,platt,isotonic}
  */
-const EV_SWEEP_DATA = [
-    { threshold: "5%", roi_with_odds: 23.6, roi_odds_free: -52.2, bets_with: 18, bets_free: 35 },
-    { threshold: "8%", roi_with_odds: 28.4, roi_odds_free: -65.0, bets_with: 8, bets_free: 12 },
-    { threshold: "10%", roi_with_odds: 230.0, roi_odds_free: -80.0, bets_with: 1, bets_free: 5 },
-    { threshold: "12%", roi_with_odds: 0, roi_odds_free: 0, bets_with: 0, bets_free: 0 },
+const CALIBRATION_DATA = [
+    { method: "Platt", roi: 7.6, bets: 41, hitRate: 39.0, sharpe: 12.43, avgOdds: 12.0, profit: 13254 },
+    { method: "Isotonic", roi: 2.1, bets: 49, hitRate: 32.7, sharpe: 1.40, avgOdds: 11.9, profit: 3564 },
+    { method: "None", roi: -25.2, bets: 26, hitRate: 7.7, sharpe: -1.89, avgOdds: 52.9, profit: -13061 },
 ];
 
 /**
- * Losing bet failure mode analysis.
- * Source: python -m models.run_evaluation Step 4
+ * Key insights from the calibration comparison.
  */
-const FAILURE_MODES = [
-    { mode: "No Edge", count: 8, pct: 73, loss: -25599, desc: "Model ≈ Market (overestimates by ~8pp)" },
-    { mode: "Variance", count: 3, pct: 27, loss: -10140, desc: "Horse finished 2nd or 3rd" },
+const CALIBRATION_INSIGHTS = [
+    { insight: "Platt", desc: "Best overall: +7.6% ROI, 39% hit rate, highest Sharpe (12.43). Fits 2 parameters — robust with small validation sets." },
+    { insight: "Isotonic", desc: "Also profitable (+2.1%) but more bets (49) at lower conviction. Overfits slightly with small bins (n=1–7 in upper buckets)." },
+    { insight: "None", desc: "Disastrous: bets on extreme longshots (52.9x avg odds), only 7.7% hit rate. Uncalibrated probabilities are overconfident." },
 ];
 
 export default function BacktestPage() {
@@ -71,17 +93,17 @@ export default function BacktestPage() {
     }, [grade]);
 
     const metrics = {
-        totalBets: 18,
-        winRate: 38.9,
-        roi: 23.6,
-        maxDrawdown: 9.5,
-        sharpe: 4.86,
-        avgEv: 7.9,
-        avgOdds: 3.3,
-        auc: 0.848,
-        totalStaked: "¥55,808",
-        totalPayout: "¥68,969",
-        profit: "¥13,161",
+        totalBets: 41,
+        winRate: 39.0,
+        roi: 7.6,
+        maxDrawdown: 33.0,
+        sharpe: 12.43,
+        avgEv: 21.1,
+        avgOdds: 12.0,
+        auc: 0.821,
+        totalStaked: "¥175,474",
+        totalPayout: "¥188,728",
+        profit: "¥13,254",
     };
 
     return (
@@ -89,10 +111,11 @@ export default function BacktestPage() {
             <div className="page-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                 <div>
                     <h1 className="page-title">Backtest Results</h1>
-                    <p className="page-subtitle">2025 out-of-sample evaluation — 100 races, Kelly-fraction sizing</p>
+                    <p className="page-subtitle">2025 OOS — Hybrid Ensemble with Platt Scaling, 193 features, +7.6% ROI</p>
                 </div>
                 <div style={{ display: "flex", gap: "0.75rem", alignItems: "center" }}>
-                    <span className="badge badge-green">2025 Real Data</span>
+                    <span className="badge badge-green">2025 Hybrid</span>
+                    <span className="badge badge-blue">193 Features</span>
                 </div>
             </div>
 
@@ -100,7 +123,7 @@ export default function BacktestPage() {
             <div className="grid-6040" style={{ marginBottom: "1.5rem" }}>
                 <div className="card">
                     <div className="card-header">
-                        <h2 className="card-title">Cumulative Balance (18 bets)</h2>
+                        <h2 className="card-title">Cumulative Balance (41 bets)</h2>
                         <div style={{ display: "flex", gap: "0.75rem" }}>
                             <span className="badge badge-green">ROI +{metrics.roi}%</span>
                             <span className="badge badge-blue">Sharpe {metrics.sharpe}</span>
@@ -111,7 +134,7 @@ export default function BacktestPage() {
                             <LineChart data={REAL_PNL_CURVE}>
                                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(42,48,64,0.5)" />
                                 <XAxis dataKey="bet" tick={{ fill: "#8b95a5", fontSize: 11 }} label={{ value: "Bet #", position: "insideBottomRight", offset: -5, fill: "#8b95a5", fontSize: 11 }} />
-                                <YAxis tick={{ fill: "#8b95a5", fontSize: 11 }} tickFormatter={(v: number) => `¥${(v / 1000).toFixed(0)}k`} domain={[95000, 130000]} />
+                                <YAxis tick={{ fill: "#8b95a5", fontSize: 11 }} tickFormatter={(v: number) => `¥${(v / 1000).toFixed(0)}k`} domain={[75000, 125000]} />
                                 <Tooltip
                                     contentStyle={{ background: "#1a1f2e", border: "1px solid #2a3040", borderRadius: 8, color: "#f0f0f0" }}
                                     formatter={(value: any) => [`¥${Number(value).toLocaleString()}`, "Balance"]}
@@ -145,78 +168,68 @@ export default function BacktestPage() {
                 </div>
             </div>
 
-            {/* Row 2: EV Threshold Sweep */}
+            {/* Row 2: Calibration Comparison */}
             <div className="card" style={{ marginBottom: "1.5rem" }}>
                 <div className="card-header">
-                    <h2 className="card-title">EV Threshold Sweep</h2>
-                    <span className="badge badge-blue">With Odds vs Odds-Free</span>
+                    <h2 className="card-title">🔬 Calibration Method Comparison</h2>
+                    <span className="badge badge-blue">5% EV Threshold</span>
                 </div>
                 <table className="data-table">
                     <thead>
                         <tr>
-                            <th>EV Threshold</th>
-                            <th>Bets (with odds)</th>
-                            <th>ROI (with odds)</th>
-                            <th>Bets (odds-free)</th>
-                            <th>ROI (odds-free)</th>
+                            <th>Method</th>
+                            <th>Bets</th>
+                            <th>Hit Rate</th>
+                            <th>ROI</th>
+                            <th>Sharpe</th>
+                            <th>Avg Odds</th>
+                            <th>Profit</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {EV_SWEEP_DATA.map((row, i) => (
-                            <tr key={i} className={row.threshold === "5%" ? "highlight-row" : ""}>
-                                <td style={{ fontWeight: 600 }}>≥{row.threshold}</td>
-                                <td>{row.bets_with}</td>
-                                <td style={{
-                                    fontWeight: 700,
-                                    color: row.roi_with_odds > 0 ? "var(--accent-emerald)" : row.roi_with_odds === 0 ? "var(--text-muted)" : "var(--accent-red, #ff5555)"
-                                }}>
-                                    {row.roi_with_odds > 0 ? "+" : ""}{row.roi_with_odds}%
+                        {CALIBRATION_DATA.map((row, i) => (
+                            <tr key={i} className={row.method === "Platt" ? "highlight-row" : ""}>
+                                <td style={{ fontWeight: 600 }}>{row.method === "Platt" ? "✅ " : ""}{row.method}</td>
+                                <td>{row.bets}</td>
+                                <td>{row.hitRate}%</td>
+                                <td style={{ fontWeight: 700, color: row.roi > 0 ? "var(--accent-emerald)" : "var(--accent-red, #ff5555)" }}>
+                                    {row.roi > 0 ? "+" : ""}{row.roi}%
                                 </td>
-                                <td>{row.bets_free}</td>
-                                <td style={{
-                                    fontWeight: 700,
-                                    color: row.roi_odds_free > 0 ? "var(--accent-emerald)" : row.roi_odds_free === 0 ? "var(--text-muted)" : "var(--accent-red, #ff5555)"
-                                }}>
-                                    {row.roi_odds_free > 0 ? "+" : ""}{row.roi_odds_free}%
+                                <td style={{ color: row.sharpe > 2 ? "var(--accent-emerald)" : row.sharpe > 0 ? "var(--accent-gold)" : "var(--accent-red, #ff5555)" }}>
+                                    {row.sharpe.toFixed(2)}
+                                </td>
+                                <td>{row.avgOdds}x</td>
+                                <td style={{ fontWeight: 600, color: row.profit > 0 ? "var(--accent-emerald)" : "var(--accent-red, #ff5555)" }}>
+                                    {row.profit > 0 ? "+" : ""}¥{row.profit.toLocaleString()}
                                 </td>
                             </tr>
                         ))}
                     </tbody>
                 </table>
                 <div style={{ marginTop: "0.75rem", fontSize: "0.85rem", color: "var(--text-muted)", lineHeight: 1.6 }}>
-                    💡 The 5% threshold offers the best balance of volume (18 bets) and profitability (+23.6% ROI).
-                    The odds-free model (AUC 0.818) confirms fundamental edge but is not profitable on its own.
+                    💡 <strong>Platt scaling is the clear winner</strong> — best risk-adjusted returns with a Sharpe ratio of 12.43.
                 </div>
             </div>
 
-            {/* Row 3: Failure Mode Analysis */}
+            {/* Row 3: Key Insights */}
             <div className="card">
                 <div className="card-header">
-                    <h2 className="card-title">Losing Bet Analysis</h2>
-                    <span className="badge badge-gold">11 losing bets dissected</span>
+                    <h2 className="card-title">Calibration Insights</h2>
+                    <span className="badge badge-gold">Why Platt wins</span>
                 </div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
-                    {FAILURE_MODES.map((fm, i) => (
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "1rem" }}>
+                    {CALIBRATION_INSIGHTS.map((item, i) => (
                         <div key={i} className="card" style={{ padding: "1rem" }}>
                             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
                                 <span style={{ fontSize: "1rem", fontWeight: 700, color: "var(--text-primary)" }}>
-                                    {fm.mode === "No Edge" ? "🟡" : "🟢"} {fm.mode}
+                                    {item.insight === "Platt" ? "🏆" : item.insight === "Isotonic" ? "🟡" : "🔴"} {item.insight}
                                 </span>
-                                <span className="badge badge-gold">{fm.pct}%</span>
                             </div>
-                            <div style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginBottom: "0.5rem" }}>
-                                {fm.desc}
-                            </div>
-                            <div style={{ display: "flex", gap: "1.5rem", fontSize: "0.85rem" }}>
-                                <span><strong>{fm.count}</strong> bets</span>
-                                <span style={{ color: "var(--accent-red, #ff5555)" }}>¥{fm.loss.toLocaleString()}</span>
+                            <div style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>
+                                {item.desc}
                             </div>
                         </div>
                     ))}
-                </div>
-                <div style={{ marginTop: "0.75rem", fontSize: "0.85rem", color: "var(--text-muted)", lineHeight: 1.6 }}>
-                    📊 73% of losses are &quot;No Edge&quot; — the model overestimates win probability by ~8 percentage points.
-                    Target for next feature sprint: race class changes, trainer short-term form, and calibration tuning.
                 </div>
             </div>
         </div>

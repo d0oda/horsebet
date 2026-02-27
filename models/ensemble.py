@@ -299,7 +299,11 @@ class HybridEnsemble:
         fund_preds = ensemble_predict(lgb_f, xgb_f)
 
         if self.fund_calibrator is not None:
-            fund_preds = self.fund_calibrator.predict(fund_preds)
+            from sklearn.linear_model import LogisticRegression
+            if isinstance(self.fund_calibrator, LogisticRegression):
+                fund_preds = self.fund_calibrator.predict_proba(fund_preds.reshape(-1, 1))[:, 1]
+            else:
+                fund_preds = self.fund_calibrator.predict(fund_preds)
 
         # Market predictions
         X_mkt = features_df[self.mkt_feature_cols].fillna(0).values
@@ -310,7 +314,11 @@ class HybridEnsemble:
         mkt_preds = ensemble_predict(lgb_m, xgb_m)
 
         if self.mkt_calibrator is not None:
-            mkt_preds = self.mkt_calibrator.predict(mkt_preds)
+            from sklearn.linear_model import LogisticRegression
+            if isinstance(self.mkt_calibrator, LogisticRegression):
+                mkt_preds = self.mkt_calibrator.predict_proba(mkt_preds.reshape(-1, 1))[:, 1]
+            else:
+                mkt_preds = self.mkt_calibrator.predict(mkt_preds)
 
         # Combined prediction: weighted blend
         combined = (

@@ -28,6 +28,7 @@ from sqlalchemy import text
 
 from scraper.db import get_session
 from scraper.netkeiba import scrape_race
+from scraper.odds_watcher import fetch_win_odds, save_odds_snapshot
 
 logging.basicConfig(
     level=logging.INFO,
@@ -84,6 +85,7 @@ def batch_scrape(
     courses: Optional[list[str]] = None,
     dry_run: bool = False,
     max_races: Optional[int] = None,
+    with_odds: bool = False,
 ) -> dict:
     """
     Scrape races for a year by trying generated JRA race IDs.
@@ -137,6 +139,12 @@ def batch_scrape(
                     f"  [{stats['races_scraped']}/{max_races or '∞'}] ✅ {rid}"
                     f" — {result.race_name_jp} ({len(result.entries)} entries)"
                 )
+                # Optionally scrape final odds snapshot
+                if with_odds:
+                    odds = fetch_win_odds(rid)
+                    if odds:
+                        count = save_odds_snapshot(rid, odds)
+                        log.info(f"    📊 Saved {count} odds for {rid}")
             else:
                 stats["races_not_found"] += 1
         except Exception as e:
@@ -171,6 +179,7 @@ def main():
     parser.add_argument("--courses", type=str, help="Comma-separated course codes (e.g. 05,06)")
     parser.add_argument("--dry-run", action="store_true", help="Only show candidate IDs, don't scrape")
     parser.add_argument("--max-races", type=int, default=50, help="Stop after N new races per year (default: 50)")
+    parser.add_argument("--with-odds", action="store_true", help="Also scrape final odds for each race")
 
     args = parser.parse_args()
     courses = args.courses.split(",") if args.courses else None
@@ -188,7 +197,7 @@ def main():
         log.info(f"\n{'=' * 50}")
         log.info(f"  Scraping year {year}")
         log.info(f"{'=' * 50}")
-        stats = batch_scrape(year, courses=courses, dry_run=args.dry_run, max_races=args.max_races)
+        stats = batch_scrape(year, courses=courses, dry_run=args.dry_run, max_races=args.max_races, with_odds=args.with_odds)
         for k in total_stats:
             total_stats[k] += stats.get(k, 0)
 

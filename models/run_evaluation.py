@@ -228,6 +228,10 @@ def main():
         help="Skip the trio exotic backtest (step 5)",
     )
     parser.add_argument(
+        "--skip-odds-free", action="store_true",
+        help="Skip the odds-free EV sweep (step 3)",
+    )
+    parser.add_argument(
         "--budget", type=int, default=5000,
         help="Trio budget per race in yen (default: 5000)",
     )
@@ -265,7 +269,8 @@ def main():
         # Run all steps
         data_counts = step_verify_data()
         ev_results = step_ev_sweep()
-        odds_free_results = step_odds_free()
+        if not args.skip_odds_free:
+            odds_free_results = step_odds_free()
         failure_modes = step_losing_bets(args.ev_threshold)
 
         if not args.skip_trio:

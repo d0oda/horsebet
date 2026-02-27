@@ -6,23 +6,23 @@
  * Source: python -m models.run_evaluation
  */
 
-/** Real feature importance from the trained LightGBM model (gain-based) */
+/** Real feature importance from the retrained LightGBM model (gain-based, 130 features) */
 const TOP_FEATURES = [
-    { feature: "odds_win", gain: 15016, category: "Odds" },
-    { feature: "log_odds", gain: 5861, category: "Odds" },
-    { feature: "odds_win_z", gain: 1561, category: "Odds" },
-    { feature: "horse_weight_change_z", gain: 1051, category: "Physical" },
-    { feature: "weight_carried_z", gain: 1036, category: "Physical" },
-    { feature: "sex_code_z", gain: 932, category: "Physical" },
-    { feature: "horse_weight_z", gain: 868, category: "Physical" },
-    { feature: "pace_style_closer_z", gain: 857, category: "Pace" },
-    { feature: "pace_win_prob_z", gain: 781, category: "Pace" },
-    { feature: "pace_place_prob_z", gain: 699, category: "Pace" },
-    { feature: "horse_weight", gain: 696, category: "Physical" },
-    { feature: "log_odds_z", gain: 666, category: "Odds" },
-    { feature: "pace_style_stalk_z", gain: 610, category: "Pace" },
-    { feature: "weight_trend_z", gain: 558, category: "Physical" },
-    { feature: "pace_style_deep_z", gain: 520, category: "Pace" },
+    { feature: "log_odds", gain: 11007, category: "Odds" },
+    { feature: "odds_win", gain: 9304, category: "Odds" },
+    { feature: "odds_win_z", gain: 1467, category: "Odds" },
+    { feature: "horse_weight_change_z", gain: 1102, category: "Physical" },
+    { feature: "popularity", gain: 1083, category: "Odds" },
+    { feature: "horse_weight_z", gain: 1049, category: "Physical" },
+    { feature: "pace_win_prob_z", gain: 914, category: "Pace" },
+    { feature: "pace_style_closer_z", gain: 885, category: "Pace" },
+    { feature: "sex_code_z", gain: 850, category: "Physical" },
+    { feature: "weight_carried_z", gain: 845, category: "Physical" },
+    { feature: "horse_weight", gain: 681, category: "Physical" },
+    { feature: "pace_place_prob_z", gain: 671, category: "Pace" },
+    { feature: "pace_style_stalk_z", gain: 611, category: "Pace" },
+    { feature: "pace_style_deep_z", gain: 603, category: "Pace" },
+    { feature: "post_position_z", gain: 573, category: "Physical" },
 ];
 
 const SPRINT7_FEATURES = [
@@ -69,27 +69,27 @@ const CATEGORY_COLORS: Record<string, string> = {
     "Weather+": "#66bbff",
 };
 
-/** Decision matrix from evaluation */
+/** Decision matrix from evaluation (retrained with research backlog features) */
 const DECISION_MATRIX = [
-    { check: "ROI positive at 5% EV", status: "✅", result: "+23.6%", action: "Safe to paper trade at 5% threshold" },
-    { check: "ROI positive at 8% EV", status: "✅", result: "+28.4%", action: "Consider 8% for concentrated portfolio" },
-    { check: "Odds-free AUC ≥ 0.72", status: "✅", result: "0.819", action: "Fundamental edge confirmed" },
-    { check: "Odds-free profitable", status: "❌", result: "-52.2%", action: "Odds features are critical" },
-    { check: "Trio ROI > Win ROI", status: "❌", result: "0%", action: "Stick with win bets only" },
-    { check: "Dominant failure mode", status: "⚠️", result: "73% no_edge", action: "Target in next feature sprint" },
+    { check: "ROI positive at 5% EV", status: "⚠️", result: "0 bets", action: "Isotonic calibration too conservative — needs tuning" },
+    { check: "ROI positive at 8% EV", status: "⚠️", result: "0 bets", action: "Same: calibrator compresses probabilities" },
+    { check: "OOS AUC ≥ 0.84", status: "✅", result: "0.850", action: "Model discriminative power improved" },
+    { check: "LightGBM AUC", status: "✅", result: "0.851", action: "Best single model" },
+    { check: "XGBoost AUC", status: "✅", result: "0.840", action: "Ensemble diversity maintained" },
+    { check: "Features expanded", status: "✅", result: "130 feats", action: "+4 class, +3 trainer, +3 jockey, +2 weather" },
 ];
 
-/** Calibration curve from evaluation */
+/** Calibration curve from retrained model evaluation (OOS 2025) */
 const CALIBRATION_DATA = [
-    { predicted: 2, actual: 3.5, n: 960 },
-    { predicted: 14, actual: 12.8, n: 78 },
-    { predicted: 24, actual: 22.1, n: 68 },
-    { predicted: 33, actual: 26.7, n: 30 },
-    { predicted: 44, actual: 33.3, n: 30 },
-    { predicted: 59, actual: 47.1, n: 17 },
-    { predicted: 62, actual: 50.0, n: 4 },
-    { predicted: 85, actual: 75.0, n: 12 },
-    { predicted: 92, actual: 66.7, n: 6 },
+    { predicted: 2, actual: 3.7, n: 984 },
+    { predicted: 14, actual: 26.8, n: 56 },
+    { predicted: 23, actual: 9.8, n: 51 },
+    { predicted: 34, actual: 26.7, n: 45 },
+    { predicted: 43, actual: 40.0, n: 30 },
+    { predicted: 55, actual: 21.1, n: 19 },
+    { predicted: 60, actual: 66.7, n: 3 },
+    { predicted: 75, actual: 71.4, n: 7 },
+    { predicted: 86, actual: 66.7, n: 12 },
 ];
 
 export default function InsightsPage() {
@@ -99,7 +99,7 @@ export default function InsightsPage() {
         <div className="page-container animate-in">
             <div className="page-header">
                 <h1 className="page-title">Model Insights</h1>
-                <p className="page-subtitle">2025 evaluation — LightGBM + XGBoost ensemble, 126 features, 163 total columns</p>
+                <p className="page-subtitle">Retrained 2025 evaluation — LightGBM + XGBoost ensemble, 130 features (+12 research backlog), 187 columns</p>
             </div>
 
             {/* Feature Importance Bar Chart */}

@@ -359,6 +359,8 @@ class FeatureBuilder:
             "sire_win_pct_distance", "sire_avg_finish",
             # Research backlog: course × jockey
             "jockey_course_runs", "jockey_course_win_pct", "jockey_course_place_pct",
+            # Odds movement (requires ≥2 snapshots per entry to produce values)
+            "odds_slope", "odds_late_money", "odds_vol",
         ]
         return {k: np.nan for k in keys}
 
@@ -593,9 +595,34 @@ class FeatureBuilder:
     # Feature Computation — Odds Movement (Sprint 4.4)
     # ------------------------------------------------------------------
 
-    def _odds_movement_features(self, race_id: int, entry_id: int) -> dict:
+    def _load_odds_cache(self):
+        """Batch-load ALL odds snapshot data into memory (one DB query)."""
+        if hasattr(self, "_odds_cache"):
+            return  # already loaded
+
+        self._odds_cache = {}  # keyed by (race_id, post_position_str) -> [odds_values]
+        try:
+            with get_session() as session:
+                rows = session.execute(text("""
+                    SELECT race_id, combination, odds_value
+                    FROM odds_snapshots
+                    WHERE bet_type = 'win'
+                    ORDER BY race_id, combination, captured_at
+                """)).fetchall()
+
+            for race_id, combo, odds_val in rows:
+                key = (race_id, str(combo))
+                if key not in self._odds_cache:
+                    self._odds_cache[key] = []
+                self._odds_cache[key].append(odds_val)
+
+            log.info(f"Loaded odds cache: {len(self._odds_cache)} race×combo keys from {len(rows)} snapshots")
+        except Exception as e:
+            log.warning(f"Failed to load odds cache: {e}")
+
+    def _odds_movement_features(self, race_id: int, post_position: Optional[int]) -> dict:
         """
-        Compute odds movement features from odds_snapshots table.
+        Compute odds movement features from cached odds_snapshots data.
         Falls back to NaN when no snapshot data exists.
 
         Features:
@@ -609,56 +636,34 @@ class FeatureBuilder:
             "odds_vol": np.nan,
         }
 
-        try:
-            from scraper.db import get_session
-            from sqlalchemy import text
-
-            with get_session() as session:
-                # Get the post_position (combination) for this entry
-                post = session.execute(
-                    text("SELECT post_position FROM entries WHERE id = :eid"),
-                    {"eid": entry_id},
-                ).scalar()
-
-                if not post:
-                    return null_feats
-
-                rows = session.execute(text("""
-                    SELECT odds_value, captured_at
-                    FROM odds_snapshots
-                    WHERE race_id = :race_id
-                      AND bet_type = 'win'
-                      AND combination = :combo
-                    ORDER BY captured_at
-                """), {
-                    "race_id": race_id,
-                    "combo": str(post),
-                }).fetchall()
-
-            if not rows or len(rows) < 2:
-                return null_feats
-
-            odds_values = [r[0] for r in rows]
-
-            # Slope: simple linear regression over normalised time
-            x = np.arange(len(odds_values), dtype=float)
-            y = np.array(odds_values)
-            slope = np.polyfit(x, y, 1)[0] if len(x) >= 2 else np.nan
-
-            # Late money: last odds minus first odds (negative = money coming in)
-            late_money = odds_values[-1] - odds_values[0]
-
-            # Volatility
-            vol = np.std(odds_values)
-
-            return {
-                "odds_slope": slope,
-                "odds_late_money": late_money,
-                "odds_vol": vol,
-            }
-
-        except Exception:
+        if post_position is None:
             return null_feats
+
+        # Ensure cache is loaded
+        self._load_odds_cache()
+
+        key = (race_id, str(post_position))
+        odds_values = self._odds_cache.get(key)
+
+        if not odds_values or len(odds_values) < 2:
+            return null_feats
+
+        # Slope: simple linear regression over normalised time
+        x = np.arange(len(odds_values), dtype=float)
+        y = np.array(odds_values)
+        slope = np.polyfit(x, y, 1)[0] if len(x) >= 2 else np.nan
+
+        # Late money: last odds minus first odds (negative = money coming in)
+        late_money = odds_values[-1] - odds_values[0]
+
+        # Volatility
+        vol = np.std(odds_values)
+
+        return {
+            "odds_slope": slope,
+            "odds_late_money": late_money,
+            "odds_vol": vol,
+        }
 
     # ------------------------------------------------------------------
     # Feature Computation — Weather Interactions (Sprint 7.2)
@@ -1117,6 +1122,14 @@ class FeatureBuilder:
                     course_id=row.get("course_id"),
                     race_date=str(row["date"]),
                     history_df=history_df,
+                )
+            )
+
+            # Odds movement features (uses batch-cached odds data)
+            features.update(
+                self._odds_movement_features(
+                    race_id=row["race_id"],
+                    post_position=row.get("post_position"),
                 )
             )
 

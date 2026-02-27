@@ -1,0 +1,7 @@
+# UmaEdge Supabase Project Config
+# All tables live in the 'horsebet' schema, NOT public.
+# The scraper/db.py sets search_path automatically via SQLAlchemy events.
+
+PROJECT_ID=utadojvegaohlgqchsdy
+SCHEMA=horsebet
+REGION=eu-west-1

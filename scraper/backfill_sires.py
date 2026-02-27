@@ -5,13 +5,16 @@ Usage:
     python -m scraper.backfill_sires                # backfill all missing
     python -m scraper.backfill_sires --limit 100    # backfill first 100
     python -m scraper.backfill_sires --dry-run      # parse only, don't update DB
+    python -m scraper.backfill_sires --workers 3    # concurrency (default 3)
 """
 
 import argparse
 import logging
 import random
 import re
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional
 
 import requests
@@ -37,11 +40,11 @@ HEADERS = {
 }
 
 
-def _fetch(url: str, retries: int = 3) -> Optional[BeautifulSoup]:
-    """Fetch a URL with retries and polite delay."""
+def _fetch(url: str, retries: int = 4) -> Optional[BeautifulSoup]:
+    """Fetch a URL with retries, polite delay, and rate-limit backoff."""
     for attempt in range(retries):
         try:
-            delay = random.uniform(1.5, 3.5)
+            delay = random.uniform(2.0, 4.0)
             time.sleep(delay)
             resp = requests.get(url, headers=HEADERS, timeout=30)
             resp.encoding = "EUC-JP"
@@ -50,6 +53,11 @@ def _fetch(url: str, retries: int = 3) -> Optional[BeautifulSoup]:
             elif resp.status_code == 404:
                 log.debug(f"404: {url}")
                 return None
+            elif resp.status_code in (400, 403, 429, 503):
+                # Rate limited — exponential backoff
+                backoff = min(60, 15 * (2 ** attempt))
+                log.warning(f"Rate limited ({resp.status_code}), backing off {backoff}s (attempt {attempt + 1})")
+                time.sleep(backoff)
             else:
                 log.warning(f"HTTP {resp.status_code} for {url} (attempt {attempt + 1})")
         except requests.RequestException as e:
@@ -99,10 +107,41 @@ def get_horses_missing_sire(limit: Optional[int] = None) -> list[dict]:
     return [{"id": r[0], "netkeiba_id": r[1], "name_jp": r[2]} for r in rows]
 
 
-def backfill_sires(limit: Optional[int] = None, dry_run: bool = False):
-    """Main backfill function."""
+def _process_one_horse(horse: dict, idx: int, total: int, dry_run: bool) -> str:
+    """Process a single horse. Returns 'updated', 'failed', or 'skipped'."""
+    nk_id = horse["netkeiba_id"]
+    url = HORSE_PED_URL.format(horse_nk_id=nk_id)
+
+    soup = _fetch(url)
+    if not soup:
+        log.warning(f"  [{idx}/{total}] ❌ Failed to fetch {horse['name_jp']} ({nk_id})")
+        return "failed"
+
+    sire_name = parse_sire_name(soup)
+    if not sire_name:
+        log.debug(f"  [{idx}/{total}] ⏭ No sire found for {horse['name_jp']} ({nk_id})")
+        return "skipped"
+
+    if dry_run:
+        log.info(f"  [{idx}/{total}] 🔍 {horse['name_jp']} → sire: {sire_name} (dry run)")
+        return "updated"
+
+    # Update DB
+    with get_session() as session:
+        session.execute(
+            text("UPDATE horses SET sire_name = :sire WHERE id = :hid"),
+            {"sire": sire_name, "hid": horse["id"]},
+        )
+    log.info(f"  [{idx}/{total}] ✅ {horse['name_jp']} → sire: {sire_name}")
+    return "updated"
+
+
+def backfill_sires(limit: Optional[int] = None, dry_run: bool = False,
+                   workers: int = 3):
+    """Main backfill function with thread-pool concurrency."""
     horses = get_horses_missing_sire(limit)
-    log.info(f"Found {len(horses)} horses missing sire_name")
+    total = len(horses)
+    log.info(f"Found {total} horses missing sire_name (using {workers} workers)")
 
     if not horses:
         log.info("Nothing to backfill!")
@@ -111,36 +150,28 @@ def backfill_sires(limit: Optional[int] = None, dry_run: bool = False):
     updated = 0
     failed = 0
     skipped = 0
+    lock = threading.Lock()
 
-    for i, horse in enumerate(horses, 1):
-        nk_id = horse["netkeiba_id"]
-        url = HORSE_PED_URL.format(horse_nk_id=nk_id)
-
-        soup = _fetch(url)
-        if not soup:
-            failed += 1
-            log.warning(f"  [{i}/{len(horses)}] ❌ Failed to fetch {horse['name_jp']} ({nk_id})")
-            continue
-
-        sire_name = parse_sire_name(soup)
-        if not sire_name:
-            skipped += 1
-            log.debug(f"  [{i}/{len(horses)}] ⏭ No sire found for {horse['name_jp']} ({nk_id})")
-            continue
-
-        if dry_run:
-            log.info(f"  [{i}/{len(horses)}] 🔍 {horse['name_jp']} → sire: {sire_name} (dry run)")
-            updated += 1
-            continue
-
-        # Update DB
-        with get_session() as session:
-            session.execute(
-                text("UPDATE horses SET sire_name = :sire WHERE id = :hid"),
-                {"sire": sire_name, "hid": horse["id"]},
-            )
-        updated += 1
-        log.info(f"  [{i}/{len(horses)}] ✅ {horse['name_jp']} → sire: {sire_name}")
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = {
+            pool.submit(_process_one_horse, horse, i, total, dry_run): i
+            for i, horse in enumerate(horses, 1)
+        }
+        for future in as_completed(futures):
+            result = future.result()
+            with lock:
+                if result == "updated":
+                    updated += 1
+                elif result == "failed":
+                    failed += 1
+                else:
+                    skipped += 1
+                done = updated + failed + skipped
+                if done % 25 == 0:
+                    log.info(
+                        f"  Progress: {done}/{total} "
+                        f"(✅ {updated} | ❌ {failed} | ⏭ {skipped})"
+                    )
 
     log.info(f"\n{'=' * 50}")
     log.info(f"Backfill complete: {updated} updated, {failed} failed, {skipped} no sire found")
@@ -151,8 +182,9 @@ def main():
     parser = argparse.ArgumentParser(description="Backfill sire names from netkeiba horse profiles")
     parser.add_argument("--limit", type=int, default=None, help="Max horses to process")
     parser.add_argument("--dry-run", action="store_true", help="Parse only, don't update DB")
+    parser.add_argument("--workers", type=int, default=3, help="Number of concurrent workers (default: 3)")
     args = parser.parse_args()
-    backfill_sires(limit=args.limit, dry_run=args.dry_run)
+    backfill_sires(limit=args.limit, dry_run=args.dry_run, workers=args.workers)
 
 
 if __name__ == "__main__":

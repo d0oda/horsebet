@@ -1,6 +1,12 @@
 """
 UmaEdge — Database connection utility.
-Provides SQLAlchemy engine and session for the horsebet schema.
+
+Provides SQLAlchemy engine and session for the Supabase database.
+All tables live in the 'horsebet' schema (NOT public).
+The search_path is set automatically on every connection.
+
+Project: utadojvegaohlgqchsdy (eu-west-1)
+Schema:  horsebet
 """
 
 import os
@@ -10,6 +16,9 @@ from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import sessionmaker, Session
 
 load_dotenv()
+
+# All UmaEdge tables (races, entries, horses, etc.) live in this schema.
+SCHEMA = "horsebet"
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
