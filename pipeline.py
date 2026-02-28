@@ -24,7 +24,7 @@ import logging
 import re
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 from sqlalchemy import text
@@ -82,27 +82,68 @@ def step_scrape(date: str) -> list[str]:
 
 
 def step_odds(date: str, race_ids: list[str]) -> int:
-    """Step 2: Fetch current odds and update entries table."""
-    log.info(f"━━━ Step 2: Fetching odds for {len(race_ids)} races ━━━")
+    """Step 2: Fetch current odds — only for upcoming races (smart scheduling)."""
+    JST = timezone(timedelta(hours=9))
+    now_jst = datetime.now(JST)
+    log.info(f"━━━ Step 2: Smart odds fetch (JST: {now_jst.strftime('%H:%M')}) ━━━")
 
-    # Map netkeiba_id → DB race_id
+    # Get race info including post_time
     with get_session() as session:
         races = session.execute(
-            text("SELECT id, netkeiba_id FROM horsebet.races WHERE date = :d"),
+            text("""
+                SELECT id, netkeiba_id, race_number, post_time
+                FROM horsebet.races WHERE date = :d
+                ORDER BY course_id, race_number
+            """),
             {"d": date},
         ).fetchall()
     nk_to_db = {r.netkeiba_id: r.id for r in races}
+    nk_to_info = {r.netkeiba_id: r for r in races}
+
+    # Filter: only races starting within next 45 min or not yet started
+    upcoming_ids = []
+    skipped = 0
+    for nk_id in race_ids:
+        info = nk_to_info.get(nk_id)
+        if not info or not info.post_time:
+            # No post_time data — include it (fallback)
+            upcoming_ids.append(nk_id)
+            continue
+
+        # post_time is a time object from DB
+        post_dt = datetime.combine(now_jst.date(), info.post_time, tzinfo=JST)
+        mins_until = (post_dt - now_jst).total_seconds() / 60
+
+        if mins_until < -10:
+            # Race finished more than 10 min ago — skip
+            skipped += 1
+            continue
+        elif mins_until > 45:
+            # Race is more than 45 min away — skip for now, will catch next run
+            skipped += 1
+            continue
+        else:
+            # Race is upcoming (within 45 min) or just started — fetch odds
+            upcoming_ids.append(nk_id)
+
+    if not upcoming_ids:
+        log.info(f"  No upcoming races right now ({skipped} skipped)")
+        return 0
+
+    log.info(f"  Fetching odds for {len(upcoming_ids)} upcoming races ({skipped} skipped)")
 
     total_updated = 0
-    for i, nk_id in enumerate(race_ids, 1):
+    for i, nk_id in enumerate(upcoming_ids, 1):
         db_id = nk_to_db.get(nk_id)
         if not db_id:
-            log.warning(f"  [{i}] {nk_id}: not in DB, skip")
             continue
+
+        info = nk_to_info.get(nk_id)
+        time_str = info.post_time.strftime('%H:%M') if info and info.post_time else "??:??"
 
         odds = fetch_win_odds(nk_id)
         if not odds:
-            log.warning(f"  [{i}] {nk_id}: no odds data")
+            log.warning(f"  [{i}/{len(upcoming_ids)}] R{info.race_number if info else '?'} ({time_str}): no odds")
             time.sleep(0.5)
             continue
 
@@ -120,8 +161,9 @@ def step_odds(date: str, race_ids: list[str]) -> int:
                 total_updated += result.rowcount
             session.commit()
 
-        log.info(f"  [{i}/{len(race_ids)}] {nk_id}: {len(odds)} horses updated")
-        time.sleep(0.5)  # rate limit
+        log.info(f"  [{i}/{len(upcoming_ids)}] R{info.race_number if info else '?'} ({time_str}): "
+                 f"{len(odds)} horses updated")
+        time.sleep(0.5)
 
     log.info(f"✅ Updated {total_updated} entries with odds")
     return total_updated

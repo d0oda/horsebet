@@ -134,6 +134,7 @@ class RaceData:
     grade: Optional[str] = None
     weather: Optional[str] = None
     field_size: Optional[int] = None
+    post_time: Optional[str] = None       # HH:MM JST
     entries: list[EntryData] = field(default_factory=list)
 
 
@@ -307,6 +308,10 @@ def _parse_race_header(soup: BeautifulSoup, race_id: str) -> RaceData:
         weather_match = re.search(r"天候[：:]\s*(\S+)", detail_text)
         if weather_match:
             race.weather = weather_match.group(1)
+        # Post time (発走 HH:MM or just HH:MM)
+        time_match = re.search(r'(\d{1,2}:\d{2})', detail_text)
+        if time_match:
+            race.post_time = time_match.group(1)
 
     # Date and course from race ID (format: YYYYCCDDRRNN)
     if len(race_id) >= 12:
@@ -847,11 +852,11 @@ def save_race_to_db(race: RaceData) -> bool:
                 INSERT INTO races (
                     netkeiba_id, date, course_id, race_number, distance,
                     surface, going, class, grade, race_name, race_name_jp,
-                    weather, field_size
+                    weather, field_size, post_time
                 ) VALUES (
                     :netkeiba_id, :date, :course_id, :race_number, :distance,
                     :surface, :going, :class, :grade, :race_name, :race_name_jp,
-                    :weather, :field_size
+                    :weather, :field_size, :post_time
                 )
                 RETURNING id
             """),
@@ -869,6 +874,7 @@ def save_race_to_db(race: RaceData) -> bool:
                 "race_name_jp": race.race_name_jp,
                 "weather": race.weather,
                 "field_size": race.field_size,
+                "post_time": race.post_time,
             },
         )
         race_db_id = race_result.fetchone()[0]
