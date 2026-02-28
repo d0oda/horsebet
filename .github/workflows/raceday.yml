@@ -1,0 +1,112 @@
+name: Race Day Pipeline
+
+on:
+  # Runs every 30 min from 00:00-08:00 UTC on Sat & Sun (JST 9am-5pm)
+  schedule:
+    - cron: '*/30 0-8 * * 0,6'
+
+  # Manual trigger with date override
+  workflow_dispatch:
+    inputs:
+      race_date:
+        description: 'Race date (YYYY-MM-DD). Leave blank for today (JST).'
+        required: false
+        type: string
+      skip_scrape:
+        description: 'Skip scraping (races already in DB)'
+        required: false
+        default: false
+        type: boolean
+      skip_odds:
+        description: 'Skip odds fetch'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  DATABASE_URL: ${{ secrets.DATABASE_URL }}
+  SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+  SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+  SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+  PYTHON_VERSION: '3.10'
+
+jobs:
+  pipeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Determine race date
+        id: date
+        run: |
+          if [ -n "${{ inputs.race_date }}" ]; then
+            echo "date=${{ inputs.race_date }}" >> $GITHUB_OUTPUT
+          else
+            # Default: today in JST (UTC+9)
+            echo "date=$(TZ=Asia/Tokyo date +%Y-%m-%d)" >> $GITHUB_OUTPUT
+          fi
+          echo "Race date: $(cat $GITHUB_OUTPUT | grep date | cut -d= -f2)"
+
+      - name: Check if race day
+        id: check
+        run: |
+          DATE="${{ steps.date.outputs.date }}"
+          DOW=$(date -d "$DATE" +%u 2>/dev/null || gdate -d "$DATE" +%u)
+          # JRA races are typically Sat(6) and Sun(7)
+          if [ "$DOW" = "6" ] || [ "$DOW" = "7" ] || [ -n "${{ inputs.race_date }}" ]; then
+            echo "is_race_day=true" >> $GITHUB_OUTPUT
+          else
+            echo "is_race_day=false" >> $GITHUB_OUTPUT
+            echo "⏭️ Not a race day ($DATE is weekday $DOW), skipping"
+          fi
+
+      - name: Run pipeline
+        if: steps.check.outputs.is_race_day == 'true'
+        run: |
+          DATE="${{ steps.date.outputs.date }}"
+          FLAGS=""
+
+          # On cron schedule: always skip scrape after first run of the day
+          # Check if races exist in DB already
+          if [ "${{ inputs.skip_scrape }}" = "true" ]; then
+            FLAGS="$FLAGS --skip-scrape"
+          fi
+          if [ "${{ inputs.skip_odds }}" = "true" ]; then
+            FLAGS="$FLAGS --skip-odds"
+          fi
+
+          echo "🏇 Running pipeline for $DATE $FLAGS"
+          python pipeline.py --date "$DATE" $FLAGS
+
+      - name: Upload predictions artifact
+        if: steps.check.outputs.is_race_day == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: predictions-${{ steps.date.outputs.date }}
+          path: |
+            results/predictions_*.json
+            results/data.json
+          retention-days: 30
+
+      - name: Deploy results to GitHub Pages
+        if: steps.check.outputs.is_race_day == 'true'
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./results
+          destination_dir: results
+          keep_files: true

@@ -1,7 +1,14 @@
-// UmaEdge Results App
+// UmaEdge Results App — 2026_v2
 (async function () {
     const resp = await fetch('data.json');
     const DATA = await resp.json();
+
+    // Group races by venue
+    const venueMap = {};
+    for (const race of DATA.races) {
+        if (!venueMap[race.venue]) venueMap[race.venue] = [];
+        venueMap[race.venue].push(race);
+    }
 
     let activeVenue = 'all';
     let activeFilter = 'all';
@@ -12,10 +19,10 @@
     function renderSummary() {
         const s = DATA.summary;
         const cards = [
-            { icon: '🏁', value: DATA.total_races, label: 'Races' },
-            { icon: '🐴', value: DATA.total_entries, label: 'Entries' },
-            { icon: '💎', value: s.total_bets, label: 'Value Bets' },
-            { icon: '🏆', value: s.winners, label: 'Winners Hit' },
+            { icon: '🏁', value: s.total_races, label: 'Races' },
+            { icon: '🐴', value: s.total_entries, label: 'Entries' },
+            { icon: '💎', value: s.total_bets, label: 'Bets (1/race)' },
+            { icon: '🏆', value: s.total_winners, label: 'Winners Hit' },
             { icon: '🎯', value: s.strike_rate + '%', label: 'Strike Rate' },
             { icon: '💰', value: '¥' + s.total_stake.toLocaleString(), label: 'Total Stake' },
             { icon: '📈', value: '¥' + s.total_returns.toLocaleString(), label: 'Returns', cls: s.total_returns > s.total_stake ? 'positive' : 'negative' },
@@ -28,11 +35,15 @@
                 <div class="summary-label">${c.label}</div>
             </div>
         `).join('');
+
+        // Show model + strategy info
+        const subtitle = document.querySelector('.subtitle');
+        if (subtitle) subtitle.textContent = `Model: ${DATA.model} | Strategy: ${s.strategy}`;
     }
 
     // ── Venue Tabs ──
     function renderVenueTabs() {
-        const venues = ['all', ...Object.keys(DATA.venues)];
+        const venues = ['all', ...Object.keys(venueMap)];
         const labels = { all: 'All Venues', Hanshin: '🟣 阪神', Kokura: '🟢 小倉', Nakayama: '🔵 中山' };
         document.getElementById('venueTabs').innerHTML = venues.map(v => `
             <button class="venue-tab ${v === activeVenue ? 'active' : ''}" data-venue="${v}">
@@ -64,19 +75,20 @@
         const grid = document.getElementById('racesGrid');
         let html = '';
 
-        const venues = activeVenue === 'all' ? Object.keys(DATA.venues) : [activeVenue];
+        const venues = activeVenue === 'all' ? Object.keys(venueMap) : [activeVenue];
 
         for (const venue of venues) {
-            const races = DATA.venues[venue] || [];
+            const races = venueMap[venue] || [];
             for (const race of races) {
-                const hasValueBets = race.entries.some(e => e.is_value_bet);
+                const hasBet = race.has_bet;
                 const topPick = race.entries[0];
+                const betEntry = race.entries.find(e => e.is_bet);
 
-                if (activeFilter === 'value' && !hasValueBets) continue;
+                if (activeFilter === 'value' && !hasBet) continue;
                 if (activeFilter === 'top' && (!topPick || topPick.prob_combined < 30)) continue;
 
-                const valueBetCount = race.entries.filter(e => e.is_value_bet).length;
                 const winnerEntry = race.entries.find(e => e.is_winner);
+                const fieldSize = race.entries.length;
 
                 html += `
                 <div class="race-card" id="race-${venue}-${race.race_number}">
@@ -89,13 +101,15 @@
                                     <span class="race-badge">${venue}</span>
                                     <span class="race-badge ${race.surface}">${race.surface === 'turf' ? '芝' : 'ダ'}${race.distance}m</span>
                                     <span class="race-badge">${race.going || ''}</span>
-                                    <span class="race-badge">${race.field_size}頭</span>
-                                    ${valueBetCount ? `<span class="race-badge" style="background:var(--accent-glow);color:var(--accent-light)">💎 ${valueBetCount}</span>` : ''}
+                                    <span class="race-badge">${fieldSize}頭</span>
+                                    ${hasBet ? `<span class="race-badge" style="background:var(--accent-glow);color:var(--accent-light)">✅ BET</span>` : '<span class="race-badge" style="opacity:0.5">SKIP</span>'}
                                 </div>
                             </div>
                         </div>
                         <div class="race-stats">
                             ${winnerEntry ? `<div class="race-stat"><div class="race-stat-value" style="color:var(--gold)">🏆 ${winnerEntry.horse_name}</div><div class="race-stat-label">${winnerEntry.odds ? winnerEntry.odds.toFixed(1) + 'x' : ''}</div></div>` : ''}
+                            ${betEntry ? `<div class="race-stat"><div class="race-stat-value" style="color:var(--accent-light)">${betEntry.horse_name}</div><div class="race-stat-label">Pick ${betEntry.is_winner ? '🏆' : '#' + (betEntry.finish_pos || '?')}</div></div>` : ''}
+                            ${betEntry ? (() => { const pnl = betEntry.is_winner ? Math.round(betEntry.odds * 100 - 100) : -100; const cls = pnl > 0 ? 'color:#4ade80' : 'color:#f87171'; return `<div class="race-stat"><div class="race-stat-value" style="${cls};font-weight:700">${pnl > 0 ? '+' : ''}¥${pnl.toLocaleString()}</div><div class="race-stat-label">P&L</div></div>`; })() : ''}
                             <div class="race-stat">
                                 <div class="race-stat-value">${topPick ? topPick.prob_combined + '%' : '--'}</div>
                                 <div class="race-stat-label">Top Prob</div>
@@ -135,13 +149,13 @@
 
     function renderEntryRow(e) {
         const evClass = e.ev && e.ev > 0 ? 'ev-positive' : 'ev-negative';
-        const rowClass = `${e.is_value_bet ? 'value-bet' : ''} ${e.is_winner ? 'winner' : ''}`;
+        const rowClass = `${e.is_bet ? 'value-bet' : ''} ${e.is_winner ? 'winner' : ''}`;
         const finClass = e.finish_pos === 1 ? 'finish-1' : e.finish_pos === 2 ? 'finish-2' : e.finish_pos === 3 ? 'finish-3' : 'finish-other';
 
         return `<tr class="${rowClass}">
             <td>${e.finish_pos ? `<span class="finish-badge ${finClass}">${e.finish_pos}</span>` : '<span style="color:var(--text-muted)">—</span>'}</td>
             <td style="color:var(--text-muted)">${e.post_position || '—'}</td>
-            <td class="horse-name">${e.horse_name}${e.is_winner ? '<span class="winner-badge">👑</span>' : ''}</td>
+            <td class="horse-name">${e.horse_name}${e.is_winner ? '<span class="winner-badge">👑</span>' : ''}${e.is_bet ? '<span class="winner-badge" style="color:var(--accent-light)"> ✅</span>' : ''}</td>
             <td>${e.odds ? e.odds.toFixed(1) : '—'}</td>
             <td style="color:var(--text-muted)">${e.popularity || '—'}</td>
             <td><strong>${e.prob_combined}%</strong></td>
@@ -155,13 +169,15 @@
         </tr>`;
     }
 
-    // ── Value Bets Table ──
+    // ── Value Bets Table (now "Best Picks") ──
     function renderValueBets() {
         const tbody = document.getElementById('valueTableBody');
         const bets = [...DATA.value_bets];
 
+        const getPnl = (b) => b.is_winner ? Math.round(b.odds * 100 - 100) : -100;
         bets.sort((a, b) => {
-            let va = a[sortCol], vb = b[sortCol];
+            let va = sortCol === 'pnl' ? getPnl(a) : a[sortCol];
+            let vb = sortCol === 'pnl' ? getPnl(b) : b[sortCol];
             if (va == null) va = -Infinity;
             if (vb == null) vb = -Infinity;
             return sortDir === 'desc' ? vb - va : va - vb;
@@ -170,17 +186,20 @@
         document.getElementById('valueBetCount').textContent = bets.length;
 
         tbody.innerHTML = bets.map(b => {
-            const evClass = b.ev > 20 ? 'ev-positive' : 'ev-positive';
             const finClass = b.finish_pos === 1 ? 'finish-1' : b.finish_pos === 2 ? 'finish-2' : b.finish_pos === 3 ? 'finish-3' : 'finish-other';
             const rowClass = b.is_winner ? 'winner-row' : '';
+            const pnl = b.is_winner ? Math.round(b.odds * 100 - 100) : -100;
+            const pnlClass = pnl > 0 ? 'ev-positive' : 'ev-negative';
             return `<tr class="${rowClass}">
                 <td>${b.venue}</td>
                 <td>R${b.race_number}</td>
                 <td class="horse-name">${b.horse_name}${b.is_winner ? ' 👑' : ''}</td>
-                <td>${b.post_position || '—'}</td>
                 <td>${b.odds ? b.odds.toFixed(1) + 'x' : '—'}</td>
                 <td>${b.prob_combined}%</td>
+                <td style="color:var(--text-muted)">${b.prob_fund}%</td>
+                <td style="color:var(--text-muted)">${b.prob_mkt}%</td>
                 <td><span class="ev-badge ev-positive">+${b.ev}%</span></td>
+                <td><span class="ev-badge ${pnlClass}">${pnl > 0 ? '+' : ''}¥${pnl.toLocaleString()}</span></td>
                 <td>${b.finish_pos ? `<span class="finish-badge ${finClass}">${b.finish_pos}</span>` : '—'}</td>
             </tr>`;
         }).join('');
@@ -188,7 +207,7 @@
 
     // Sort value table
     document.querySelectorAll('.value-table th').forEach((th, i) => {
-        const cols = ['venue', 'race_number', 'horse_name', 'post_position', 'odds', 'prob_combined', 'ev', 'finish_pos'];
+        const cols = ['venue', 'race_number', 'horse_name', 'odds', 'prob_combined', 'prob_fund', 'prob_mkt', 'ev', 'pnl', 'finish_pos'];
         th.addEventListener('click', () => {
             const col = cols[i];
             if (sortCol === col) { sortDir = sortDir === 'desc' ? 'asc' : 'desc'; }
@@ -210,7 +229,7 @@
     renderRaces();
     renderValueBets();
 
-    // Auto-expand first race
-    const firstCard = document.querySelector('.race-card');
-    if (firstCard) firstCard.classList.add('expanded');
+    // Auto-expand first race with a bet
+    const firstBetCard = document.querySelector('.race-card');
+    if (firstBetCard) firstBetCard.classList.add('expanded');
 })();

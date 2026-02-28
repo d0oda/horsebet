@@ -33,7 +33,7 @@ log = logging.getLogger("predict_final")
 
 def predict_with_filters(
     race_ids: list[int],
-    model_version: str = "2025_hybrid",
+    model_version: str = "2026_v2",
     ev_threshold: float = 0.05,
     max_odds: float = 30.0,
     min_odds: float = 1.5,
@@ -68,6 +68,14 @@ def predict_with_filters(
         if features_df.empty:
             log.warning(f"No features for race {race_id}, skipping")
             continue
+
+        # Ensure all expected feature columns exist (pre-race data may
+        # be missing columns like horse_weight_z when weights aren't out).
+        all_model_cols = set(hybrid.fund_feature_cols) | set(hybrid.mkt_feature_cols)
+        for col in all_model_cols:
+            if col not in features_df.columns:
+                log.debug(f"Adding missing column '{col}' as 0")
+                features_df[col] = 0
 
         # Get predictions with adaptive blending + longshot suppression
         preds = hybrid.predict(features_df)
@@ -147,7 +155,7 @@ def main():
     )
     parser.add_argument("--race-id", type=int, help="Single race ID to predict")
     parser.add_argument("--date", type=str, help="Predict all races for a date (YYYY-MM-DD)")
-    parser.add_argument("--version", type=str, default="2025_hybrid", help="Model version")
+    parser.add_argument("--version", type=str, default="2026_v2", help="Model version")
     parser.add_argument("--ev-threshold", type=float, default=0.05, help="Min EV (default: 5%%)")
     parser.add_argument("--max-odds", type=float, default=30.0, help="Max odds (default: 30)")
     parser.add_argument("--min-odds", type=float, default=1.5, help="Min odds (default: 1.5)")
