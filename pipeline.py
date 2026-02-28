@@ -306,6 +306,95 @@ def step_frontend(predictions_path: str, date: str):
     log.info("━━━ Pipeline complete ━━━")
 
 
+def step_results(date: str, race_ids: list[str]):
+    """
+    Step 5: Scrape results for finished races.
+    Updates entries with finish_pos, time, last_3f, final odds.
+    """
+    JST = timezone(timedelta(hours=9))
+    now_jst = datetime.now(JST)
+    log.info(f"━━━ Step 5: Collecting results (JST: {now_jst.strftime('%H:%M')}) ━━━")
+
+    # Find races that should be finished (post_time + 10 min < now)
+    with get_session() as session:
+        races = session.execute(
+            text("""
+                SELECT id, netkeiba_id, race_number, post_time
+                FROM horsebet.races WHERE date = :d
+                ORDER BY course_id, race_number
+            """),
+            {"d": date},
+        ).fetchall()
+
+    finished_ids = []
+    for r in races:
+        if not r.post_time:
+            continue
+        post_dt = datetime.combine(now_jst.date(), r.post_time, tzinfo=JST)
+        mins_since = (now_jst - post_dt).total_seconds() / 60
+        if mins_since > 10:
+            # Check if we already have results
+            with get_session() as session:
+                has_result = session.execute(
+                    text("""
+                        SELECT 1 FROM horsebet.entries
+                        WHERE race_id = :rid AND finish_pos IS NOT NULL
+                        LIMIT 1
+                    """),
+                    {"rid": r.id},
+                ).fetchone()
+            if not has_result:
+                finished_ids.append(r)
+
+    if not finished_ids:
+        log.info("  No new results to collect")
+        return
+
+    log.info(f"  Scraping results for {len(finished_ids)} finished races")
+
+    for i, race_row in enumerate(finished_ids, 1):
+        log.info(f"  [{i}/{len(finished_ids)}] R{race_row.race_number} ({race_row.netkeiba_id})")
+        try:
+            race_data = scrape_race(race_row.netkeiba_id)
+            if not race_data or not race_data.entries:
+                log.warning(f"    No result data yet")
+                time.sleep(1)
+                continue
+
+            # Update entries with results
+            with get_session() as session:
+                for entry in race_data.entries:
+                    if entry.finish_pos is not None:
+                        session.execute(
+                            text("""
+                                UPDATE horsebet.entries
+                                SET finish_pos = :fp, time_secs = :ts,
+                                    last_3f_secs = :l3f, corner_positions = :cp,
+                                    odds_win = COALESCE(:odds, odds_win),
+                                    popularity = COALESCE(:pop, popularity)
+                                WHERE race_id = :rid AND post_position = :pp
+                            """),
+                            {
+                                "fp": entry.finish_pos,
+                                "ts": entry.time_secs,
+                                "l3f": entry.last_3f_secs,
+                                "cp": entry.corner_positions,
+                                "odds": entry.odds_win,
+                                "pop": entry.popularity,
+                                "rid": race_row.id,
+                                "pp": entry.post_position,
+                            },
+                        )
+                session.commit()
+                log.info(f"    ✅ Results saved ({len(race_data.entries)} entries)")
+
+        except Exception as e:
+            log.warning(f"    ⚠️ Failed: {e}")
+        time.sleep(1)
+
+    log.info(f"✅ Collected results for {len(finished_ids)} races")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="UmaEdge — Race Day Pipeline",
@@ -374,6 +463,9 @@ Examples:
 
     # Step 4: Frontend
     step_frontend(pred_path, args.date)
+
+    # Step 5: Collect results for finished races
+    step_results(args.date, race_ids)
 
 
 if __name__ == "__main__":
