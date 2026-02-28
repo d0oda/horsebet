@@ -15,6 +15,7 @@ Usage:
 """
 
 import logging
+import time
 from typing import Optional
 
 import numpy as np
@@ -181,11 +182,16 @@ class FeatureBuilder:
         surface: str, course_id: Optional[int], history_df: pd.DataFrame
     ) -> dict:
         """Compute rolling features for a horse based on their past races."""
-        # Filter to this horse's history BEFORE the current race
-        hist = history_df[
-            (history_df["horse_id"] == horse_id)
-            & (history_df["date"] < race_date)
-        ].sort_values("date", ascending=False)
+        # Use pre-indexed group if available, else fall back to filtering
+        group = self._horse_groups.get(horse_id) if hasattr(self, '_horse_groups') else None
+        if group is not None:
+            hist = group[group["date"] < race_date]
+        else:
+            hist = history_df[
+                (history_df["horse_id"] == horse_id)
+                & (history_df["date"] < race_date)
+            ]
+        hist = hist.sort_values("date", ascending=False)
 
         features = {}
 
@@ -382,10 +388,16 @@ class FeatureBuilder:
         if jockey_id is None:
             return null_feats
 
-        hist = history_df[
-            (history_df["jockey_id"] == jockey_id)
-            & (history_df["date"] < race_date)
-        ].sort_values("date", ascending=False)
+        # Use pre-indexed group if available
+        group = self._jockey_groups.get(jockey_id) if hasattr(self, '_jockey_groups') else None
+        if group is not None:
+            hist = group[group["date"] < race_date]
+        else:
+            hist = history_df[
+                (history_df["jockey_id"] == jockey_id)
+                & (history_df["date"] < race_date)
+            ]
+        hist = hist.sort_values("date", ascending=False)
 
         if hist.empty:
             return null_feats
@@ -428,10 +440,16 @@ class FeatureBuilder:
         if trainer_id is None or "trainer_id" not in history_df.columns:
             return null_feats
 
-        hist = history_df[
-            (history_df["trainer_id"] == trainer_id)
-            & (history_df["date"] < race_date)
-        ].sort_values("date", ascending=False)
+        # Use pre-indexed group if available
+        group = self._trainer_groups.get(trainer_id) if hasattr(self, '_trainer_groups') else None
+        if group is not None:
+            hist = group[group["date"] < race_date]
+        else:
+            hist = history_df[
+                (history_df["trainer_id"] == trainer_id)
+                & (history_df["date"] < race_date)
+            ]
+        hist = hist.sort_values("date", ascending=False)
 
         if hist.empty:
             return null_feats
@@ -482,11 +500,19 @@ class FeatureBuilder:
         if jockey_id is None or course_id is None or "course_id" not in history_df.columns:
             return null_feats
 
-        hist = history_df[
-            (history_df["jockey_id"] == jockey_id)
-            & (history_df["course_id"] == course_id)
-            & (history_df["date"] < race_date)
-        ]
+        # Use pre-indexed group if available
+        group = self._jockey_groups.get(jockey_id) if hasattr(self, '_jockey_groups') else None
+        if group is not None:
+            hist = group[
+                (group["course_id"] == course_id)
+                & (group["date"] < race_date)
+            ]
+        else:
+            hist = history_df[
+                (history_df["jockey_id"] == jockey_id)
+                & (history_df["course_id"] == course_id)
+                & (history_df["date"] < race_date)
+            ]
 
         if hist.empty:
             return null_feats
@@ -533,10 +559,15 @@ class FeatureBuilder:
                 distance = row.get("distance") or 2000
 
                 # Get historical stats for pace simulation
-                horse_hist = history_df[
-                    (history_df["horse_id"] == hid)
-                    & (history_df["date"] < str(row["date"]))
-                ].sort_values("date", ascending=False)
+                # Use pre-indexed group if available (pace sim)
+                group = self._horse_groups.get(hid) if hasattr(self, '_horse_groups') else None
+                if group is not None:
+                    horse_hist = group[group["date"] < str(row["date"])].sort_values("date", ascending=False)
+                else:
+                    horse_hist = history_df[
+                        (history_df["horse_id"] == hid)
+                        & (history_df["date"] < str(row["date"]))
+                    ].sort_values("date", ascending=False)
 
                 if not horse_hist.empty:
                     finishes = horse_hist["finish_pos"].dropna()
@@ -706,10 +737,18 @@ class FeatureBuilder:
         )
 
         # Horse-specific going performance from history
-        hist = history_df[
-            (history_df["horse_id"] == horse_id)
-            & (history_df["date"] < race_date)
-        ] if horse_id is not None else pd.DataFrame()
+        # Use pre-indexed group if available
+        if horse_id is not None:
+            group = self._horse_groups.get(horse_id) if hasattr(self, '_horse_groups') else None
+            if group is not None:
+                hist = group[group["date"] < race_date]
+            else:
+                hist = history_df[
+                    (history_df["horse_id"] == horse_id)
+                    & (history_df["date"] < race_date)
+                ]
+        else:
+            hist = pd.DataFrame()
 
         if not hist.empty and "going" in hist.columns:
             # Win% on current going type
@@ -784,10 +823,15 @@ class FeatureBuilder:
             return features
 
         # Historical data at this course BEFORE this race
-        course_hist = history_df[
-            (history_df["course_id"] == course_id)
-            & (history_df["date"] < race_date)
-        ]
+        # Use pre-indexed group if available
+        group = self._course_groups.get(course_id) if hasattr(self, '_course_groups') else None
+        if group is not None:
+            course_hist = group[group["date"] < race_date]
+        else:
+            course_hist = history_df[
+                (history_df["course_id"] == course_id)
+                & (history_df["date"] < race_date)
+            ]
 
         if course_hist.empty or "draw" not in course_hist.columns:
             features["draw_bias_at_course"] = np.nan
@@ -1021,6 +1065,7 @@ class FeatureBuilder:
 
     def _build(self, race_id: Optional[int] = None) -> pd.DataFrame:
         """Core feature building logic."""
+        t0 = time.time()
         log.info("Loading race data...")
         race_df = self._load_race_data(race_id)
         if race_df.empty:
@@ -1029,10 +1074,42 @@ class FeatureBuilder:
         log.info("Loading horse/jockey history for rolling features...")
         history_df = self._load_horse_history()
 
-        log.info(f"Building features for {len(race_df)} entries...")
-        feature_rows = []
+        # Pre-index history by entity for O(1) lookups (major speedup)
+        log.info("Pre-indexing history for fast lookups...")
+        self._horse_groups = dict(list(history_df.groupby("horse_id")))
+        self._jockey_groups = (
+            dict(list(history_df.groupby("jockey_id")))
+            if "jockey_id" in history_df.columns else {}
+        )
+        self._trainer_groups = (
+            dict(list(history_df.groupby("trainer_id")))
+            if "trainer_id" in history_df.columns else {}
+        )
+        self._course_groups = (
+            dict(list(history_df.groupby("course_id")))
+            if "course_id" in history_df.columns else {}
+        )
+        log.info(
+            f"Indexed: {len(self._horse_groups)} horses, "
+            f"{len(self._jockey_groups)} jockeys, "
+            f"{len(self._trainer_groups)} trainers, "
+            f"{len(self._course_groups)} courses"
+        )
 
-        for idx, row in race_df.iterrows():
+        total = len(race_df)
+        log.info(f"Building features for {total} entries...")
+        feature_rows = []
+        t_loop = time.time()
+
+        for i, (idx, row) in enumerate(race_df.iterrows()):
+            if i > 0 and i % 1000 == 0:
+                elapsed = time.time() - t_loop
+                rate = i / elapsed
+                eta = (total - i) / rate
+                log.info(
+                    f"  [{i:,}/{total:,}] {i/total*100:.0f}% | "
+                    f"{rate:.0f} entries/s | ETA {eta:.0f}s"
+                )
             features = {
                 "race_id": row["race_id"],
                 "entry_id": row["entry_id"],
@@ -1145,7 +1222,17 @@ class FeatureBuilder:
         ]
         df = self.normalise_per_race(df, numeric_cols)
 
-        log.info(f"✅ Built {len(df)} feature vectors with {len(df.columns)} columns")
+        elapsed = time.time() - t0
+        log.info(
+            f"✅ Built {len(df)} feature vectors with {len(df.columns)} columns "
+            f"in {elapsed:.1f}s ({len(df)/elapsed:.0f} entries/s)"
+        )
+
+        # Clean up group indices
+        for attr in ('_horse_groups', '_jockey_groups', '_trainer_groups', '_course_groups'):
+            if hasattr(self, attr):
+                delattr(self, attr)
+
         return df
 
     # ------------------------------------------------------------------

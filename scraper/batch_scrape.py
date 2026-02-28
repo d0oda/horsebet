@@ -22,6 +22,8 @@ Usage:
 
 import argparse
 import logging
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional
 
 from sqlalchemy import text
@@ -80,12 +82,32 @@ def get_already_scraped_ids() -> set[str]:
 # Batch Scraping
 # ---------------------------------------------------------------------------
 
+def _scrape_one(rid: str, with_odds: bool) -> tuple[str, str, str]:
+    """Scrape a single race ID. Returns (rid, status, description)."""
+    try:
+        result = scrape_race(rid)
+        if result and result.entries:
+            desc = f"{result.race_name_jp} ({len(result.entries)} entries)"
+            # Optionally scrape final odds snapshot
+            if with_odds:
+                odds = fetch_win_odds(rid)
+                if odds:
+                    count = save_odds_snapshot(rid, odds)
+                    desc += f" + {count} odds"
+            return (rid, "scraped", desc)
+        else:
+            return (rid, "not_found", "")
+    except Exception as e:
+        return (rid, "failed", str(e))
+
+
 def batch_scrape(
     year: int,
     courses: Optional[list[str]] = None,
     dry_run: bool = False,
     max_races: Optional[int] = None,
     with_odds: bool = False,
+    workers: int = 1,
 ) -> dict:
     """
     Scrape races for a year by trying generated JRA race IDs.
@@ -95,6 +117,8 @@ def batch_scrape(
         courses: List of JRA course codes (e.g. ["05", "06"])
         dry_run: If True, only show which IDs would be tried
         max_races: Stop after scraping this many new races
+        with_odds: Also fetch final odds for each race
+        workers: Number of concurrent workers (default: 1)
 
     Returns:
         Summary dict with counts
@@ -126,30 +150,61 @@ def batch_scrape(
         _print_summary(stats)
         return stats
 
-    for i, rid in enumerate(new_ids):
-        if max_races and stats["races_scraped"] >= max_races:
-            log.info(f"Reached max_races limit ({max_races}). Stopping.")
-            break
+    if workers <= 1:
+        # Sequential mode (original behavior)
+        for i, rid in enumerate(new_ids):
+            if max_races and stats["races_scraped"] >= max_races:
+                log.info(f"Reached max_races limit ({max_races}). Stopping.")
+                break
 
-        try:
-            result = scrape_race(rid)
-            if result and result.entries:
+            rid, status, desc = _scrape_one(rid, with_odds)
+            if status == "scraped":
                 stats["races_scraped"] += 1
-                log.info(
-                    f"  [{stats['races_scraped']}/{max_races or '∞'}] ✅ {rid}"
-                    f" — {result.race_name_jp} ({len(result.entries)} entries)"
-                )
-                # Optionally scrape final odds snapshot
-                if with_odds:
-                    odds = fetch_win_odds(rid)
-                    if odds:
-                        count = save_odds_snapshot(rid, odds)
-                        log.info(f"    📊 Saved {count} odds for {rid}")
+                log.info(f"  [{stats['races_scraped']}/{max_races or '∞'}] ✅ {rid} — {desc}")
+            elif status == "failed":
+                stats["races_failed"] += 1
+                log.error(f"  ❌ Failed {rid}: {desc}")
             else:
                 stats["races_not_found"] += 1
-        except Exception as e:
-            log.error(f"  ❌ Failed {rid}: {e}")
-            stats["races_failed"] += 1
+    else:
+        # Concurrent mode
+        log.info(f"Using {workers} concurrent workers")
+        lock = threading.Lock()
+        stop_event = threading.Event()
+
+        def _worker(rid: str) -> tuple[str, str, str]:
+            if stop_event.is_set():
+                return (rid, "skipped", "")
+            return _scrape_one(rid, with_odds)
+
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {
+                pool.submit(_worker, rid): rid
+                for rid in new_ids
+            }
+            for future in as_completed(futures):
+                rid, status, desc = future.result()
+                with lock:
+                    if status == "scraped":
+                        stats["races_scraped"] += 1
+                        log.info(
+                            f"  [{stats['races_scraped']}/{max_races or '∞'}] ✅ {rid} — {desc}"
+                        )
+                        if max_races and stats["races_scraped"] >= max_races:
+                            log.info(f"Reached max_races limit ({max_races}). Stopping.")
+                            stop_event.set()
+                    elif status == "failed":
+                        stats["races_failed"] += 1
+                        log.error(f"  ❌ Failed {rid}: {desc}")
+                    elif status == "not_found":
+                        stats["races_not_found"] += 1
+
+                    done = stats["races_scraped"] + stats["races_not_found"] + stats["races_failed"]
+                    if done % 100 == 0:
+                        log.info(
+                            f"  Progress: {done}/{len(new_ids)} "
+                            f"(✅ {stats['races_scraped']} | ❌ {stats['races_failed']} | 🔍 {stats['races_not_found']} 404s)"
+                        )
 
     _print_summary(stats)
     return stats
@@ -180,6 +235,7 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="Only show candidate IDs, don't scrape")
     parser.add_argument("--max-races", type=int, default=50, help="Stop after N new races per year (default: 50)")
     parser.add_argument("--with-odds", action="store_true", help="Also scrape final odds for each race")
+    parser.add_argument("--workers", type=int, default=1, help="Number of concurrent workers (default: 1)")
 
     args = parser.parse_args()
     courses = args.courses.split(",") if args.courses else None
@@ -197,7 +253,7 @@ def main():
         log.info(f"\n{'=' * 50}")
         log.info(f"  Scraping year {year}")
         log.info(f"{'=' * 50}")
-        stats = batch_scrape(year, courses=courses, dry_run=args.dry_run, max_races=args.max_races, with_odds=args.with_odds)
+        stats = batch_scrape(year, courses=courses, dry_run=args.dry_run, max_races=args.max_races, with_odds=args.with_odds, workers=args.workers)
         for k in total_stats:
             total_stats[k] += stats.get(k, 0)
 

@@ -228,13 +228,17 @@ class Backtester:
         # Daily P&L
         result.daily_pnl = sorted(daily_pnl.items())
 
-        # Sharpe ratio (daily)
-        if result.daily_pnl:
-            daily_returns = np.array([v for _, v in result.daily_pnl])
-            if daily_returns.std() > 0:
-                result.sharpe = (daily_returns.mean() / daily_returns.std()) * np.sqrt(52)  # annualised (weekly racing)
+        # Sharpe ratio — per-bet percentage returns (profit / stake)
+        # Un-annualized: mean(return) / std(return) across individual bets
+        # Requires minimum 10 bets for statistical meaning
+        if result.bets and len(result.bets) >= 10:
+            bet_returns = np.array([b.profit / b.stake for b in result.bets])
+            if bet_returns.std() > 0:
+                result.sharpe = bet_returns.mean() / bet_returns.std()
             else:
                 result.sharpe = 0
+        else:
+            result.sharpe = 0  # insufficient data
 
         return result
 

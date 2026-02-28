@@ -44,7 +44,7 @@ def _fetch(url: str, retries: int = 4) -> Optional[BeautifulSoup]:
     """Fetch a URL with retries, polite delay, and rate-limit backoff."""
     for attempt in range(retries):
         try:
-            delay = random.uniform(2.0, 4.0)
+            delay = random.uniform(1.0, 2.0)
             time.sleep(delay)
             resp = requests.get(url, headers=HEADERS, timeout=30)
             resp.encoding = "EUC-JP"

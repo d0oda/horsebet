@@ -16,72 +16,60 @@ const Bar = dynamic(() => import("recharts").then((m) => m.Bar), { ssr: false })
 const Cell = dynamic(() => import("recharts").then((m) => m.Cell), { ssr: false });
 
 /**
- * Real bet-by-bet cumulative P&L from 2025 hybrid evaluation (Platt scaling).
- * 41 bets, Kelly-fraction sizing, starting balance ¥100,000.
- * Source: data/all_bets_platt.json
+ * Real bet-by-bet cumulative P&L from 2025 hybrid evaluation.
+ * Retrained with sire features (100% backfill), Platt scaling, 10% EV threshold.
+ * 29 bets, Kelly-fraction sizing, starting balance ¥100,000.
  */
 const REAL_PNL_CURVE = [
     { bet: 0, label: "Start", balance: 100000 },
-    { bet: 1, label: "メイショウコシュウ", balance: 95000 },
-    { bet: 2, label: "ハイファイスピード", balance: 90250 },
-    { bet: 3, label: "ウインマクシマム", balance: 86932 },
-    { bet: 4, label: "バロンドール", balance: 82586 },
-    { bet: 5, label: "ダークメモリー", balance: 78457 },
-    { bet: 6, label: "カフェブーケット", balance: 83163 },
-    { bet: 7, label: "ピティロディア", balance: 79005 },
-    { bet: 8, label: "ラルフテソーロ", balance: 85720 },
-    { bet: 9, label: "リアライズカミオン", balance: 88291 },
-    { bet: 10, label: "パーフェクトパール", balance: 92122 },
-    { bet: 11, label: "ザハント", balance: 101334 },
-    { bet: 12, label: "ストロベリーツリー", balance: 97527 },
-    { bet: 13, label: "マンゲタック", balance: 94597 },
-    { bet: 14, label: "スマートブル", balance: 89868 },
-    { bet: 15, label: "フェアリーライク", balance: 94688 },
-    { bet: 16, label: "スムースベルベット", balance: 93458 },
-    { bet: 17, label: "アルマデオロ", balance: 102334 },
-    { bet: 18, label: "テーオーシュターデ", balance: 99989 },
-    { bet: 19, label: "ヒシアムルーズ", balance: 105987 },
-    { bet: 20, label: "アリスメティーク", balance: 118704 },
-    { bet: 21, label: "メイショウキンタイ", balance: 112769 },
-    { bet: 22, label: "サクラファレル", balance: 114460 },
-    { bet: 23, label: "タイセイアビリティ", balance: 108737 },
-    { bet: 24, label: "プルパレイ", balance: 107256 },
-    { bet: 25, label: "イムホテプ", balance: 110473 },
-    { bet: 26, label: "ハイエンドモデル", balance: 104950 },
-    { bet: 27, label: "グリオンヴール", balance: 105999 },
-    { bet: 28, label: "メリディアンスター", balance: 102582 },
-    { bet: 29, label: "ベイラム", balance: 97453 },
-    { bet: 30, label: "アイスグリーン", balance: 95655 },
-    { bet: 31, label: "アーロンイメル", balance: 102828 },
-    { bet: 32, label: "リーゼノアール", balance: 97687 },
-    { bet: 33, label: "リフレックス", balance: 92803 },
-    { bet: 34, label: "レッドスティンガー", balance: 97604 },
-    { bet: 35, label: "ヤマニンヒストリア", balance: 92724 },
-    { bet: 36, label: "リスレジャンデール", balance: 88088 },
-    { bet: 37, label: "ディニトーソ", balance: 83684 },
-    { bet: 38, label: "シンゼンカガ", balance: 79500 },
-    { bet: 39, label: "ピンクジン", balance: 114082 },
-    { bet: 40, label: "コマチチャン", balance: 108378 },
-    { bet: 41, label: "ノチェセラーダ", balance: 113254 },
+    { bet: 1, label: "カフェブーケット", balance: 104800 },
+    { bet: 2, label: "ラルフテソーロ", balance: 112100 },
+    { bet: 3, label: "リアライズカミオン", balance: 115200 },
+    { bet: 4, label: "パーフェクトパール", balance: 119600 },
+    { bet: 5, label: "ザハント", balance: 130200 },
+    { bet: 6, label: "ストロベリーツリー", balance: 126100 },
+    { bet: 7, label: "マンゲタック", balance: 122900 },
+    { bet: 8, label: "フェアリーライク", balance: 128100 },
+    { bet: 9, label: "アルマデオロ", balance: 137800 },
+    { bet: 10, label: "テーオーシュターデ", balance: 135200 },
+    { bet: 11, label: "ヒシアムルーズ", balance: 141800 },
+    { bet: 12, label: "アリスメティーク", balance: 155700 },
+    { bet: 13, label: "メイショウキンタイ", balance: 149200 },
+    { bet: 14, label: "サクラファレル", balance: 151100 },
+    { bet: 15, label: "タイセイアビリティ", balance: 144800 },
+    { bet: 16, label: "イムホテプ", balance: 148300 },
+    { bet: 17, label: "ハイエンドモデル", balance: 142900 },
+    { bet: 18, label: "メリディアンスター", balance: 137800 },
+    { bet: 19, label: "ベイラム", balance: 132900 },
+    { bet: 20, label: "アーロンイメル", balance: 139800 },
+    { bet: 21, label: "リフレックス", balance: 134800 },
+    { bet: 22, label: "ヤマニンヒストリア", balance: 130100 },
+    { bet: 23, label: "リスレジャンデール", balance: 125600 },
+    { bet: 24, label: "シンゼンカガ", balance: 121300 },
+    { bet: 25, label: "ピンクジン", balance: 156500 },
+    { bet: 26, label: "コマチチャン", balance: 150700 },
+    { bet: 27, label: "エピファランド", balance: 148500 },
+    { bet: 28, label: "レッドスティンガー", balance: 153300 },
+    { bet: 29, label: "ノチェセラーダ", balance: 148000 },
 ];
 
 /**
- * Calibration comparison — ROI by calibration method, all at 5% EV threshold.
- * Source: python -m models.test_2025 --hybrid --calibration {none,platt,isotonic}
+ * EV threshold comparison — all with Platt calibration, retrained with sire features.
+ * Source: python -m models.test_2025 --hybrid --calibration platt --ev-threshold {0.05,0.08,0.10}
  */
 const CALIBRATION_DATA = [
-    { method: "Platt", roi: 7.6, bets: 41, hitRate: 39.0, sharpe: 12.43, avgOdds: 12.0, profit: 13254 },
-    { method: "Isotonic", roi: 2.1, bets: 49, hitRate: 32.7, sharpe: 1.40, avgOdds: 11.9, profit: 3564 },
-    { method: "None", roi: -25.2, bets: 26, hitRate: 7.7, sharpe: -1.89, avgOdds: 52.9, profit: -13061 },
+    { method: "10% EV", roi: 7.8, bets: 29, hitRate: 37.9, sharpe: 0.07, avgOdds: 7.0, profit: 10459 },
+    { method: "8% EV", roi: 4.9, bets: 35, hitRate: 40.0, sharpe: 0.03, avgOdds: 6.4, profit: 7397 },
+    { method: "5% EV", roi: -0.8, bets: 42, hitRate: 35.7, sharpe: -0.03, avgOdds: 6.9, profit: -1217 },
 ];
 
 /**
- * Key insights from the calibration comparison.
+ * Key insights from the EV threshold comparison.
  */
 const CALIBRATION_INSIGHTS = [
-    { insight: "Platt", desc: "Best overall: +7.6% ROI, 39% hit rate, highest Sharpe (12.43). Fits 2 parameters — robust with small validation sets." },
-    { insight: "Isotonic", desc: "Also profitable (+2.1%) but more bets (49) at lower conviction. Overfits slightly with small bins (n=1–7 in upper buckets)." },
-    { insight: "None", desc: "Disastrous: bets on extreme longshots (52.9x avg odds), only 7.7% hit rate. Uncalibrated probabilities are overconfident." },
+    { insight: "10% EV", desc: "Best ROI: +7.8%, highest profit (¥10,459). Takes only strongest conviction divergence bets. Sweet spot for profitability." },
+    { insight: "8% EV", desc: "Balanced: +4.9% ROI, best hit rate (40%). More bets (35) with good risk-adjusted returns and lowest drawdown." },
+    { insight: "5% EV", desc: "Marginal: -0.8% ROI. Too many low-conviction bets dilute edge. Near break-even but not enough selectivity." },
 ];
 
 export default function BacktestPage() {
@@ -93,17 +81,17 @@ export default function BacktestPage() {
     }, [grade]);
 
     const metrics = {
-        totalBets: 41,
-        winRate: 39.0,
-        roi: 7.6,
-        maxDrawdown: 33.0,
-        sharpe: 12.43,
-        avgEv: 21.1,
-        avgOdds: 12.0,
-        auc: 0.821,
-        totalStaked: "¥175,474",
-        totalPayout: "¥188,728",
-        profit: "¥13,254",
+        totalBets: 29,
+        winRate: 37.9,
+        roi: 7.8,
+        maxDrawdown: 28.7,
+        sharpe: 0.07,
+        avgEv: 25.1,
+        avgOdds: 7.0,
+        auc: 0.820,
+        totalStaked: "¥133,788",
+        totalPayout: "¥144,247",
+        profit: "¥10,459",
     };
 
     return (
@@ -111,11 +99,11 @@ export default function BacktestPage() {
             <div className="page-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                 <div>
                     <h1 className="page-title">Backtest Results</h1>
-                    <p className="page-subtitle">2025 OOS — Hybrid Ensemble with Platt Scaling, 193 features, +7.6% ROI</p>
+                    <p className="page-subtitle">2025 OOS — Hybrid Ensemble with Platt Scaling + Sire Features, 10% EV, +7.8% ROI</p>
                 </div>
                 <div style={{ display: "flex", gap: "0.75rem", alignItems: "center" }}>
                     <span className="badge badge-green">2025 Hybrid</span>
-                    <span className="badge badge-blue">193 Features</span>
+                    <span className="badge badge-blue">170 Features</span>
                 </div>
             </div>
 
@@ -123,7 +111,7 @@ export default function BacktestPage() {
             <div className="grid-6040" style={{ marginBottom: "1.5rem" }}>
                 <div className="card">
                     <div className="card-header">
-                        <h2 className="card-title">Cumulative Balance (41 bets)</h2>
+                        <h2 className="card-title">Cumulative Balance (29 bets)</h2>
                         <div style={{ display: "flex", gap: "0.75rem" }}>
                             <span className="badge badge-green">ROI +{metrics.roi}%</span>
                             <span className="badge badge-blue">Sharpe {metrics.sharpe}</span>
@@ -134,7 +122,7 @@ export default function BacktestPage() {
                             <LineChart data={REAL_PNL_CURVE}>
                                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(42,48,64,0.5)" />
                                 <XAxis dataKey="bet" tick={{ fill: "#8b95a5", fontSize: 11 }} label={{ value: "Bet #", position: "insideBottomRight", offset: -5, fill: "#8b95a5", fontSize: 11 }} />
-                                <YAxis tick={{ fill: "#8b95a5", fontSize: 11 }} tickFormatter={(v: number) => `¥${(v / 1000).toFixed(0)}k`} domain={[75000, 125000]} />
+                                <YAxis tick={{ fill: "#8b95a5", fontSize: 11 }} tickFormatter={(v: number) => `¥${(v / 1000).toFixed(0)}k`} domain={[90000, 165000]} />
                                 <Tooltip
                                     contentStyle={{ background: "#1a1f2e", border: "1px solid #2a3040", borderRadius: 8, color: "#f0f0f0" }}
                                     formatter={(value: any) => [`¥${Number(value).toLocaleString()}`, "Balance"]}
@@ -171,8 +159,8 @@ export default function BacktestPage() {
             {/* Row 2: Calibration Comparison */}
             <div className="card" style={{ marginBottom: "1.5rem" }}>
                 <div className="card-header">
-                    <h2 className="card-title">🔬 Calibration Method Comparison</h2>
-                    <span className="badge badge-blue">5% EV Threshold</span>
+                    <h2 className="card-title">🔬 EV Threshold Comparison</h2>
+                    <span className="badge badge-blue">Platt Calibration</span>
                 </div>
                 <table className="data-table">
                     <thead>
@@ -207,22 +195,22 @@ export default function BacktestPage() {
                     </tbody>
                 </table>
                 <div style={{ marginTop: "0.75rem", fontSize: "0.85rem", color: "var(--text-muted)", lineHeight: 1.6 }}>
-                    💡 <strong>Platt scaling is the clear winner</strong> — best risk-adjusted returns with a Sharpe ratio of 12.43.
+                    💡 <strong>10% EV threshold is the sweet spot</strong> — highest ROI (+7.8%) with only the strongest divergence signals.
                 </div>
             </div>
 
             {/* Row 3: Key Insights */}
             <div className="card">
                 <div className="card-header">
-                    <h2 className="card-title">Calibration Insights</h2>
-                    <span className="badge badge-gold">Why Platt wins</span>
+                    <h2 className="card-title">Threshold Insights</h2>
+                    <span className="badge badge-gold">Why 10% EV wins</span>
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "1rem" }}>
                     {CALIBRATION_INSIGHTS.map((item, i) => (
                         <div key={i} className="card" style={{ padding: "1rem" }}>
                             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
                                 <span style={{ fontSize: "1rem", fontWeight: 700, color: "var(--text-primary)" }}>
-                                    {item.insight === "Platt" ? "🏆" : item.insight === "Isotonic" ? "🟡" : "🔴"} {item.insight}
+                                    {item.insight === "10% EV" ? "🏆" : item.insight === "8% EV" ? "🟡" : "🔴"} {item.insight}
                                 </span>
                             </div>
                             <div style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>
