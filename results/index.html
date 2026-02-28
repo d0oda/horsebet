@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UmaEdge — Mar 01, 2026 Race Predictions</title>
+    <meta name="description"
+        content="AI-powered horse racing predictions for March 1, 2026 across Nakayama, Hanshin, and Kokura.">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Noto+Sans+JP:wght@300;400;500;600;700&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div class="bg-grid"></div>
+
+    <!-- Header -->
+    <header class="header">
+        <div class="container">
+            <div class="header-inner">
+                <div class="logo">
+                    <span class="logo-icon">🏇</span>
+                    <div>
+                        <h1>UmaEdge</h1>
+                        <p class="subtitle">AI Race Predictions</p>
+                    </div>
+                </div>
+                <div class="header-date">
+                    <span class="date-label">Race Day</span>
+                    <span class="date-value">2026年3月1日 (日)</span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Summary Cards -->
+    <section class="summary-section">
+        <div class="container">
+            <div class="summary-grid" id="summaryGrid"></div>
+        </div>
+    </section>
+
+    <!-- Controls -->
+    <section class="controls-section">
+        <div class="container">
+            <div class="controls">
+                <div class="venue-tabs" id="venueTabs"></div>
+                <div class="filters">
+                    <button class="filter-btn active" data-filter="all">All Races</button>
+                    <button class="filter-btn" data-filter="value">Value Bets Only</button>
+                    <button class="filter-btn" data-filter="top">Top Picks</button>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Race Cards -->
+    <section class="races-section">
+        <div class="container">
+            <div class="races-grid" id="racesGrid"></div>
+        </div>
+    </section>
+
+    <!-- Value Bets Table -->
+    <section class="value-bets-section" id="valueBetsSection">
+        <div class="container">
+            <h2 class="section-title">
+                <span class="title-icon">💎</span>
+                Best Picks — 1 Per Race
+                <span class="title-badge" id="valueBetCount"></span>
+            </h2>
+            <div class="table-container">
+                <table class="value-table" id="valueTable">
+                    <thead>
+                        <tr>
+                            <th>Venue</th>
+                            <th>Race</th>
+                            <th>Horse</th>
+                            <th>Odds</th>
+                            <th>Model %</th>
+                            <th>Fund %</th>
+                            <th>Mkt %</th>
+                            <th>EV</th>
+                            <th>P&L</th>
+                            <th>Result</th>
+                        </tr>
+                    </thead>
+                    <tbody id="valueTableBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <p>UmaEdge 2025_hybrid · Pre-Race Predictions · Platt Calibrated · Odds pending</p>
+            <p class="footer-note">This is a research tool. Past performance does not guarantee future results.</p>
+        </div>
+    </footer>
+
+    <script src="app.js"></script>
+</body>
+
+</html>
