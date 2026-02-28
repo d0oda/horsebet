@@ -363,10 +363,14 @@ class FeatureBuilder:
             "draw_bias_score", "course_month_bias",
             "sire_runners", "sire_win_pct", "sire_win_pct_surface",
             "sire_win_pct_distance", "sire_avg_finish",
+            # Trainer-based pedigree fallback
+            "trainer_offspring_win_pct", "trainer_offspring_avg_finish",
             # Research backlog: course × jockey
             "jockey_course_runs", "jockey_course_win_pct", "jockey_course_place_pct",
             # Odds movement (requires ≥2 snapshots per entry to produce values)
             "odds_slope", "odds_late_money", "odds_vol",
+            # Cross-sectional odds features (always populated when odds exist)
+            "odds_rank", "odds_ratio_to_fav", "odds_deviation",
         ]
         return {k: np.nan for k in keys}
 
@@ -696,6 +700,65 @@ class FeatureBuilder:
             "odds_vol": vol,
         }
 
+    def _cross_sectional_odds_features(
+        self, race_id: int, odds_win: Optional[float], race_df: pd.DataFrame
+    ) -> dict:
+        """
+        Compute cross-sectional odds features from the within-race odds
+        distribution. Works with a single odds value per entry (no time series
+        needed), so these are always populated when odds exist.
+
+        Features:
+            odds_rank: rank of this horse's odds within the race (1 = favourite)
+            odds_ratio_to_fav: this horse's odds / favourite odds (1.0 = is favourite)
+            odds_deviation: (log_odds - field median log_odds) / field std
+        """
+        null_feats = {
+            "odds_rank": np.nan,
+            "odds_ratio_to_fav": np.nan,
+            "odds_deviation": np.nan,
+        }
+
+        if odds_win is None or odds_win <= 0:
+            return null_feats
+
+        # Build per-race odds cache on first call
+        if not hasattr(self, "_race_odds_cache"):
+            self._race_odds_cache = {}
+
+        if race_id not in self._race_odds_cache:
+            # Collect all odds for this race
+            race_entries = race_df[race_df["race_id"] == race_id]
+            race_odds = race_entries["odds_win"].dropna()
+            race_odds = race_odds[race_odds > 0]
+            if race_odds.empty:
+                self._race_odds_cache[race_id] = None
+            else:
+                sorted_odds = race_odds.sort_values().values
+                log_odds = np.log(race_odds.values)
+                self._race_odds_cache[race_id] = {
+                    "sorted": sorted_odds,
+                    "fav_odds": sorted_odds[0],
+                    "log_median": np.median(log_odds),
+                    "log_std": np.std(log_odds) if len(log_odds) > 1 else 1.0,
+                }
+
+        cache = self._race_odds_cache.get(race_id)
+        if cache is None:
+            return null_feats
+
+        # Rank: 1 = shortest odds (favourite)
+        rank = int((cache["sorted"] <= odds_win).sum())
+        features = {
+            "odds_rank": rank,
+            "odds_ratio_to_fav": odds_win / cache["fav_odds"] if cache["fav_odds"] > 0 else np.nan,
+            "odds_deviation": (
+                (np.log(odds_win) - cache["log_median"]) / cache["log_std"]
+                if cache["log_std"] > 0 else 0.0
+            ),
+        }
+        return features
+
     # ------------------------------------------------------------------
     # Feature Computation — Weather Interactions (Sprint 7.2)
     # ------------------------------------------------------------------
@@ -898,61 +961,91 @@ class FeatureBuilder:
 
     def _pedigree_features(
         self, horse_id: int, race_date: str, distance: int,
-        surface: str, history_df: pd.DataFrame
+        surface: str, trainer_id: Optional[int],
+        history_df: pd.DataFrame
     ) -> dict:
         """
         Compute sire-based pedigree features.
         Uses sire_name matching against historical results to find
         sibling performance patterns.
+
+        Falls back to trainer-based proxy features when sire is unknown:
+        trainers specialise in certain bloodlines, so the trainer's stable
+        win rate acts as a weak pedigree signal.
         """
-        null_feats = {
+        null_sire = {
             "sire_runners": np.nan,
             "sire_win_pct": np.nan,
             "sire_win_pct_surface": np.nan,
             "sire_win_pct_distance": np.nan,
             "sire_avg_finish": np.nan,
         }
+        null_trainer_proxy = {
+            "trainer_offspring_win_pct": np.nan,
+            "trainer_offspring_avg_finish": np.nan,
+        }
+
+        features = {}
 
         # Look up sire name for this horse from DB
         sire_name = self._get_sire_name(horse_id)
-        if not sire_name:
-            return null_feats
+        has_sire = False
 
-        # Find all offspring of the same sire in history
-        sibling_ids = self._get_sire_offspring(sire_name, horse_id)
-        if not sibling_ids:
-            return null_feats
+        if sire_name:
+            # Find all offspring of the same sire in history
+            sibling_ids = self._get_sire_offspring(sire_name, horse_id)
+            if sibling_ids:
+                # Filter history to siblings only, before current race
+                sib_hist = history_df[
+                    (history_df["horse_id"].isin(sibling_ids))
+                    & (history_df["date"] < race_date)
+                ]
 
-        # Filter history to siblings only, before current race
-        sib_hist = history_df[
-            (history_df["horse_id"].isin(sibling_ids))
-            & (history_df["date"] < race_date)
-        ]
+                if not sib_hist.empty:
+                    has_sire = True
+                    features["sire_runners"] = len(sib_hist)
+                    features["sire_win_pct"] = (sib_hist["finish_pos"] == 1).mean()
+                    features["sire_avg_finish"] = sib_hist["finish_pos"].mean()
 
-        if sib_hist.empty:
-            return null_feats
+                    # Sire × surface affinity
+                    surf_hist = sib_hist[sib_hist["surface"] == surface]
+                    features["sire_win_pct_surface"] = (
+                        (surf_hist["finish_pos"] == 1).mean()
+                        if len(surf_hist) >= 3 else np.nan
+                    )
 
-        features = {}
-        features["sire_runners"] = len(sib_hist)
-        features["sire_win_pct"] = (sib_hist["finish_pos"] == 1).mean()
-        features["sire_avg_finish"] = sib_hist["finish_pos"].mean()
+                    # Sire × distance affinity (±200m)
+                    dist_hist = sib_hist[
+                        (sib_hist["distance"] >= distance - 200)
+                        & (sib_hist["distance"] <= distance + 200)
+                    ]
+                    features["sire_win_pct_distance"] = (
+                        (dist_hist["finish_pos"] == 1).mean()
+                        if len(dist_hist) >= 3 else np.nan
+                    )
 
-        # Sire × surface affinity
-        surf_hist = sib_hist[sib_hist["surface"] == surface]
-        features["sire_win_pct_surface"] = (
-            (surf_hist["finish_pos"] == 1).mean()
-            if len(surf_hist) >= 3 else np.nan
-        )
+        if not has_sire:
+            features.update(null_sire)
 
-        # Sire × distance affinity (±200m)
-        dist_hist = sib_hist[
-            (sib_hist["distance"] >= distance - 200)
-            & (sib_hist["distance"] <= distance + 200)
-        ]
-        features["sire_win_pct_distance"] = (
-            (dist_hist["finish_pos"] == 1).mean()
-            if len(dist_hist) >= 3 else np.nan
-        )
+        # --- Trainer-based pedigree fallback ---
+        # When sire is unknown, use trainer's overall stable performance.
+        # Trainers specialise in certain bloodlines and produce correlated results.
+        if trainer_id is not None and "trainer_id" in history_df.columns:
+            group = self._trainer_groups.get(trainer_id) if hasattr(self, '_trainer_groups') else None
+            if group is not None:
+                trainer_hist = group[group["date"] < race_date]
+            else:
+                trainer_hist = history_df[
+                    (history_df["trainer_id"] == trainer_id)
+                    & (history_df["date"] < race_date)
+                ]
+            if not trainer_hist.empty and len(trainer_hist) >= 5:
+                features["trainer_offspring_win_pct"] = (trainer_hist["finish_pos"] == 1).mean()
+                features["trainer_offspring_avg_finish"] = trainer_hist["finish_pos"].mean()
+            else:
+                features.update(null_trainer_proxy)
+        else:
+            features.update(null_trainer_proxy)
 
         return features
 
@@ -1181,13 +1274,14 @@ class FeatureBuilder:
                 )
             )
 
-            # Pedigree features (Sprint 7.4)
+            # Pedigree features (Sprint 7.4) — with trainer fallback
             features.update(
                 self._pedigree_features(
                     horse_id=row["horse_id"],
                     race_date=str(row["date"]),
                     distance=row["distance"] or 0,
                     surface=row["surface"] or "",
+                    trainer_id=row.get("trainer_id"),
                     history_df=history_df,
                 )
             )
@@ -1207,6 +1301,15 @@ class FeatureBuilder:
                 self._odds_movement_features(
                     race_id=row["race_id"],
                     post_position=row.get("post_position"),
+                )
+            )
+
+            # Cross-sectional odds features (always populated)
+            features.update(
+                self._cross_sectional_odds_features(
+                    race_id=row["race_id"],
+                    odds_win=row.get("odds_win"),
+                    race_df=race_df,
                 )
             )
 

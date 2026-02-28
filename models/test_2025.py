@@ -337,6 +337,7 @@ def run_hybrid_evaluation(
     ev_threshold: float = 0.10,
     output_path: str = None,
     calibration_method: str = "isotonic",
+    bet_type: str = "win",
 ):
     """
     Train hybrid ensemble (fundamental + market) and backtest using
@@ -417,7 +418,7 @@ def run_hybrid_evaluation(
 
     # Run backtest
     log.info("\n💰 Running backtest with divergence-based bet selection...")
-    config = BacktestConfig(ev_threshold=ev_threshold)
+    config = BacktestConfig(ev_threshold=ev_threshold, bet_type=bet_type)
     bt = Backtester(config)
     result = bt.run(pred_df)
 
@@ -440,6 +441,124 @@ def run_hybrid_evaluation(
     print("=" * 60)
 
     return result
+
+
+# ---------------------------------------------------------------------------
+# Hybrid EV Sweep — train once, sweep many thresholds
+# ---------------------------------------------------------------------------
+
+def run_hybrid_ev_sweep(
+    calibration_method: str = "platt",
+    bet_type: str = "win",
+    flat_stake: int = 1000,
+    initial_bankroll: int = 100000,
+    kelly_fraction: float = 0.25,
+):
+    """
+    Train hybrid ensemble ONCE, then run backtests at multiple EV thresholds.
+    Much more efficient than retraining for each threshold.
+    """
+    from models.features import FeatureBuilder
+    from models.ensemble import HybridEnsemble, DivergenceDetector
+    from models.backtest import Backtester, BacktestConfig
+    from scraper.db import get_session
+    from sqlalchemy import text as sql_text
+
+    # DB stats
+    print_db_stats()
+
+    # Build features
+    log.info("\n📊 Building features...")
+    fb = FeatureBuilder()
+    df = fb.build_features_all()
+    if df.empty:
+        log.error("No data available.")
+        return
+
+    # Train hybrid ensemble (ONCE)
+    log.info("\n🏋️ Training hybrid ensemble...")
+    hybrid = HybridEnsemble(calibration_method=calibration_method)
+    train_metrics = hybrid.train(df, val_date="2025-01-01")
+
+    # Generate predictions for 2025
+    log.info("\n📈 Generating hybrid predictions for 2025...")
+    val_df = df[df["date"] >= "2025-01-01"].copy()
+    preds = hybrid.predict(val_df)
+
+    val_df["win_prob"] = preds["combined"]
+    val_df["fund_prob"] = preds["fundamental"]
+    val_df["mkt_prob"] = preds["market"]
+
+    # Merge with odds and results
+    with get_session() as session:
+        data = session.execute(sql_text("""
+            SELECT
+                e.id AS entry_id,
+                e.odds_win,
+                h.name_jp AS horse_name,
+                r.race_name_jp AS race_name,
+                res.finish_pos
+            FROM entries e
+            JOIN races r ON r.id = e.race_id
+            JOIN horses h ON h.id = e.horse_id
+            LEFT JOIN results res ON res.entry_id = e.id
+            WHERE r.date >= '2025-01-01'
+        """)).fetchall()
+
+    extra_df = pd.DataFrame(
+        data, columns=["entry_id", "odds_win", "horse_name", "race_name", "finish_pos"]
+    )
+    pred_df = val_df[["race_id", "entry_id", "win_prob", "fund_prob", "mkt_prob", "date"]].copy()
+    pred_df = pred_df.merge(extra_df, on="entry_id", how="left")
+
+    log.info(f"Prediction dataframe: {len(pred_df)} entries, "
+             f"{pred_df['race_id'].nunique()} races")
+
+    # Save hybrid model
+    try:
+        hybrid.save(version="2025_hybrid")
+    except (PermissionError, OSError) as e:
+        log.warning(f"Could not save hybrid model: {e}")
+
+    # Sweep thresholds
+    thresholds = [0.03, 0.05, 0.08, 0.10, 0.12]
+    results = []
+
+    for ev in thresholds:
+        print(f"\n{'=' * 60}")
+        print(f"  EV Threshold = {ev:.0%} ({bet_type})")
+        print(f"{'=' * 60}")
+
+        config = BacktestConfig(
+            ev_threshold=ev, bet_type=bet_type,
+            flat_stake=flat_stake, initial_bankroll=initial_bankroll,
+            kelly_fraction=kelly_fraction,
+        )
+        bt = Backtester(config)
+        result = bt.run(pred_df)
+        bt.print_report(result)
+        results.append((ev, result))
+
+    # Summary table
+    mode_label = "FLAT" if kelly_fraction == 0 else "KELLY"
+    print(f"\n\n{'=' * 75}")
+    print(f"  Hybrid EV Sweep Summary ({mode_label} ¥{flat_stake}/bet, ¥{initial_bankroll} bankroll)")
+    print(f"{'=' * 75}")
+    print(f"  Fundamental AUC: {train_metrics['fundamental']['auc']:.4f}")
+    print(f"  Market AUC:      {train_metrics['market']['auc']:.4f}")
+    print(f"  Calibration:     {calibration_method}")
+    print(f"{'=' * 75}")
+    print(f"  {'EV Thresh':>10} {'Bets':>6} {'Wins':>5} {'Hit%':>6} {'ROI':>7} {'Profit':>10} {'Sharpe':>7}")
+    print(f"  {'-' * 65}")
+    for ev, r in results:
+        print(
+            f"  {ev:>9.0%} {r.total_bets:>6} {r.winning_bets:>5} "
+            f"{r.hit_rate:>5.1f}% {r.roi_pct:>6.1f}% "
+            f"¥{r.total_profit:>9,} {r.sharpe:>6.2f}"
+        )
+    print(f"{'=' * 75}")
+
+    return results
 
 
 # ---------------------------------------------------------------------------
@@ -471,11 +590,28 @@ def main():
     )
     parser.add_argument(
         "--ev-sweep", action="store_true",
-        help="Run backtest at multiple EV thresholds (5%%, 8%%, 10%%, 12%%, 15%%)",
+        help="Run backtest at multiple EV thresholds (3%%, 5%%, 8%%, 10%%, 12%%)",
+    )
+    parser.add_argument(
+        "--bet-type", type=str, default="win",
+        choices=["win", "place"],
+        help="Bet type: 'win' or 'place' (default: win)",
+    )
+    parser.add_argument(
+        "--flat", action="store_true",
+        help="Use flat bet sizing (¥100/bet, ¥1000 bankroll, no Kelly)",
     )
     args = parser.parse_args()
 
-    if args.ev_sweep:
+    if args.ev_sweep and args.hybrid:
+        run_hybrid_ev_sweep(
+            calibration_method=args.calibration,
+            bet_type=args.bet_type,
+            flat_stake=100 if args.flat else 1000,
+            initial_bankroll=1000 if args.flat else 100000,
+            kelly_fraction=0.0 if args.flat else 0.25,
+        )
+    elif args.ev_sweep:
         run_ev_sweep(
             exclude_odds=args.exclude_odds,
             calibration_method=args.calibration,
@@ -485,6 +621,7 @@ def main():
             ev_threshold=args.ev_threshold,
             output_path=args.output,
             calibration_method=args.calibration,
+            bet_type=args.bet_type,
         )
     else:
         run_2025_evaluation(

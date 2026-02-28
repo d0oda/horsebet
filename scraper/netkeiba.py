@@ -46,10 +46,15 @@ log = logging.getLogger("netkeiba")
 # Configuration
 # ---------------------------------------------------------------------------
 
-BASE_URL = "https://db.netkeiba.com"
-RACE_URL = BASE_URL + "/race/{race_id}/"
-HORSE_URL = BASE_URL + "/horse/{horse_id}/"
-RACE_LIST_URL = "https://race.netkeiba.com/top/race_list.html?kaisai_date={date}"
+# race.netkeiba.com — the live site (db.netkeiba.com returns 400 as of Feb 2026)
+BASE_URL = "https://race.netkeiba.com"
+RESULT_URL = BASE_URL + "/race/result.html?race_id={race_id}"
+SHUTUBA_URL = BASE_URL + "/race/shutuba.html?race_id={race_id}"
+HORSE_URL = "https://db.netkeiba.com/horse/{horse_id}/"
+RACE_LIST_URL = BASE_URL + "/top/race_list.html?kaisai_date={date}"
+
+# Legacy db.netkeiba.com URL (kept for backward compat, but returns 400 now)
+LEGACY_RACE_URL = "https://db.netkeiba.com/race/{race_id}/"
 
 DELAY_MIN = float(os.getenv("SCRAPE_DELAY_MIN", 2))
 DELAY_MAX = float(os.getenv("SCRAPE_DELAY_MAX", 5))
@@ -265,57 +270,75 @@ def _extract_jockey_name(cell) -> tuple[Optional[str], Optional[str]]:
     return None, cell.get_text(strip=True) if cell else (None, None)
 
 
-def parse_race_page(soup: BeautifulSoup, race_id: str) -> Optional[RaceData]:
-    """Parse a netkeiba race result page into a RaceData object."""
+def _parse_race_header(soup: BeautifulSoup, race_id: str) -> RaceData:
+    """
+    Parse race header info common to both shutuba and result pages
+    on race.netkeiba.com (uses .RaceName, .RaceData01 selectors).
+    """
     race = RaceData(netkeiba_id=race_id)
 
-    # --- Race header info ---
-    header = soup.find("div", class_="data_intro")
-    if not header:
-        log.warning(f"No race header found for {race_id}")
-        return None
-
     # Race name
-    title = header.find("h1")
-    if title:
-        race.race_name_jp = title.get_text(strip=True)
-        race.race_name = race.race_name_jp  # Could transliterate later
+    rname_el = soup.select_one(".RaceName")
+    if rname_el:
+        race.race_name_jp = rname_el.get_text(strip=True)
+        race.race_name = race.race_name_jp
 
-    # Race details line (e.g., "芝右 2000m / 天候 : 晴 / 芝 : 良")
-    detail_span = header.find("span")
-    if detail_span:
-        detail_text = detail_span.get_text(strip=True)
-
-        # Distance
-        dist_match = re.search(r"(\d{3,4})m", detail_text)
-        if dist_match:
-            race.distance = int(dist_match.group(1))
-
-        # Surface
-        if "ダート" in detail_text or "ダ" in detail_text:
-            race.surface = "dirt"
-        elif "芝" in detail_text:
-            race.surface = "turf"
-
-        # Going / track condition
-        going_match = re.search(r"[芝ダート]+\s*:\s*(良|稍重|重|不良)", detail_text)
+    # Race details (distance, surface, going, weather)
+    rd01 = soup.select_one(".RaceData01")
+    if rd01:
+        detail_text = rd01.get_text()
+        # Distance + surface: "ダ1400m" or "芝2000m" or "障3000m"
+        m = re.search(r"(ダ|芝|障)(\d{3,4})m", detail_text)
+        if m:
+            race.surface = "dirt" if m.group(1) == "ダ" else "turf"
+            race.distance = int(m.group(2))
+        # Going
+        going_match = re.search(r"馬場[：:]\s*(良|稍重|重|不良)", detail_text)
         if going_match:
             race.going = going_match.group(1)
-
+        else:
+            # Also check spans for going
+            for span in rd01.select("span"):
+                t = span.get_text(strip=True)
+                if t in ("良", "稍重", "重", "不良"):
+                    race.going = t
+                    break
         # Weather
-        weather_match = re.search(r"天候\s*:\s*(\S+)", detail_text)
+        weather_match = re.search(r"天候[：:]\s*(\S+)", detail_text)
         if weather_match:
             race.weather = weather_match.group(1)
 
-    # Date and course from race ID
-    # Race ID format: YYYYCCDDRRNN (Year, Course, Day, Round, RaceNo)
+    # Date and course from race ID (format: YYYYCCDDRRNN)
     if len(race_id) >= 12:
-        race.date = f"{race_id[:4]}-{race_id[4:6]}-{race_id[6:8]}" if race_id[4:8].isdigit() else None
         race.course_code = race_id[4:6]
         try:
             race.race_number = int(race_id[10:12])
         except (ValueError, IndexError):
             pass
+
+    # Try to get date from RaceData02, page title, or meta tags
+    rd02 = soup.select_one(".RaceData02")
+    if rd02:
+        date_match = re.search(r"(\d{4})年(\d{1,2})月(\d{1,2})日", rd02.get_text())
+        if date_match:
+            race.date = f"{date_match.group(1)}-{int(date_match.group(2)):02d}-{int(date_match.group(3)):02d}"
+
+    if not race.date:
+        # Fallback: check page <title> or meta description for date
+        title_tag = soup.find("title")
+        if title_tag:
+            date_match = re.search(r"(\d{4})年(\d{1,2})月(\d{1,2})日", title_tag.get_text())
+            if date_match:
+                race.date = f"{date_match.group(1)}-{int(date_match.group(2)):02d}-{int(date_match.group(3)):02d}"
+
+    if not race.date:
+        # Last fallback: try meta og:description
+        meta_desc = soup.find("meta", attrs={"property": "og:description"})
+        if meta_desc:
+            content = meta_desc.get("content", "")
+            date_match = re.search(r"(\d{4})年(\d{1,2})月(\d{1,2})日", content)
+            if date_match:
+                race.date = f"{date_match.group(1)}-{int(date_match.group(2)):02d}-{int(date_match.group(3)):02d}"
 
     # Grade detection
     name_text = race.race_name_jp or ""
@@ -323,50 +346,83 @@ def parse_race_page(soup: BeautifulSoup, race_id: str) -> Optional[RaceData]:
         if g in name_text:
             race.grade = g.replace("Ｇ", "G").replace("I", "1").replace("II", "2").replace("III", "3")
             break
-
-    # Class detection (covers all levels, not just graded races)
     race.class_ = _extract_race_class(race.race_name_jp, race.grade)
 
-    # --- Parse result table ---
-    result_table = soup.find("table", class_="race_table_01")
-    if not result_table:
-        log.warning(f"No result table found for {race_id}")
+    return race
+
+
+def _parse_odds_text(text: str) -> Optional[float]:
+    """Parse odds text, handling dashes and cancelled entries."""
+    if not text:
+        return None
+    text = text.strip().replace(",", "")
+    if text in ("", "---", "---.-", "--", "-", "**", "取消", "除外", "中止"):
+        return None
+    try:
+        return float(text)
+    except ValueError:
+        return None
+
+
+def parse_shutuba_page(soup: BeautifulSoup, race_id: str) -> Optional[RaceData]:
+    """
+    Parse a race.netkeiba.com SHUTUBA (pre-race / entry list) page.
+
+    Cell layout for tr.HorseList rows (15 cells):
+        0: Waku (枠番/draw)         — e.g. "1"
+        1: Umaban (馬番/post pos)    — e.g. "1"
+        2: CheckMark (prediction)    — skip
+        3: HorseInfo (name, ID)      — contains span.HorseName > a
+        4: Barei (sex+age)           — e.g. "牝3"
+        5: Weight carried            — e.g. "55.0"
+        6: Jockey                    — link text
+        7: Trainer                   — link text
+        8: Horse weight              — e.g. "488(+4)"
+        9: Odds (Txt_R Popular)      — e.g. "10.5" or "---.-"
+       10: Popularity rank           — e.g. "5" or "**"
+       11-14: FavRegist, Memo, Notes — skip
+    """
+    race = _parse_race_header(soup, race_id)
+    if not race.race_name_jp:
+        log.warning(f"No race header found for shutuba {race_id}")
+        return None
+
+    rows = soup.select("tr.HorseList")
+    if not rows:
+        log.warning(f"No HorseList rows in shutuba {race_id}")
         return race
 
-    rows = result_table.find_all("tr")[1:]  # skip header
     race.field_size = len(rows)
 
     for row in rows:
-        cells = row.find_all("td")
-        if len(cells) < 13:
+        cells = row.select("td")
+        if len(cells) < 9:
             continue
 
         try:
-            # Finish position
-            finish_text = cells[0].get_text(strip=True)
-            finish_pos = int(finish_text) if finish_text.isdigit() else None
-
             # Draw (枠番) and post position (馬番)
-            draw = int(cells[1].get_text(strip=True)) if cells[1].get_text(strip=True).isdigit() else None
-            post_pos = int(cells[2].get_text(strip=True)) if cells[2].get_text(strip=True).isdigit() else None
+            draw_text = cells[0].get_text(strip=True)
+            draw = int(draw_text) if draw_text.isdigit() else None
 
-            # Horse
-            horse_cell = cells[3]
-            horse_link = horse_cell.find("a")
+            pp_text = cells[1].get_text(strip=True)
+            post_pos = int(pp_text) if pp_text.isdigit() else None
+
+            # Horse name + ID
+            horse_link = row.select_one("span.HorseName a") or row.select_one("a[href*='/horse/']")
             horse_name_jp = horse_link.get_text(strip=True) if horse_link else cells[3].get_text(strip=True)
-            horse_id = _extract_horse_id(horse_link["href"]) if horse_link and horse_link.get("href") else None
+            horse_id = None
+            if horse_link and horse_link.get("href"):
+                horse_id = _extract_horse_id(horse_link["href"])
 
-            # Sex and age (e.g. "牡3")
+            # Sex and age
             sex_age = cells[4].get_text(strip=True)
             sex = sex_age[0] if sex_age else None
             birth_year = None
             if sex_age and len(sex_age) >= 2:
                 try:
                     age = int(sex_age[1:])
-                    # Calculate birth year from race date
                     if race.date:
-                        race_year = int(race.date[:4])
-                        birth_year = race_year - age
+                        birth_year = int(race.date[:4]) - age
                 except ValueError:
                     pass
 
@@ -378,7 +434,152 @@ def parse_race_page(soup: BeautifulSoup, race_id: str) -> Optional[RaceData]:
                 pass
 
             # Jockey
-            _, jockey_name_jp = _extract_jockey_name(cells[6])
+            jockey_cell = cells[6]
+            jockey_link = jockey_cell.find("a")
+            jockey_name_jp = jockey_link.get_text(strip=True) if jockey_link else jockey_cell.get_text(strip=True)
+
+            # Trainer
+            trainer_name_jp = None
+            trainer_cell = cells[7]
+            trainer_link = trainer_cell.find("a")
+            if trainer_link:
+                trainer_name_jp = trainer_link.get_text(strip=True)
+            else:
+                # Trainer text often includes stable prefix (e.g. "栗東小崎")
+                trainer_text = trainer_cell.get_text(strip=True)
+                if trainer_text:
+                    # Strip stable prefix (美浦/栗東)
+                    trainer_name_jp = re.sub(r'^(美浦|栗東)', '', trainer_text) or trainer_text
+
+            # Horse weight
+            horse_weight, horse_weight_change = None, None
+            if len(cells) > 8:
+                horse_weight, horse_weight_change = _parse_weight(cells[8].get_text(strip=True))
+
+            # Odds
+            odds_win = None
+            if len(cells) > 9:
+                odds_win = _parse_odds_text(cells[9].get_text(strip=True))
+
+            # Popularity
+            popularity = None
+            if len(cells) > 10:
+                pop_text = cells[10].get_text(strip=True)
+                popularity = int(pop_text) if pop_text.isdigit() else None
+
+            horse = HorseData(
+                name=horse_name_jp,
+                name_jp=horse_name_jp,
+                sex=sex,
+                birth_year=birth_year,
+                netkeiba_id=horse_id or f"unknown_{post_pos}",
+            )
+
+            entry = EntryData(
+                post_position=post_pos or 0,
+                draw=draw,
+                horse=horse,
+                jockey_name_jp=jockey_name_jp,
+                trainer_name_jp=trainer_name_jp,
+                weight_carried=weight_carried,
+                horse_weight=horse_weight,
+                horse_weight_change=horse_weight_change,
+                odds_win=odds_win,
+                popularity=popularity,
+            )
+            race.entries.append(entry)
+
+        except Exception as e:
+            log.warning(f"Error parsing shutuba row in {race_id}: {e}")
+            continue
+
+    return race
+
+
+def parse_result_page(soup: BeautifulSoup, race_id: str) -> Optional[RaceData]:
+    """
+    Parse a race.netkeiba.com RESULT page (finished race).
+
+    Cell layout for tr.HorseList rows (15 cells):
+        0: Result_Num (finish position)
+        1: Waku (枠番/draw)        — class Num WakuN
+        2: Umaban (馬番/post pos)   — class Num Txt_C
+        3: Horse_Info (name, ID)    — contains span.Horse_Name > a (note underscore)
+        4: Horse_Info (sex+age)
+        5: Jockey_Info (weight carried)
+        6: Jockey
+        7: Time
+        8: Margin
+        9: Odds popularity (rank)   — class Odds Txt_C
+       10: Odds (win odds)          — class Odds Txt_R
+       11: Last 3F                  — class Time BgOrange
+       12: PassageRate (corners)    — e.g. "1-1-1-1"
+       13: Trainer
+       14: Weight                   — horse weight
+    """
+    race = _parse_race_header(soup, race_id)
+    if not race.race_name_jp:
+        log.warning(f"No race header found for result {race_id}")
+        return None
+
+    rows = soup.select("tr.HorseList")
+    if not rows:
+        log.warning(f"No HorseList rows in result {race_id}")
+        return race
+
+    race.field_size = len(rows)
+
+    for row in rows:
+        cells = row.select("td")
+        if len(cells) < 11:
+            continue
+
+        try:
+            # Finish position
+            finish_text = cells[0].get_text(strip=True)
+            finish_pos = int(finish_text) if finish_text.isdigit() else None
+
+            # Draw (枠番) and post position (馬番)
+            draw_text = cells[1].get_text(strip=True)
+            draw = int(draw_text) if draw_text.isdigit() else None
+
+            pp_text = cells[2].get_text(strip=True)
+            post_pos = int(pp_text) if pp_text.isdigit() else None
+
+            # Horse name + ID
+            horse_link = (
+                row.select_one("span.Horse_Name a")
+                or row.select_one("span.HorseName a")
+                or row.select_one("a[href*='/horse/']")
+            )
+            horse_name_jp = horse_link.get_text(strip=True) if horse_link else cells[3].get_text(strip=True)
+            horse_id = None
+            if horse_link and horse_link.get("href"):
+                horse_id = _extract_horse_id(horse_link["href"])
+
+            # Sex and age
+            sex_age = cells[4].get_text(strip=True)
+            sex = sex_age[0] if sex_age else None
+            birth_year = None
+            if sex_age and len(sex_age) >= 2:
+                try:
+                    age = int(sex_age[1:])
+                    if race.date:
+                        birth_year = int(race.date[:4]) - age
+                except ValueError:
+                    pass
+
+            # Weight carried
+            weight_carried = None
+            try:
+                weight_carried = float(cells[5].get_text(strip=True))
+            except (ValueError, IndexError):
+                pass
+
+            # Jockey
+            jockey_cell = cells[6]
+            jockey_link = jockey_cell.find("a")
+            jockey_name_jp = jockey_link.get_text(strip=True) if jockey_link else jockey_cell.get_text(strip=True)
 
             # Time
             time_secs = _parse_time(cells[7].get_text(strip=True))
@@ -386,28 +587,16 @@ def parse_race_page(soup: BeautifulSoup, race_id: str) -> Optional[RaceData]:
             # Margin
             margin = cells[8].get_text(strip=True) if len(cells) > 8 else None
 
-            # Odds & popularity
-            odds_win = None
+            # Popularity (rank)
             popularity = None
-            try:
-                if len(cells) > 12:
-                    odds_text = cells[12].get_text(strip=True)
-                    # Handle empty, dashes, cancelled entries
-                    if odds_text and odds_text not in ("", "---", "--", "-", "取消", "除外", "中止"):
-                        odds_win = float(odds_text.replace(",", ""))
-                    elif odds_text in ("取消", "除外", "中止"):
-                        log.debug(f"Entry cancelled/excluded in race {race_id}: odds='{odds_text}'")
-                if len(cells) > 13:
-                    pop_text = cells[13].get_text(strip=True)
-                    popularity = int(pop_text) if pop_text.isdigit() else None
-            except (ValueError, IndexError):
-                log.debug(f"Could not parse odds in race {race_id}: '{cells[12].get_text(strip=True) if len(cells) > 12 else '?'}'")
-                pass
+            if len(cells) > 9:
+                pop_text = cells[9].get_text(strip=True)
+                popularity = int(pop_text) if pop_text.isdigit() else None
 
-            # Horse weight
-            horse_weight, horse_weight_change = None, None
-            if len(cells) > 14:
-                horse_weight, horse_weight_change = _parse_weight(cells[14].get_text(strip=True))
+            # Odds
+            odds_win = None
+            if len(cells) > 10:
+                odds_win = _parse_odds_text(cells[10].get_text(strip=True))
 
             # Last 3F
             last_3f = None
@@ -416,43 +605,32 @@ def parse_race_page(soup: BeautifulSoup, race_id: str) -> Optional[RaceData]:
 
             # Corner positions
             corners = None
-            if len(cells) > 10:
-                corners = cells[10].get_text(strip=True)
+            if len(cells) > 12:
+                corners = cells[12].get_text(strip=True)
 
-            # Trainer — typically in cells[18] (調教師 column) with link to /trainer/XXXXX/
+            # Trainer
             trainer_name_jp = None
-            for ci in [18, 19, 17, 16, 15]:
-                if ci < len(cells):
-                    trainer_link = cells[ci].find("a", href=re.compile(r'/trainer/'))
-                    if trainer_link:
-                        trainer_name_jp = trainer_link.get_text(strip=True)
-                        break
-
-            # Sire name — some race pages include it in horse cell title
-            sire_name = None
-            if horse_cell:
-                title = horse_cell.get("title") or ""
-                # Title sometimes has format: "父: [SireName]" or "SireName産駒"
-                sire_m = re.search(r'父[：:]\s*([^/\n]+)', title)
-                if sire_m:
-                    sire_name = sire_m.group(1).strip()
+            if len(cells) > 13:
+                trainer_cell = cells[13]
+                trainer_link = trainer_cell.find("a")
+                if trainer_link:
+                    trainer_name_jp = trainer_link.get_text(strip=True)
                 else:
-                    # Also try to find sire from later columns (index 17/18 vary)
-                    for ci in range(15, min(len(cells), 21)):
-                        ctext = cells[ci].get_text(strip=True)
-                        if ctext and not ctext.isdigit() and len(ctext) > 1:
-                            parent = cells[ci].find("a", href=re.compile(r'/horse/ped/'))
-                            if parent:
-                                sire_name = parent.get_text(strip=True)
-                                break
+                    trainer_text = trainer_cell.get_text(strip=True)
+                    if trainer_text:
+                        trainer_name_jp = re.sub(r'^(美浦|栗東)', '', trainer_text) or trainer_text
+
+            # Horse weight
+            horse_weight, horse_weight_change = None, None
+            if len(cells) > 14:
+                horse_weight, horse_weight_change = _parse_weight(cells[14].get_text(strip=True))
 
             horse = HorseData(
-                name=horse_name_jp,  # will transliterate later
+                name=horse_name_jp,
                 name_jp=horse_name_jp,
                 sex=sex,
                 birth_year=birth_year,
                 netkeiba_id=horse_id or f"unknown_{post_pos}",
-                sire_name=sire_name,
             )
 
             entry = EntryData(
@@ -474,6 +652,149 @@ def parse_race_page(soup: BeautifulSoup, race_id: str) -> Optional[RaceData]:
             )
             race.entries.append(entry)
 
+        except Exception as e:
+            log.warning(f"Error parsing result row in {race_id}: {e}")
+            continue
+
+    return race
+
+
+def parse_race_page(soup: BeautifulSoup, race_id: str) -> Optional[RaceData]:
+    """
+    Parse a netkeiba race page — auto-detects result vs shutuba format.
+    Falls back to legacy db.netkeiba.com format if neither matches.
+    """
+    # Detect page type by checking for result-specific markers
+    has_result_num = soup.select_one("td.Result_Num") is not None
+    has_horse_list = bool(soup.select("tr.HorseList"))
+
+    if has_horse_list:
+        if has_result_num:
+            return parse_result_page(soup, race_id)
+        else:
+            return parse_shutuba_page(soup, race_id)
+
+    # Legacy fallback for db.netkeiba.com format (race_table_01)
+    log.debug(f"Trying legacy parser for {race_id}")
+    return _parse_legacy_race_page(soup, race_id)
+
+
+def _parse_legacy_race_page(soup: BeautifulSoup, race_id: str) -> Optional[RaceData]:
+    """Parse a legacy db.netkeiba.com race result page (race_table_01 format)."""
+    race = RaceData(netkeiba_id=race_id)
+
+    header = soup.find("div", class_="data_intro")
+    if not header:
+        log.warning(f"No race header found for {race_id} (legacy parser)")
+        return None
+
+    title = header.find("h1")
+    if title:
+        race.race_name_jp = title.get_text(strip=True)
+        race.race_name = race.race_name_jp
+
+    detail_span = header.find("span")
+    if detail_span:
+        detail_text = detail_span.get_text(strip=True)
+        dist_match = re.search(r"(\d{3,4})m", detail_text)
+        if dist_match:
+            race.distance = int(dist_match.group(1))
+        if "ダート" in detail_text or "ダ" in detail_text:
+            race.surface = "dirt"
+        elif "芝" in detail_text:
+            race.surface = "turf"
+        going_match = re.search(r"[芝ダート]+\s*:\s*(良|稍重|重|不良)", detail_text)
+        if going_match:
+            race.going = going_match.group(1)
+        weather_match = re.search(r"天候\s*:\s*(\S+)", detail_text)
+        if weather_match:
+            race.weather = weather_match.group(1)
+
+    if len(race_id) >= 12:
+        race.date = f"{race_id[:4]}-{race_id[4:6]}-{race_id[6:8]}" if race_id[4:8].isdigit() else None
+        race.course_code = race_id[4:6]
+        try:
+            race.race_number = int(race_id[10:12])
+        except (ValueError, IndexError):
+            pass
+
+    name_text = race.race_name_jp or ""
+    for g in ["G1", "G2", "G3", "GI", "GII", "GIII", "Ｇ１", "Ｇ２", "Ｇ３"]:
+        if g in name_text:
+            race.grade = g.replace("Ｇ", "G").replace("I", "1").replace("II", "2").replace("III", "3")
+            break
+    race.class_ = _extract_race_class(race.race_name_jp, race.grade)
+
+    result_table = soup.find("table", class_="race_table_01")
+    if not result_table:
+        log.warning(f"No result table found for {race_id}")
+        return race
+
+    rows = result_table.find_all("tr")[1:]
+    race.field_size = len(rows)
+
+    for row in rows:
+        cells = row.find_all("td")
+        if len(cells) < 13:
+            continue
+        try:
+            finish_text = cells[0].get_text(strip=True)
+            finish_pos = int(finish_text) if finish_text.isdigit() else None
+            draw = int(cells[1].get_text(strip=True)) if cells[1].get_text(strip=True).isdigit() else None
+            post_pos = int(cells[2].get_text(strip=True)) if cells[2].get_text(strip=True).isdigit() else None
+            horse_cell = cells[3]
+            horse_link = horse_cell.find("a")
+            horse_name_jp = horse_link.get_text(strip=True) if horse_link else cells[3].get_text(strip=True)
+            horse_id = _extract_horse_id(horse_link["href"]) if horse_link and horse_link.get("href") else None
+            sex_age = cells[4].get_text(strip=True)
+            sex = sex_age[0] if sex_age else None
+            birth_year = None
+            if sex_age and len(sex_age) >= 2:
+                try:
+                    age = int(sex_age[1:])
+                    if race.date:
+                        birth_year = int(race.date[:4]) - age
+                except ValueError:
+                    pass
+            weight_carried = None
+            try:
+                weight_carried = float(cells[5].get_text(strip=True))
+            except (ValueError, IndexError):
+                pass
+            _, jockey_name_jp = _extract_jockey_name(cells[6])
+            time_secs = _parse_time(cells[7].get_text(strip=True))
+            margin = cells[8].get_text(strip=True) if len(cells) > 8 else None
+            odds_win = _parse_odds_text(cells[12].get_text(strip=True)) if len(cells) > 12 else None
+            popularity = None
+            if len(cells) > 13:
+                pop_text = cells[13].get_text(strip=True)
+                popularity = int(pop_text) if pop_text.isdigit() else None
+            horse_weight, horse_weight_change = None, None
+            if len(cells) > 14:
+                horse_weight, horse_weight_change = _parse_weight(cells[14].get_text(strip=True))
+            last_3f = _parse_time(cells[11].get_text(strip=True)) if len(cells) > 11 else None
+            corners = cells[10].get_text(strip=True) if len(cells) > 10 else None
+            trainer_name_jp = None
+            for ci in [18, 19, 17, 16, 15]:
+                if ci < len(cells):
+                    trainer_link = cells[ci].find("a", href=re.compile(r'/trainer/'))
+                    if trainer_link:
+                        trainer_name_jp = trainer_link.get_text(strip=True)
+                        break
+
+            horse = HorseData(
+                name=horse_name_jp, name_jp=horse_name_jp, sex=sex,
+                birth_year=birth_year, netkeiba_id=horse_id or f"unknown_{post_pos}",
+            )
+            entry = EntryData(
+                post_position=post_pos or 0, draw=draw, horse=horse,
+                jockey_name_jp=jockey_name_jp, trainer_name_jp=trainer_name_jp,
+                weight_carried=weight_carried, horse_weight=horse_weight,
+                horse_weight_change=horse_weight_change, odds_win=odds_win,
+                popularity=popularity, finish_pos=finish_pos, margin=margin,
+                time_secs=time_secs, last_3f_secs=last_3f, corner_positions=corners,
+            )
+            race.entries.append(entry)
         except Exception as e:
             log.warning(f"Error parsing row in race {race_id}: {e}")
             continue
@@ -690,26 +1011,46 @@ def save_race_to_db(race: RaceData) -> bool:
 # ---------------------------------------------------------------------------
 
 def scrape_race(race_id: str) -> Optional[RaceData]:
-    """Scrape a single race by its netkeiba ID and save to DB."""
+    """
+    Scrape a single race by its netkeiba ID and save to DB.
+    Tries result page first (for finished races), then shutuba (pre-race).
+    """
     log.info(f"Scraping race {race_id}...")
-    url = RACE_URL.format(race_id=race_id)
+
+    # Try result page first
+    url = RESULT_URL.format(race_id=race_id)
     soup = _fetch(url)
-    if not soup:
-        return None
+    if soup:
+        # Check if the result page actually has data (vs redirect to shutuba)
+        has_results = soup.select_one("td.Result_Num") is not None
+        if has_results:
+            race = parse_result_page(soup, race_id)
+            if race and race.entries:
+                save_race_to_db(race)
+                return race
 
-    race = parse_race_page(soup, race_id)
-    if race and race.entries:
-        save_race_to_db(race)
-    else:
-        log.warning(f"No entries parsed for race {race_id}")
+    # Try shutuba page (pre-race entry list)
+    url = SHUTUBA_URL.format(race_id=race_id)
+    soup = _fetch(url)
+    if soup:
+        has_horses = bool(soup.select("tr.HorseList"))
+        if has_horses:
+            race = parse_shutuba_page(soup, race_id)
+            if race and race.entries:
+                save_race_to_db(race)
+                return race
 
-    return race
+    log.warning(f"No entries parsed for race {race_id}")
+    return None
 
 
 def scrape_race_list(date_str: str) -> list[str]:
     """
     Scrape the race list for a given date and return netkeiba race IDs.
     Date format: YYYYMMDD
+
+    The race list page loads race IDs via AJAX/JavaScript, so we also
+    check the JS source for embedded race_id data.
     """
     url = RACE_LIST_URL.format(date=date_str)
     log.info(f"Fetching race list for {date_str}...")
@@ -718,12 +1059,29 @@ def scrape_race_list(date_str: str) -> list[str]:
         return []
 
     race_ids = []
+
+    # Method 1: Look for direct links (sometimes present)
     links = soup.find_all("a", href=re.compile(r"/race/\d{12}"))
     for link in links:
         match = re.search(r"/race/(\d{12})", link["href"])
         if match:
             rid = match.group(1)
             if rid not in race_ids:
+                race_ids.append(rid)
+
+    # Method 2: Look for race_id references in inline JS
+    if not race_ids:
+        page_text = str(soup)
+        js_ids = re.findall(r'race_id["\']?\s*[:=]\s*["\']?(\d{12})', page_text)
+        for rid in js_ids:
+            if rid not in race_ids:
+                race_ids.append(rid)
+
+    # Method 3: Look for data attributes with race IDs
+    if not race_ids:
+        for el in soup.find_all(attrs={"data-race-id": True}):
+            rid = el["data-race-id"]
+            if re.match(r'^\d{12}$', rid) and rid not in race_ids:
                 race_ids.append(rid)
 
     log.info(f"Found {len(race_ids)} races for {date_str}")

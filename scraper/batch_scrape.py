@@ -23,6 +23,7 @@ Usage:
 import argparse
 import logging
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional
 
@@ -110,7 +111,14 @@ def batch_scrape(
     workers: int = 1,
 ) -> dict:
     """
-    Scrape races for a year by trying generated JRA race IDs.
+    Scrape races for a year using hierarchical probing to skip nonexistent
+    course/meeting/round combinations efficiently.
+
+    Strategy:
+        For each course → meeting → round, probe race #01 first.
+        - If race #01 doesn't exist, skip the entire round (12 races).
+        - If round 01 of a meeting is empty, skip the entire meeting.
+        This avoids wasting ~3s per request on thousands of nonexistent IDs.
 
     Args:
         year: Year to scrape (e.g. 2024)
@@ -118,93 +126,174 @@ def batch_scrape(
         dry_run: If True, only show which IDs would be tried
         max_races: Stop after scraping this many new races
         with_odds: Also fetch final odds for each race
-        workers: Number of concurrent workers (default: 1)
+        workers: Number of concurrent workers (default: 1, used for races within a valid round)
 
     Returns:
         Summary dict with counts
     """
-    race_ids = generate_race_ids(year, courses)
-    log.info(f"Generated {len(race_ids)} candidate race IDs for {year}")
+    if courses is None:
+        courses = JRA_COURSE_CODES
 
     already_scraped = get_already_scraped_ids()
     log.info(f"Already scraped: {len(already_scraped)} races in DB")
 
-    # Filter out already-scraped
-    new_ids = [rid for rid in race_ids if rid not in already_scraped]
-    log.info(f"New IDs to try: {len(new_ids)} (skipping {len(race_ids) - len(new_ids)} existing)")
-
     stats = {
-        "total_candidates": len(race_ids),
-        "already_scraped": len(race_ids) - len(new_ids),
+        "total_candidates": 0,
+        "already_scraped": 0,
         "races_scraped": 0,
         "races_not_found": 0,
         "races_failed": 0,
+        "rounds_skipped": 0,
+        "meetings_skipped": 0,
     }
 
     if dry_run:
-        log.info(f"[DRY RUN] Would try {len(new_ids)} race IDs")
-        for rid in new_ids[:20]:
-            log.info(f"  🆕 {rid}")
-        if len(new_ids) > 20:
-            log.info(f"  ... and {len(new_ids) - 20} more")
+        all_ids = generate_race_ids(year, courses)
+        new_ids = [rid for rid in all_ids if rid not in already_scraped]
+        log.info(f"[DRY RUN] Would try {len(new_ids)} race IDs (with smart skipping, far fewer requests)")
         _print_summary(stats)
         return stats
 
-    if workers <= 1:
-        # Sequential mode (original behavior)
-        for i, rid in enumerate(new_ids):
-            if max_races and stats["races_scraped"] >= max_races:
-                log.info(f"Reached max_races limit ({max_races}). Stopping.")
+    def _reached_limit():
+        return max_races and stats["races_scraped"] >= max_races
+
+    consecutive_failures = 0
+    MAX_CONSECUTIVE_FAILURES = 3
+    RATE_LIMIT_PAUSE = 300  # 5 minutes
+
+    for course in courses:
+        if _reached_limit():
+            break
+
+        log.info(f"📍 Course {course}")
+
+        for meeting in range(1, 7):
+            if _reached_limit():
                 break
 
-            rid, status, desc = _scrape_one(rid, with_odds)
-            if status == "scraped":
-                stats["races_scraped"] += 1
-                log.info(f"  [{stats['races_scraped']}/{max_races or '∞'}] ✅ {rid} — {desc}")
-            elif status == "failed":
-                stats["races_failed"] += 1
-                log.error(f"  ❌ Failed {rid}: {desc}")
+            # Probe: try round 01, race 01 of this meeting
+            probe_id = f"{year}{course}{meeting:02d}0101"
+            if probe_id in already_scraped:
+                # Meeting exists (we scraped it before), check all rounds
+                log.info(f"  Meeting {meeting:02d}: already has data, checking rounds...")
+                consecutive_failures = 0  # Reset — DB has data for this course
             else:
-                stats["races_not_found"] += 1
-    else:
-        # Concurrent mode
-        log.info(f"Using {workers} concurrent workers")
-        lock = threading.Lock()
-        stop_event = threading.Event()
+                # Probe the first race of the first round
+                _, probe_status, _ = _scrape_one(probe_id, with_odds)
+                if probe_status == "scraped":
+                    stats["races_scraped"] += 1
+                    consecutive_failures = 0
+                    log.info(f"  Meeting {meeting:02d}: ✅ found (probe {probe_id})")
+                elif probe_status == "not_found":
+                    stats["races_not_found"] += 1
+                    consecutive_failures = 0  # not_found is normal, not a failure
+                    # Skip this entire meeting
+                    skipped = 6 * 12 - 1  # all rounds × races minus the probe
+                    stats["meetings_skipped"] += 1
+                    log.info(f"  Meeting {meeting:02d}: empty, skipping ({skipped} IDs)")
+                    continue
+                else:
+                    stats["races_failed"] += 1
+                    consecutive_failures += 1
+                    log.warning(f"  Meeting {meeting:02d}: probe failed ({consecutive_failures} consecutive failures)")
 
-        def _worker(rid: str) -> tuple[str, str, str]:
-            if stop_event.is_set():
-                return (rid, "skipped", "")
-            return _scrape_one(rid, with_odds)
+                    # Rate limit detection
+                    if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
+                        log.warning(
+                            f"⚠️  {consecutive_failures} consecutive probe failures — "
+                            f"likely rate-limited. Pausing {RATE_LIMIT_PAUSE}s..."
+                        )
+                        time.sleep(RATE_LIMIT_PAUSE)
+                        # Retry this same probe after pause
+                        _, retry_status, _ = _scrape_one(probe_id, with_odds)
+                        if retry_status == "scraped":
+                            stats["races_scraped"] += 1
+                            consecutive_failures = 0
+                            log.info(f"  Meeting {meeting:02d}: ✅ recovered after pause")
+                        elif retry_status == "not_found":
+                            stats["races_not_found"] += 1
+                            consecutive_failures = 0
+                            stats["meetings_skipped"] += 1
+                            log.info(f"  Meeting {meeting:02d}: empty after retry, skipping")
+                            continue
+                        else:
+                            log.error("🛑 Still failing after pause — aborting scrape")
+                            _print_summary(stats)
+                            return stats
+                    continue
 
-        with ThreadPoolExecutor(max_workers=workers) as pool:
-            futures = {
-                pool.submit(_worker, rid): rid
-                for rid in new_ids
-            }
-            for future in as_completed(futures):
-                rid, status, desc = future.result()
-                with lock:
-                    if status == "scraped":
+            for rnd in range(1, 7):
+                if _reached_limit():
+                    break
+
+                # Build list of race IDs for this round
+                round_ids = []
+                for race_num in range(1, 13):
+                    rid = f"{year}{course}{meeting:02d}{rnd:02d}{race_num:02d}"
+                    if rid == probe_id:
+                        continue  # Already probed above
+                    if rid in already_scraped:
+                        stats["already_scraped"] += 1
+                        continue
+                    round_ids.append(rid)
+
+                if not round_ids:
+                    continue  # All already scraped in this round
+
+                # Probe first race of this round (if not round 01 which was already probed)
+                if rnd > 1:
+                    first_id = round_ids[0]
+                    _, first_status, first_desc = _scrape_one(first_id, with_odds)
+                    if first_status == "scraped":
                         stats["races_scraped"] += 1
-                        log.info(
-                            f"  [{stats['races_scraped']}/{max_races or '∞'}] ✅ {rid} — {desc}"
-                        )
-                        if max_races and stats["races_scraped"] >= max_races:
-                            log.info(f"Reached max_races limit ({max_races}). Stopping.")
-                            stop_event.set()
-                    elif status == "failed":
-                        stats["races_failed"] += 1
-                        log.error(f"  ❌ Failed {rid}: {desc}")
-                    elif status == "not_found":
+                        log.info(f"    Round {rnd:02d}: ✅ {first_id} — {first_desc}")
+                    elif first_status == "not_found":
                         stats["races_not_found"] += 1
+                        stats["rounds_skipped"] += 1
+                        log.info(f"    Round {rnd:02d}: empty, skipping {len(round_ids) - 1} remaining")
+                        continue
+                    else:
+                        stats["races_failed"] += 1
+                        continue
+                    round_ids = round_ids[1:]  # Remove the probed one
 
-                    done = stats["races_scraped"] + stats["races_not_found"] + stats["races_failed"]
-                    if done % 100 == 0:
-                        log.info(
-                            f"  Progress: {done}/{len(new_ids)} "
-                            f"(✅ {stats['races_scraped']} | ❌ {stats['races_failed']} | 🔍 {stats['races_not_found']} 404s)"
-                        )
+                # Scrape remaining races in this round
+                if workers > 1 and len(round_ids) > 1:
+                    with ThreadPoolExecutor(max_workers=min(workers, len(round_ids))) as pool:
+                        futures = {pool.submit(_scrape_one, rid, with_odds): rid for rid in round_ids}
+                        for future in as_completed(futures):
+                            if _reached_limit():
+                                break
+                            rid, status, desc = future.result()
+                            if status == "scraped":
+                                stats["races_scraped"] += 1
+                                log.info(f"    [{stats['races_scraped']}/{max_races or '∞'}] ✅ {rid} — {desc}")
+                            elif status == "failed":
+                                stats["races_failed"] += 1
+                                log.error(f"    ❌ {rid}: {desc}")
+                            else:
+                                stats["races_not_found"] += 1
+                else:
+                    for rid in round_ids:
+                        if _reached_limit():
+                            break
+                        rid, status, desc = _scrape_one(rid, with_odds)
+                        if status == "scraped":
+                            stats["races_scraped"] += 1
+                            log.info(f"    [{stats['races_scraped']}/{max_races or '∞'}] ✅ {rid} — {desc}")
+                        elif status == "failed":
+                            stats["races_failed"] += 1
+                            log.error(f"    ❌ {rid}: {desc}")
+                        else:
+                            stats["races_not_found"] += 1
+
+            done = stats["races_scraped"] + stats["races_not_found"] + stats["races_failed"]
+            log.info(
+                f"  Progress: ✅ {stats['races_scraped']} scraped | "
+                f"🔍 {stats['races_not_found']} empty | "
+                f"❌ {stats['races_failed']} failed | "
+                f"⏭️ {stats['meetings_skipped']} meetings + {stats['rounds_skipped']} rounds skipped"
+            )
 
     _print_summary(stats)
     return stats
@@ -215,11 +304,12 @@ def _print_summary(stats: dict):
     print("\n" + "=" * 50)
     print("  UmaEdge — Batch Scrape Summary")
     print("=" * 50)
-    print(f"  Total candidates:    {stats['total_candidates']:>6}")
-    print(f"  Already scraped:     {stats['already_scraped']:>6}")
+    print(f"  Already scraped:     {stats.get('already_scraped', 0):>6}")
     print(f"  Races scraped:       {stats['races_scraped']:>6}")
-    print(f"  Not found (404):     {stats['races_not_found']:>6}")
+    print(f"  Not found (empty):   {stats['races_not_found']:>6}")
     print(f"  Failed:              {stats['races_failed']:>6}")
+    print(f"  Meetings skipped:    {stats.get('meetings_skipped', 0):>6}")
+    print(f"  Rounds skipped:      {stats.get('rounds_skipped', 0):>6}")
     print("=" * 50)
 
 

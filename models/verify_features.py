@@ -32,8 +32,11 @@ FEATURE_GROUPS = {
         "horse_going_win_pct", "horse_wet_track_advantage", "horse_heavy_speed_diff",
         "going_x_dist_x_surface",
     ],
-    "Odds Movement": [
+    "Odds Movement (Time Series)": [
         "odds_slope", "odds_late_money", "odds_vol",
+    ],
+    "Odds (Cross-Sectional)": [
+        "odds_rank", "odds_ratio_to_fav", "odds_deviation",
     ],
     "Track Bias": [
         "draw_bias_at_course", "draw_low_win_pct", "draw_high_win_pct",
@@ -42,6 +45,9 @@ FEATURE_GROUPS = {
     "Pedigree (Sire)": [
         "sire_runners", "sire_win_pct", "sire_win_pct_surface",
         "sire_win_pct_distance", "sire_avg_finish",
+    ],
+    "Pedigree Fallback (Trainer)": [
+        "trainer_offspring_win_pct", "trainer_offspring_avg_finish",
     ],
 }
 
