@@ -42,6 +42,10 @@ logging.basicConfig(
 )
 log = logging.getLogger("pipeline")
 
+# Odds fetch window: how far ahead (min) to look for upcoming races
+ODDS_WINDOW_MIN = 20   # fetch for races starting within 20 min
+ODDS_FINISHED_GRACE = 5  # skip races finished more than 5 min ago
+
 
 def step_scrape(date: str) -> list[str]:
     """Step 1: Discover and scrape all races for the date."""
@@ -81,8 +85,12 @@ def step_scrape(date: str) -> list[str]:
     return race_ids
 
 
-def step_odds(date: str, race_ids: list[str]) -> int:
-    """Step 2: Fetch current odds — only for upcoming races (smart scheduling)."""
+def step_odds(date: str, race_ids: list[str]) -> list[int]:
+    """
+    Step 2: Fetch current odds — only for upcoming races (smart scheduling).
+
+    Returns list of DB race IDs that were updated (for targeted re-prediction).
+    """
     JST = timezone(timedelta(hours=9))
     now_jst = datetime.now(JST)
     log.info(f"━━━ Step 2: Smart odds fetch (JST: {now_jst.strftime('%H:%M')}) ━━━")
@@ -100,39 +108,41 @@ def step_odds(date: str, race_ids: list[str]) -> int:
     nk_to_db = {r.netkeiba_id: r.id for r in races}
     nk_to_info = {r.netkeiba_id: r for r in races}
 
-    # Filter: only races starting within next 45 min or not yet started
+    # Filter: only races starting within ODDS_WINDOW_MIN
     upcoming_ids = []
-    skipped = 0
+    skipped_past = 0
+    skipped_future = 0
+    no_time = 0
     for nk_id in race_ids:
         info = nk_to_info.get(nk_id)
         if not info or not info.post_time:
             # No post_time data — include it (fallback)
             upcoming_ids.append(nk_id)
+            no_time += 1
             continue
 
         # post_time is a time object from DB
         post_dt = datetime.combine(now_jst.date(), info.post_time, tzinfo=JST)
         mins_until = (post_dt - now_jst).total_seconds() / 60
 
-        if mins_until < -10:
-            # Race finished more than 10 min ago — skip
-            skipped += 1
-            continue
-        elif mins_until > 45:
-            # Race is more than 45 min away — skip for now, will catch next run
-            skipped += 1
-            continue
+        if mins_until < -ODDS_FINISHED_GRACE:
+            # Race finished — skip
+            skipped_past += 1
+        elif mins_until > ODDS_WINDOW_MIN:
+            # Race too far away — next run will catch it
+            skipped_future += 1
         else:
-            # Race is upcoming (within 45 min) or just started — fetch odds
+            # Race is upcoming — fetch odds
             upcoming_ids.append(nk_id)
 
     if not upcoming_ids:
-        log.info(f"  No upcoming races right now ({skipped} skipped)")
-        return 0
+        log.info(f"  No upcoming races (past: {skipped_past}, future: {skipped_future})")
+        return []
 
-    log.info(f"  Fetching odds for {len(upcoming_ids)} upcoming races ({skipped} skipped)")
+    log.info(f"  Targeting {len(upcoming_ids)} races "
+             f"(past: {skipped_past}, future: {skipped_future}, no_time: {no_time})")
 
-    total_updated = 0
+    updated_db_ids = []
     for i, nk_id in enumerate(upcoming_ids, 1):
         db_id = nk_to_db.get(nk_id)
         if not db_id:
@@ -148,6 +158,7 @@ def step_odds(date: str, race_ids: list[str]) -> int:
             continue
 
         with get_session() as session:
+            count = 0
             for o in odds:
                 pp = int(o["combination"])
                 result = session.execute(
@@ -158,37 +169,51 @@ def step_odds(date: str, race_ids: list[str]) -> int:
                     """),
                     {"odds": o["odds_value"], "race_id": db_id, "pp": pp},
                 )
-                total_updated += result.rowcount
+                count += result.rowcount
             session.commit()
 
-        log.info(f"  [{i}/{len(upcoming_ids)}] R{info.race_number if info else '?'} ({time_str}): "
-                 f"{len(odds)} horses updated")
+        log.info(f"  [{i}/{len(upcoming_ids)}] R{info.race_number if info else '?'} "
+                 f"({time_str}): {len(odds)} horses updated")
+        updated_db_ids.append(db_id)
         time.sleep(0.5)
 
-    log.info(f"✅ Updated {total_updated} entries with odds")
-    return total_updated
+    log.info(f"✅ Updated odds for {len(updated_db_ids)} races")
+    return updated_db_ids
 
 
 def step_predict(date: str, version: str, ev_threshold: float,
-                 max_odds: float, min_odds: float) -> str:
-    """Step 3: Run model predictions, save to JSON."""
-    log.info(f"━━━ Step 3: Running predictions ({version}) ━━━")
+                 max_odds: float, min_odds: float,
+                 race_db_ids: list[int] = None) -> str:
+    """
+    Step 3: Run model predictions. If race_db_ids is provided, only re-predict
+    those races and merge into existing predictions file. Otherwise predict all.
+    """
+    output_path = f"results/predictions_{date}.json"
 
-    # Get race IDs from DB
+    # Get all race IDs from DB
     with get_session() as session:
         rows = session.execute(
             text("SELECT id FROM horsebet.races WHERE date = :d ORDER BY course_id, race_number"),
             {"d": date},
         ).fetchall()
-    race_ids = [r.id for r in rows]
+    all_race_ids = [r.id for r in rows]
 
-    if not race_ids:
+    if not all_race_ids:
         log.error(f"No races in DB for {date}")
         sys.exit(1)
 
-    log.info(f"Predicting {len(race_ids)} races...")
+    # Decide which races to predict
+    if race_db_ids:
+        # Incremental: only re-predict the updated races
+        predict_ids = race_db_ids
+        log.info(f"━━━ Step 3: Re-predicting {len(predict_ids)} updated races ({version}) ━━━")
+    else:
+        # Full: predict everything
+        predict_ids = all_race_ids
+        log.info(f"━━━ Step 3: Predicting all {len(predict_ids)} races ({version}) ━━━")
+
     df = predict_with_filters(
-        race_ids=race_ids,
+        race_ids=predict_ids,
         model_version=version,
         ev_threshold=ev_threshold,
         max_odds=max_odds,
@@ -197,30 +222,53 @@ def step_predict(date: str, version: str, ev_threshold: float,
 
     if df.empty:
         log.error("No predictions generated")
-        sys.exit(1)
+        if not race_db_ids:
+            sys.exit(1)
+        return output_path
 
-    # Save predictions
-    output_path = f"results/predictions_{date}.json"
-    value_bets = df[df["is_value_bet"]]
-    output_data = {
-        "model": version,
-        "date": date,
-        "filters": {
-            "ev_threshold": ev_threshold,
-            "max_odds": max_odds,
-            "min_odds": min_odds,
-        },
-        "summary": {
-            "total_races": len(race_ids),
-            "total_entries": len(df),
-            "value_bets": len(value_bets),
-        },
-        "predictions": df.to_dict(orient="records"),
-    }
-    with open(output_path, "w") as f:
-        json.dump(output_data, f, indent=2, ensure_ascii=False)
+    # If incremental, merge with existing predictions
+    if race_db_ids and Path(output_path).exists():
+        with open(output_path) as f:
+            existing = json.load(f)
 
-    log.info(f"✅ {len(race_ids)} races, {len(df)} entries, {len(value_bets)} value bets")
+        # Replace predictions for updated races, keep the rest
+        updated_race_ids = set(race_db_ids)
+        kept = [p for p in existing.get("predictions", [])
+                if p.get("race_id") not in updated_race_ids]
+        new_preds = df.to_dict(orient="records")
+        all_preds = kept + new_preds
+
+        existing["predictions"] = all_preds
+        existing["summary"]["total_entries"] = len(all_preds)
+        existing["summary"]["value_bets"] = sum(1 for p in all_preds if p.get("is_value_bet"))
+
+        with open(output_path, "w") as f:
+            json.dump(existing, f, indent=2, ensure_ascii=False)
+
+        log.info(f"✅ Merged {len(new_preds)} updated + {len(kept)} existing predictions")
+    else:
+        # Save full predictions
+        value_bets = df[df["is_value_bet"]]
+        output_data = {
+            "model": version,
+            "date": date,
+            "filters": {
+                "ev_threshold": ev_threshold,
+                "max_odds": max_odds,
+                "min_odds": min_odds,
+            },
+            "summary": {
+                "total_races": len(all_race_ids),
+                "total_entries": len(df),
+                "value_bets": len(value_bets),
+            },
+            "predictions": df.to_dict(orient="records"),
+        }
+        with open(output_path, "w") as f:
+            json.dump(output_data, f, indent=2, ensure_ascii=False)
+
+        log.info(f"✅ {len(predict_ids)} races, {len(df)} entries, {len(value_bets)} value bets")
+
     log.info(f"   Saved to {output_path}")
     return output_path
 
@@ -300,19 +348,29 @@ Examples:
         log.error("No races found — aborting")
         sys.exit(1)
 
-    # Step 2: Odds
+    # Step 2: Odds (returns list of updated DB race IDs)
+    updated_db_ids = []
     if args.skip_odds:
         log.info("━━━ Step 2: Odds → SKIPPED ━━━")
     else:
-        step_odds(args.date, race_ids)
+        updated_db_ids = step_odds(args.date, race_ids)
 
     # Step 3: Predict
     pred_path = f"results/predictions_{args.date}.json"
     if args.skip_predict and Path(pred_path).exists():
         log.info(f"━━━ Step 3: Predict → SKIPPED (using {pred_path}) ━━━")
-    else:
+    elif updated_db_ids:
+        # Incremental: only re-predict races with freshly updated odds
+        pred_path = step_predict(args.date, args.version, args.ev_threshold,
+                                 args.max_odds, args.min_odds,
+                                 race_db_ids=updated_db_ids)
+    elif not Path(pred_path).exists():
+        # First run: predict all
         pred_path = step_predict(args.date, args.version, args.ev_threshold,
                                  args.max_odds, args.min_odds)
+    else:
+        # No odds updated and predictions exist — skip
+        log.info(f"━━━ Step 3: No odds updates, using existing predictions ━━━")
 
     # Step 4: Frontend
     step_frontend(pred_path, args.date)
