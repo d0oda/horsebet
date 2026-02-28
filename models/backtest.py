@@ -47,6 +47,10 @@ class BacktestConfig:
     kelly_fraction: float = 0.25    # Quarter-Kelly
     max_bet_pct: float = 0.05       # Max 5% of bankroll per bet
     bet_type: str = "win"           # 'win' or 'place'
+    max_odds: float = 30.0          # Skip horses with odds above this
+    min_odds: float = 1.0           # Skip horses with odds below this
+    use_kelly: bool = True           # Pure Kelly sizing (no flat-stake floor)
+    min_kelly_fraction: float = 0.005  # Min Kelly fraction to place a bet
 
 
 @dataclass
@@ -143,6 +147,10 @@ class Backtester:
                 if not model_prob or model_prob <= 0:
                     continue
 
+                # --- Odds ceiling/floor filter ---
+                if odds > self.config.max_odds or odds < self.config.min_odds:
+                    continue
+
                 # --- Place bet adjustments (Research Backlog #4) ---
                 is_place = self.config.bet_type == "place"
                 if is_place:
@@ -162,10 +170,19 @@ class Backtester:
 
                 # Kelly criterion sizing
                 kelly = self._kelly_stake(model_prob, odds, balance)
-                stake = max(
-                    self.config.flat_stake,
-                    min(kelly, int(balance * self.config.max_bet_pct)),
-                )
+
+                if self.config.use_kelly:
+                    # Pure Kelly mode: skip bets with tiny Kelly fraction
+                    kelly_frac = kelly / balance if balance > 0 else 0
+                    if kelly_frac < self.config.min_kelly_fraction:
+                        continue
+                    stake = min(kelly, int(balance * self.config.max_bet_pct))
+                else:
+                    # Flat-stake mode: use flat_stake as floor
+                    stake = max(
+                        self.config.flat_stake,
+                        min(kelly, int(balance * self.config.max_bet_pct)),
+                    )
 
                 if stake > balance:
                     continue  # can't afford
@@ -333,6 +350,9 @@ def run_full_backtest(
     ev_threshold: float = 0.05,
     output_path: Optional[str] = None,
     bet_type: str = "win",
+    max_odds: float = 30.0,
+    min_odds: float = 1.0,
+    use_kelly: bool = True,
 ):
     """
     Run a full backtest using saved model predictions on historical data.
@@ -382,7 +402,13 @@ def run_full_backtest(
     pred_df = pred_df.merge(extra_df, on="entry_id", how="left")
 
     # Run backtest
-    config = BacktestConfig(ev_threshold=ev_threshold, bet_type=bet_type)
+    config = BacktestConfig(
+        ev_threshold=ev_threshold,
+        bet_type=bet_type,
+        max_odds=max_odds,
+        min_odds=min_odds,
+        use_kelly=use_kelly,
+    )
     bt = Backtester(config)
     result = bt.run(pred_df)
 
@@ -407,6 +433,12 @@ def main():
     parser.add_argument("--output", type=str, help="Output CSV path")
     parser.add_argument("--bet-type", type=str, default="win", choices=["win", "place"],
                         help="Bet type: 'win' or 'place' (default: win)")
+    parser.add_argument("--max-odds", type=float, default=30.0,
+                        help="Max odds to bet on (default: 30.0)")
+    parser.add_argument("--min-odds", type=float, default=1.0,
+                        help="Min odds to bet on (default: 1.0)")
+    parser.add_argument("--flat-stake", action="store_true",
+                        help="Use flat staking instead of Kelly")
     args = parser.parse_args()
 
     run_full_backtest(
@@ -414,6 +446,9 @@ def main():
         ev_threshold=args.ev_threshold,
         output_path=args.output,
         bet_type=args.bet_type,
+        max_odds=args.max_odds,
+        min_odds=args.min_odds,
+        use_kelly=not args.flat_stake,
     )
 
 

@@ -35,6 +35,8 @@ def predict_and_store(
     store_to_db: bool = True,
     ev_threshold: float = 0.05,
     use_hybrid: bool = False,
+    max_odds: float = 30.0,
+    min_odds: float = 1.5,
 ) -> pd.DataFrame:
     """
     Full prediction pipeline for a race:
@@ -160,7 +162,7 @@ def predict_and_store(
             "odds": odds,
             "market_prob": round(market_prob, 4),
             "ev": round(ev, 4),
-            "is_value": ev >= ev_threshold,
+            "is_value": ev >= ev_threshold and min_odds <= odds <= max_odds,
         }
 
         if fund_p is not None:
@@ -256,6 +258,8 @@ def main():
     parser.add_argument("--version", type=str, default="latest", help="Model version")
     parser.add_argument("--no-store", action="store_true", help="Don't store to DB")
     parser.add_argument("--ev-threshold", type=float, default=0.05, help="Min EV for value bet")
+    parser.add_argument("--max-odds", type=float, default=30.0, help="Max odds to bet (default: 30)")
+    parser.add_argument("--min-odds", type=float, default=1.5, help="Min odds to bet (default: 1.5)")
     parser.add_argument("--hybrid", action="store_true", help="Use hybrid ensemble")
     args = parser.parse_args()
 
@@ -265,6 +269,8 @@ def main():
         store_to_db=not args.no_store,
         ev_threshold=args.ev_threshold,
         use_hybrid=args.hybrid,
+        max_odds=args.max_odds,
+        min_odds=args.min_odds,
     )
 
     if result.empty:

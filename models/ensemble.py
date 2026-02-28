@@ -111,6 +111,11 @@ class DivergenceDetector:
             model_agreement = 1.0 - abs(fundamental_p - odds_aware_p)
             alpha_score = divergence * (0.7 + 0.3 * model_agreement)
 
+            # Penalize longshot signals — alpha is unreliable at high odds
+            # because calibration creates a probability floor
+            if odds > 10:
+                alpha_score /= np.log(odds)
+
             signals.append(AlphaSignal(
                 entry_id=int(entry_ids[i]),
                 fundamental_prob=round(float(fundamental_p), 4),
@@ -282,11 +287,17 @@ class HybridEnsemble:
         """
         Generate predictions from both models for a set of entries.
 
+        Uses adaptive odds-aware blending: trusts the market model more
+        for high-odds horses where the fundamental model is unreliable,
+        and trusts the fundamental model more for low-odds horses where
+        edge is most likely.
+
         Args:
             features_df: Feature dataframe for entries to predict.
 
         Returns:
-            Dict with 'fundamental', 'market', 'combined' prediction arrays.
+            Dict with 'fundamental', 'market', 'combined' prediction arrays
+            and 'fund_weights' showing per-entry blend weights.
         """
         import xgboost as xgb_lib
 
@@ -320,17 +331,51 @@ class HybridEnsemble:
             else:
                 mkt_preds = self.mkt_calibrator.predict(mkt_preds)
 
-        # Combined prediction: weighted blend
-        combined = (
-            self.fundamental_weight * fund_preds
-            + self.market_weight * mkt_preds
-        )
+        # --- Adaptive odds-aware blending ---
+        # Shift weight toward market model for high-odds horses where
+        # calibration is unreliable and the probability floor creates
+        # phantom value.
+        odds = features_df["odds_win"].fillna(0).values
+        fund_weights = self._compute_adaptive_weights(odds)
+
+        combined = fund_weights * fund_preds + (1 - fund_weights) * mkt_preds
+
+        # --- Longshot suppression ---
+        # For extreme longshots (odds > 30x), clamp combined probability
+        # to not exceed market-implied probability. This prevents the
+        # calibration floor from creating phantom value at the tails.
+        for i in range(len(combined)):
+            if odds[i] > 30:
+                market_implied = 1.0 / odds[i]
+                combined[i] = min(combined[i], market_implied)
 
         return {
             "fundamental": fund_preds,
             "market": mkt_preds,
             "combined": combined,
+            "fund_weights": fund_weights,
         }
+
+    def _compute_adaptive_weights(self, odds: np.ndarray) -> np.ndarray:
+        """
+        Compute per-entry fundamental model weight based on odds.
+
+        Uses a sigmoid transition so the blend shifts smoothly:
+        - Low odds (< 10x): ~60% fundamental (trust intrinsic quality)
+        - Mid odds (10-30x): ~40% fundamental (market becomes more informative)
+        - High odds (> 30x): ~20% fundamental (heavily trust market)
+
+        Returns:
+            Array of per-entry fundamental weights in [0.2, 0.6].
+        """
+        # Sigmoid centered at log(15) ≈ 2.7, with range [0.2, 0.6]
+        log_odds = np.log(np.maximum(odds, 1.0))
+        # Sigmoid: 1 / (1 + exp(k * (x - center)))
+        # k controls steepness, center is the midpoint
+        sigmoid = 1.0 / (1.0 + np.exp(2.0 * (log_odds - np.log(15))))
+        # Scale to [0.2, 0.6]
+        weights = 0.2 + 0.4 * sigmoid
+        return weights
 
     def save(self, version: str = "hybrid") -> str:
         """Save both sub-models under one version directory."""

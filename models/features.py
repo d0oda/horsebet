@@ -53,6 +53,7 @@ WEATHER_MAP = {"晴": 0, "曇": 1, "小雨": 2, "雨": 3, "小雪": 3, "雪": 3}
 ODDS_FEATURES = [
     "odds_win", "log_odds", "popularity",
     "odds_win_z", "log_odds_z", "popularity_z",
+    "is_longshot", "is_extreme_longshot",
 ]
 
 
@@ -1098,9 +1099,14 @@ class FeatureBuilder:
         features["horse_weight_change"] = row.get("horse_weight_change", 0) or 0
 
         # Odds (market signal)
-        features["odds_win"] = row.get("odds_win", np.nan)
-        features["log_odds"] = np.log(row["odds_win"]) if row.get("odds_win") and row["odds_win"] > 0 else np.nan
+        odds = row.get("odds_win", np.nan)
+        features["odds_win"] = odds
+        features["log_odds"] = np.log(odds) if odds and odds > 0 else np.nan
         features["popularity"] = row.get("popularity", np.nan)
+
+        # Longshot flags (binary) — helps model learn to discount extreme odds
+        features["is_longshot"] = 1 if odds and odds > 30 else 0
+        features["is_extreme_longshot"] = 1 if odds and odds > 50 else 0
 
         # Race conditions
         features["distance"] = row.get("distance", np.nan)
