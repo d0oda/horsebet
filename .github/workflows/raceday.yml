@@ -27,6 +27,9 @@ env:
   DATABASE_URL: ${{ secrets.DATABASE_URL }}
   PYTHON_VERSION: '3.10'
 
+permissions:
+  contents: write
+
 jobs:
   pipeline:
     runs-on: ubuntu-latest
