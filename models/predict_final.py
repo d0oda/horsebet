@@ -145,6 +145,18 @@ def predict_with_filters(
 
     df = pd.DataFrame(all_results)
     if not df.empty:
+        # Enforce max 1 value bet per race: keep only the highest-EV bet
+        value_mask = df["is_value_bet"]
+        if value_mask.any():
+            best_idx = (
+                df[value_mask]
+                .groupby("race_id")["ev"]
+                .idxmax()
+            )
+            # Clear all value bets, then re-set only the best per race
+            df["is_value_bet"] = False
+            df.loc[best_idx, "is_value_bet"] = True
+
         df = df.sort_values(["race_id", "combined_prob"], ascending=[True, False])
     return df
 

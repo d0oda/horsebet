@@ -343,17 +343,18 @@ def step_results(date: str, race_ids: list[str]):
         post_dt = datetime.combine(now_jst.date(), r.post_time, tzinfo=JST)
         mins_since = (now_jst - post_dt).total_seconds() / 60
         if mins_since > 10:
-            # Check if we already have results
+            # Check if we already have COMPLETE results (all entries have finish_pos)
             with get_session() as session:
-                has_result = session.execute(
+                counts = session.execute(
                     text("""
-                        SELECT 1 FROM horsebet.entries
-                        WHERE race_id = :rid AND finish_pos IS NOT NULL
-                        LIMIT 1
+                        SELECT COUNT(*) as total,
+                               COUNT(finish_pos) as has_result
+                        FROM horsebet.entries
+                        WHERE race_id = :rid
                     """),
                     {"rid": r.id},
                 ).fetchone()
-            if not has_result:
+            if counts.has_result < counts.total:
                 finished_ids.append(r)
 
     if not finished_ids:
