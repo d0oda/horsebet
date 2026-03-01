@@ -54,8 +54,18 @@ def step_scrape(date: str) -> list[str]:
 
     race_ids = scrape_race_list(date_compact)
     if not race_ids:
-        log.error(f"No races found for {date}. Is the date correct?")
-        return []
+        # Fallback: check if races already exist in DB
+        with get_session() as session:
+            rows = session.execute(
+                text("SELECT netkeiba_id FROM horsebet.races WHERE date = :d ORDER BY course_id, race_number"),
+                {"d": date},
+            ).fetchall()
+        if rows:
+            race_ids = [r.netkeiba_id for r in rows]
+            log.info(f"Race list empty but found {len(race_ids)} races in DB — using those")
+        else:
+            log.error(f"No races found for {date}. Is the date correct?")
+            return []
 
     log.info(f"Found {len(race_ids)} race IDs")
 
