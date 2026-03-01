@@ -54,79 +54,46 @@ def fetch_win_odds(race_id: str) -> list[dict]:
     Fetch current win odds for all horses in a race.
     Returns list of dicts: [{combination: "1", odds_value: 3.5}, ...]
 
-    Uses netkeiba's JSON API (works during live betting window).
-    Falls back to shutuba page HTML parsing for pre-race/static odds.
+    Uses netkeiba's JSON API: type=1 (tansho/win), action=init.
+    Response format: data.odds = {"1": {"01": ["3.4", "0", "2"], ...}}
+    where key "1" = tansho, horse_num = [odds_value, ?, popularity_rank]
     """
     import json as _json
 
-    # Method 1: JSON API (works during live betting window)
     api_url = (
         f"https://race.netkeiba.com/api/api_get_jra_odds.html"
-        f"?race_id={race_id}&type=b1&action=update"
+        f"?race_id={race_id}&type=1&action=init"
     )
     try:
         resp = requests.get(api_url, headers=HEADERS, timeout=15)
         if resp.status_code == 200:
             data = _json.loads(resp.text)
-            if data.get("status") not in ("NG",) and isinstance(data.get("data"), dict):
-                odds_raw = data["data"].get("odds", [])
-                if odds_raw and isinstance(odds_raw, list):
+            if data.get("status") != "NG" and isinstance(data.get("data"), dict):
+                odds_data = data["data"].get("odds", {})
+                # Key "1" = tansho (win) odds
+                tansho = odds_data.get("1", {})
+                if tansho and isinstance(tansho, dict):
                     odds_list = []
-                    for item in odds_raw:
-                        # API format: each item has 'umaban' (horse number) and 'odds' (value)
-                        horse_num = str(item.get("umaban", item.get("no", "")))
-                        odds_val = item.get("odds", item.get("odds_value"))
-                        if odds_val and horse_num:
+                    for horse_num, values in tansho.items():
+                        # values = [odds_str, unknown, popularity_rank]
+                        if isinstance(values, list) and len(values) >= 1:
+                            odds_str = str(values[0])
+                            if odds_str in ("", "---", "取消", "除外", "0"):
+                                continue
                             try:
                                 odds_list.append({
-                                    "combination": horse_num,
-                                    "odds_value": float(str(odds_val).replace(",", "")),
+                                    "combination": str(int(horse_num)),
+                                    "odds_value": float(odds_str.replace(",", "")),
                                 })
                             except (ValueError, TypeError):
                                 continue
                     if odds_list:
-                        log.debug(f"Got {len(odds_list)} odds from API for {race_id}")
+                        log.info(f"Got {len(odds_list)} odds from API for {race_id}")
                         return odds_list
     except Exception as e:
         log.debug(f"API odds fetch failed for {race_id}: {e}")
 
-    # Method 2: Parse shutuba page (pre-race odds from HTML)
-    shutuba_url = f"https://race.netkeiba.com/race/shutuba.html?race_id={race_id}"
-    try:
-        resp = requests.get(shutuba_url, headers=HEADERS, timeout=30)
-        resp.encoding = "EUC-JP"
-        if resp.status_code != 200:
-            log.warning(f"HTTP {resp.status_code} fetching shutuba for {race_id}")
-            return []
-
-        soup = BeautifulSoup(resp.text, "lxml")
-        odds_list = []
-        for row in soup.select("tr.HorseList"):
-            cells = row.select("td")
-            if len(cells) < 10:
-                continue
-            try:
-                horse_num = cells[1].get_text(strip=True)
-                odds_text = cells[9].get_text(strip=True)
-                if not horse_num.isdigit():
-                    continue
-                if not odds_text or odds_text in ("---", "---.-", "**", "取消", "除外"):
-                    continue
-                odds_val = float(odds_text.replace(",", ""))
-                odds_list.append({
-                    "combination": horse_num,
-                    "odds_value": odds_val,
-                })
-            except (ValueError, IndexError):
-                continue
-
-        if odds_list:
-            log.debug(f"Got {len(odds_list)} odds from shutuba for {race_id}")
-        return odds_list
-
-    except requests.RequestException as e:
-        log.warning(f"Error fetching shutuba for {race_id}: {e}")
-        return []
+    return []
 
 
 def save_odds_snapshot(race_id: str, odds: list[dict]) -> int:
