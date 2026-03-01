@@ -1,11 +1,12 @@
 name: Race Day Pipeline
 
 on:
-  # Runs every 10 min from 00:00-08:00 UTC on Sat & Sun (JST 9am-5pm)
-  # Ensures odds are captured close to race time and predictions finish
-  # before the 2-min betting cutoff
+  # Kokura races start as early as 09:45 JST (00:45 UTC)
+  # Run every 10 min from 23:30-08:30 UTC (08:30-17:30 JST) on Fri-Sun
+  # Two cron entries needed: one for late Friday/Saturday, one for early Sat/Sun
   schedule:
-    - cron: '*/10 0-8 * * 0,6'
+    - cron: '*/10 0-8 * * 0,6'    # Sat & Sun 00:00-08:59 UTC
+    - cron: '30/10 23 * * 5,6'    # Fri & Sat 23:30-23:59 UTC (Sat/Sun JST morning)
 
   # Manual trigger with date override
   workflow_dispatch:
