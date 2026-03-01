@@ -53,22 +53,14 @@ def build_data_json(predictions_path: str, date: str = None, output: str = None)
 
         entries_db = session.execute(text('''
             SELECT e.id, e.race_id, e.post_position, e.draw, e.odds_win,
-                   e.popularity, h.name_jp
+                   e.popularity, h.name_jp,
+                   e.finish_pos, e.time_secs, e.last_3f_secs
             FROM horsebet.entries e
             JOIN horsebet.horses h ON h.id = e.horse_id
             WHERE e.race_id IN (SELECT id FROM horsebet.races WHERE date = :date)
             ORDER BY e.race_id, e.post_position
         '''), {'date': date}).fetchall()
 
-        # Also fetch results if available
-        results_db = session.execute(text('''
-            SELECT res.entry_id, res.finish_pos, res.time_secs, res.last_3f_secs
-            FROM horsebet.results res
-            JOIN horsebet.entries e ON e.id = res.entry_id
-            WHERE e.race_id IN (SELECT id FROM horsebet.races WHERE date = :date)
-        '''), {'date': date}).fetchall()
-
-    result_map = {r.entry_id: r for r in results_db}
     entry_map = {}
     for e in entries_db:
         entry_map.setdefault(e.race_id, []).append(e)
@@ -92,11 +84,10 @@ def build_data_json(predictions_path: str, date: str = None, output: str = None)
         entries_out = []
         for e in race_entries:
             p = pred_map.get(e.id, {})
-            res = result_map.get(e.id)
 
-            finish = res.finish_pos if res else None
-            time_secs = res.time_secs if res else None
-            last_3f = res.last_3f_secs if res else None
+            finish = e.finish_pos
+            time_secs = e.time_secs
+            last_3f = e.last_3f_secs
 
             entries_out.append({
                 'horse_name': e.name_jp or '?',
