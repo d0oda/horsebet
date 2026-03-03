@@ -715,8 +715,16 @@ def _parse_legacy_race_page(soup: BeautifulSoup, race_id: str) -> Optional[RaceD
         if weather_match:
             race.weather = weather_match.group(1)
 
+    # Extract actual date from page — the data_intro section contains YYYY年M月D日
+    # NOTE: Do NOT derive date from race_id bytes 4-8 — those are venue+meeting codes,
+    # NOT month+day!  Race ID format: YYYY-VV-WW-DD-RR (venue, meeting, day-in-meeting, race)
+    if not race.date:
+        page_text = header.get_text() if header else ""
+        date_match = re.search(r"(\d{4})年(\d{1,2})月(\d{1,2})日", page_text)
+        if date_match:
+            race.date = f"{date_match.group(1)}-{int(date_match.group(2)):02d}-{int(date_match.group(3)):02d}"
+
     if len(race_id) >= 12:
-        race.date = f"{race_id[:4]}-{race_id[4:6]}-{race_id[6:8]}" if race_id[4:8].isdigit() else None
         race.course_code = race_id[4:6]
         try:
             race.race_number = int(race_id[10:12])

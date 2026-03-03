@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UmaEdge — Multi-Day Backtest Dashboard</title>
+    <meta name="description" content="Per-day backtest results with equity curve, model vs favorites comparison.">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Noto+Sans+JP:wght@300;400;500;600;700&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <style>
+        /* === Backtest-specific styles === */
+        .backtest-nav {
+            display: flex;
+            gap: 8px;
+            margin-top: 8px;
+        }
+
+        .backtest-nav a {
+            font-size: 12px;
+            color: var(--text-muted);
+            text-decoration: none;
+            padding: 4px 12px;
+            border-radius: 999px;
+            border: 1px solid var(--border);
+            transition: var(--transition);
+        }
+
+        .backtest-nav a:hover,
+        .backtest-nav a.active {
+            color: var(--accent-light);
+            border-color: var(--accent);
+        }
+
+        .stat-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 12px;
+            margin-bottom: 32px;
+        }
+
+        .stat-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 20px;
+            text-align: center;
+            transition: var(--transition);
+        }
+
+        .stat-card:hover {
+            border-color: var(--border-glow);
+            transform: translateY(-2px);
+        }
+
+        .stat-card .value {
+            font-size: 32px;
+            font-weight: 800;
+            line-height: 1.2;
+        }
+
+        .stat-card .label {
+            font-size: 11px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-top: 4px;
+        }
+
+        .stat-card .sub {
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-top: 2px;
+        }
+
+        /* Chart */
+        .chart-section {
+            padding: 0 0 32px;
+        }
+
+        .chart-container {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 24px;
+            position: relative;
+            height: 300px;
+        }
+
+        .chart-container canvas {
+            width: 100% !important;
+            height: 100% !important;
+        }
+
+        /* Day table */
+        .day-table-section {
+            padding: 0 0 48px;
+        }
+
+        .backtest-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+
+        .backtest-table th {
+            padding: 12px 14px;
+            text-align: right;
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-muted);
+            border-bottom: 1px solid var(--border);
+            font-weight: 600;
+            background: rgba(0, 0, 0, 0.3);
+            white-space: nowrap;
+        }
+
+        .backtest-table th:first-child {
+            text-align: left;
+        }
+
+        .backtest-table td {
+            padding: 10px 14px;
+            border-bottom: 1px solid var(--border);
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+            white-space: nowrap;
+        }
+
+        .backtest-table td:first-child {
+            text-align: left;
+            font-weight: 600;
+        }
+
+        .backtest-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        .backtest-table tr:hover {
+            background: rgba(99, 102, 241, 0.06);
+        }
+
+        .backtest-table tr.profitable {
+            background: rgba(34, 197, 94, 0.04);
+        }
+
+        .backtest-table tr.losing {
+            background: rgba(239, 68, 68, 0.03);
+        }
+
+        .backtest-table tfoot td {
+            font-weight: 700;
+            border-top: 2px solid var(--border);
+            background: rgba(0, 0, 0, 0.15);
+            padding: 14px;
+        }
+
+        .pnl-bar {
+            display: inline-block;
+            height: 6px;
+            border-radius: 3px;
+            vertical-align: middle;
+            margin-left: 8px;
+        }
+
+        .badge-win {
+            color: var(--green);
+        }
+
+        .badge-loss {
+            color: var(--red);
+        }
+
+        .warning-banner {
+            background: rgba(245, 158, 11, 0.1);
+            border: 1px solid rgba(245, 158, 11, 0.3);
+            border-radius: var(--radius);
+            padding: 16px 20px;
+            margin-bottom: 24px;
+            display: flex;
+            gap: 12px;
+            align-items: flex-start;
+        }
+
+        .warning-banner .icon {
+            font-size: 20px;
+            flex-shrink: 0;
+        }
+
+        .warning-banner .text {
+            font-size: 13px;
+            color: var(--amber);
+            line-height: 1.5;
+        }
+
+        .warning-banner .text strong {
+            color: var(--text-primary);
+        }
+    </style>
+</head>
+
+<body>
+    <div class="bg-grid"></div>
+
+    <!-- Header -->
+    <header class="header">
+        <div class="container">
+            <div class="header-inner">
+                <div class="logo">
+                    <span class="logo-icon">📊</span>
+                    <div>
+                        <h1>UmaEdge</h1>
+                        <p class="subtitle">Multi-Day Backtest</p>
+                    </div>
+                </div>
+                <div class="backtest-nav">
+                    <a href="index.html">Race Day</a>
+                    <a href="backtest.html" class="active">Backtest</a>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Warning -->
+    <section style="padding: 24px 0 0;">
+        <div class="container">
+            <div class="warning-banner">
+                <span class="icon">⚠️</span>
+                <div class="text">
+                    <strong>Data Quality Notice:</strong> Race dates are currently derived from meeting IDs
+                    (YYYY-VV-DD),
+                    not actual calendar dates. Results shown here group races by meeting period, not real race days.
+                    Figures will be updated once date corrections are applied.
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Summary Stats -->
+    <section class="summary-section">
+        <div class="container">
+            <div class="stat-row" id="statsRow"></div>
+        </div>
+    </section>
+
+    <!-- Equity Curve -->
+    <section class="chart-section">
+        <div class="container">
+            <h2 class="section-title">
+                <span class="title-icon">📈</span> Equity Curve
+            </h2>
+            <div class="chart-container">
+                <canvas id="equityChart"></canvas>
+            </div>
+        </div>
+    </section>
+
+    <!-- Per-Day Table -->
+    <section class="day-table-section">
+        <div class="container">
+            <h2 class="section-title">
+                <span class="title-icon">📅</span> Per-Day Breakdown
+                <span class="title-badge" id="dayCount"></span>
+            </h2>
+            <div class="table-container">
+                <table class="backtest-table" id="dayTable">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Races</th>
+                            <th>Bets</th>
+                            <th>Wins</th>
+                            <th>Hit %</th>
+                            <th>Staked</th>
+                            <th>P&L</th>
+                            <th>ROI</th>
+                            <th>Cum P&L</th>
+                            <th>Fav Wins</th>
+                            <th>Fav P&L</th>
+                            <th>Fav ROI</th>
+                        </tr>
+                    </thead>
+                    <tbody id="dayTableBody"></tbody>
+                    <tfoot id="dayTableFoot"></tfoot>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <p>UmaEdge Backtest · Flat ¥1,000 Stake · Isotonic Calibration · EV ≥ 10%</p>
+            <p class="footer-note">⚠️ Dates are meeting IDs, not calendar dates. Results are indicative only.</p>
+        </div>
+    </footer>
+
+    <script>
+        // Load CSV and render dashboard
+        async function init() {
+            const resp = await fetch('multiday.csv');
+            const text = await resp.text();
+            const lines = text.trim().split('\n');
+            const headers = lines[0].split(',');
+            const data = lines.slice(1).map(line => {
+                const vals = line.split(',');
+                const row = {};
+                headers.forEach((h, i) => row[h] = vals[i]);
+                return row;
+            }).filter(r => r.date);
+
+            renderStats(data);
+            renderTable(data);
+            renderChart(data);
+        }
+
+        function fmt(n) { return '¥' + Number(n).toLocaleString(); }
+        function pct(n) { return (Number(n) >= 0 ? '+' : '') + Number(n).toFixed(1) + '%'; }
+
+        function renderStats(data) {
+            const totalBets = data.reduce((s, r) => s + Number(r.bets), 0);
+            const totalWins = data.reduce((s, r) => s + Number(r.wins), 0);
+            const totalStaked = data.reduce((s, r) => s + Number(r.staked), 0);
+            const totalProfit = data.reduce((s, r) => s + Number(r.profit), 0);
+            const totalFavProfit = data.reduce((s, r) => s + Number(r.fav_profit), 0);
+            const totalFavBets = data.reduce((s, r) => s + Number(r.fav_bets), 0);
+            const roi = totalStaked > 0 ? (totalProfit / totalStaked * 100) : 0;
+            const favRoi = totalFavBets > 0 ? (totalFavProfit / (totalFavBets * 1000) * 100) : 0;
+            const profDays = data.filter(r => Number(r.profit) > 0).length;
+            const hitRate = totalBets > 0 ? (totalWins / totalBets * 100) : 0;
+
+            const stats = [
+                { icon: '🎯', value: totalBets, label: 'Total Bets', sub: `${totalWins} wins (${hitRate.toFixed(0)}%)` },
+                { icon: '💰', value: fmt(totalProfit), label: 'Total P&L', cls: totalProfit >= 0 ? 'positive' : 'negative' },
+                { icon: '📊', value: pct(roi), label: 'Model ROI', cls: roi >= 0 ? 'positive' : 'negative' },
+                { icon: '🐴', value: pct(favRoi), label: 'Favorites ROI', cls: favRoi >= 0 ? 'positive' : 'negative' },
+                { icon: '🏆', value: `${profDays}/${data.length}`, label: 'Profitable Days', sub: `${(profDays / data.length * 100).toFixed(0)}% win rate` },
+                { icon: '⚡', value: pct(roi - favRoi), label: 'Edge vs Fav', cls: 'positive' },
+            ];
+
+            const container = document.getElementById('statsRow');
+            container.innerHTML = stats.map(s => `
+            <div class="stat-card">
+                <div style="font-size:28px;margin-bottom:6px">${s.icon}</div>
+                <div class="value ${s.cls || ''}">${s.value}</div>
+                <div class="label">${s.label}</div>
+                ${s.sub ? `<div class="sub">${s.sub}</div>` : ''}
+            </div>
+        `).join('');
+        }
+
+        function renderTable(data) {
+            document.getElementById('dayCount').textContent = `${data.length} days`;
+            const tbody = document.getElementById('dayTableBody');
+
+            const totalStaked = data.reduce((s, r) => s + Number(r.staked), 0);
+            const totalProfit = data.reduce((s, r) => s + Number(r.profit), 0);
+            const maxProfit = Math.max(...data.map(r => Math.abs(Number(r.profit))));
+
+            tbody.innerHTML = data.map(r => {
+                const profit = Number(r.profit);
+                const roiVal = Number(r.roi_pct);
+                const cumProfit = Number(r.cum_profit);
+                const barWidth = maxProfit > 0 ? Math.abs(profit) / maxProfit * 60 : 0;
+                const barColor = profit >= 0 ? 'var(--green)' : 'var(--red)';
+                const rowClass = profit > 0 ? 'profitable' : profit < 0 ? 'losing' : '';
+                const hitPct = Number(r.bets) > 0 ? (Number(r.wins) / Number(r.bets) * 100).toFixed(0) : 0;
+
+                return `<tr class="${rowClass}">
+                <td>${r.date}</td>
+                <td>${r.races}</td>
+                <td>${r.bets}</td>
+                <td>${r.wins}</td>
+                <td>${hitPct}%</td>
+                <td>${fmt(r.staked)}</td>
+                <td class="${profit >= 0 ? 'badge-win' : 'badge-loss'}">
+                    ${profit >= 0 ? '+' : ''}${fmt(profit)}
+                    <span class="pnl-bar" style="width:${barWidth}px;background:${barColor}"></span>
+                </td>
+                <td class="${roiVal >= 0 ? 'badge-win' : 'badge-loss'}">${pct(roiVal)}</td>
+                <td class="${cumProfit >= 0 ? 'badge-win' : 'badge-loss'}">${cumProfit >= 0 ? '+' : ''}${fmt(cumProfit)}</td>
+                <td>${r.fav_wins}</td>
+                <td class="${Number(r.fav_profit) >= 0 ? 'badge-win' : 'badge-loss'}">${Number(r.fav_profit) >= 0 ? '+' : ''}${fmt(r.fav_profit)}</td>
+                <td class="${Number(r.fav_roi_pct) >= 0 ? 'badge-win' : 'badge-loss'}">${pct(r.fav_roi_pct)}</td>
+            </tr>`;
+            }).join('');
+
+            // Footer totals
+            const totalBets = data.reduce((s, r) => s + Number(r.bets), 0);
+            const totalWins = data.reduce((s, r) => s + Number(r.wins), 0);
+            const totalRaces = data.reduce((s, r) => s + Number(r.races), 0);
+            const totalFavWins = data.reduce((s, r) => s + Number(r.fav_wins), 0);
+            const totalFavProfit = data.reduce((s, r) => s + Number(r.fav_profit), 0);
+            const totalFavBets = data.reduce((s, r) => s + Number(r.fav_bets), 0);
+            const overallRoi = totalStaked > 0 ? (totalProfit / totalStaked * 100) : 0;
+            const favRoi = totalFavBets > 0 ? (totalFavProfit / (totalFavBets * 1000) * 100) : 0;
+            const hitPct = totalBets > 0 ? (totalWins / totalBets * 100).toFixed(0) : 0;
+
+            document.getElementById('dayTableFoot').innerHTML = `<tr>
+            <td>TOTAL</td>
+            <td>${totalRaces}</td>
+            <td>${totalBets}</td>
+            <td>${totalWins}</td>
+            <td>${hitPct}%</td>
+            <td>${fmt(totalStaked)}</td>
+            <td class="${totalProfit >= 0 ? 'badge-win' : 'badge-loss'}">${totalProfit >= 0 ? '+' : ''}${fmt(totalProfit)}</td>
+            <td class="${overallRoi >= 0 ? 'badge-win' : 'badge-loss'}">${pct(overallRoi)}</td>
+            <td class="${totalProfit >= 0 ? 'badge-win' : 'badge-loss'}">${totalProfit >= 0 ? '+' : ''}${fmt(totalProfit)}</td>
+            <td>${totalFavWins}</td>
+            <td class="${totalFavProfit >= 0 ? 'badge-win' : 'badge-loss'}">${totalFavProfit >= 0 ? '+' : ''}${fmt(totalFavProfit)}</td>
+            <td class="${favRoi >= 0 ? 'badge-win' : 'badge-loss'}">${pct(favRoi)}</td>
+        </tr>`;
+        }
+
+        function renderChart(data) {
+            const canvas = document.getElementById('equityChart');
+            const ctx = canvas.getContext('2d');
+            const dpr = window.devicePixelRatio || 1;
+            const rect = canvas.parentElement.getBoundingClientRect();
+            canvas.width = rect.width * dpr;
+            canvas.height = rect.height * dpr;
+            ctx.scale(dpr, dpr);
+            const W = rect.width;
+            const H = rect.height;
+
+            // Data
+            const cumModel = [];
+            const cumFav = [];
+            let cm = 0, cf = 0;
+            data.forEach(r => {
+                cm += Number(r.profit);
+                cf += Number(r.fav_profit);
+                cumModel.push(cm);
+                cumFav.push(cf);
+            });
+
+            const allVals = [...cumModel, ...cumFav, 0];
+            const minY = Math.min(...allVals);
+            const maxY = Math.max(...allVals);
+            const rangeY = maxY - minY || 1;
+            const pad = { top: 30, right: 20, bottom: 40, left: 70 };
+            const chartW = W - pad.left - pad.right;
+            const chartH = H - pad.top - pad.bottom;
+
+            function xPos(i) { return pad.left + (i / (data.length - 1)) * chartW; }
+            function yPos(v) { return pad.top + (1 - (v - minY) / rangeY) * chartH; }
+
+            // Grid
+            ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+            ctx.lineWidth = 1;
+            const gridLines = 5;
+            for (let i = 0; i <= gridLines; i++) {
+                const val = minY + (rangeY / gridLines) * i;
+                const y = yPos(val);
+                ctx.beginPath();
+                ctx.moveTo(pad.left, y);
+                ctx.lineTo(W - pad.right, y);
+                ctx.stroke();
+                ctx.fillStyle = 'rgba(255,255,255,0.3)';
+                ctx.font = '11px Inter';
+                ctx.textAlign = 'right';
+                ctx.fillText('¥' + Math.round(val / 1000) + 'K', pad.left - 8, y + 4);
+            }
+
+            // Zero line
+            if (minY < 0 && maxY > 0) {
+                ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+                ctx.setLineDash([4, 4]);
+                ctx.beginPath();
+                ctx.moveTo(pad.left, yPos(0));
+                ctx.lineTo(W - pad.right, yPos(0));
+                ctx.stroke();
+                ctx.setLineDash([]);
+            }
+
+            // X labels
+            ctx.fillStyle = 'rgba(255,255,255,0.3)';
+            ctx.font = '10px Inter';
+            ctx.textAlign = 'center';
+            data.forEach((r, i) => {
+                if (data.length <= 25 || i % 2 === 0) {
+                    ctx.save();
+                    ctx.translate(xPos(i), H - 4);
+                    ctx.rotate(-0.5);
+                    ctx.fillText(r.date.slice(5), 0, 0);
+                    ctx.restore();
+                }
+            });
+
+            // Favorites line
+            ctx.strokeStyle = 'rgba(239,68,68,0.5)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            cumFav.forEach((v, i) => {
+                if (i === 0) ctx.moveTo(xPos(i), yPos(v));
+                else ctx.lineTo(xPos(i), yPos(v));
+            });
+            ctx.stroke();
+
+            // Model line
+            const grad = ctx.createLinearGradient(0, pad.top, 0, H - pad.bottom);
+            grad.addColorStop(0, '#6366f1');
+            grad.addColorStop(1, '#22c55e');
+            ctx.strokeStyle = grad;
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            cumModel.forEach((v, i) => {
+                if (i === 0) ctx.moveTo(xPos(i), yPos(v));
+                else ctx.lineTo(xPos(i), yPos(v));
+            });
+            ctx.stroke();
+
+            // Fill under model line
+            ctx.lineTo(xPos(data.length - 1), yPos(0));
+            ctx.lineTo(xPos(0), yPos(0));
+            ctx.closePath();
+            const fillGrad = ctx.createLinearGradient(0, pad.top, 0, H - pad.bottom);
+            fillGrad.addColorStop(0, 'rgba(99,102,241,0.15)');
+            fillGrad.addColorStop(1, 'rgba(34,197,94,0.02)');
+            ctx.fillStyle = fillGrad;
+            ctx.fill();
+
+            // Dots
+            cumModel.forEach((v, i) => {
+                ctx.beginPath();
+                ctx.arc(xPos(i), yPos(v), 4, 0, Math.PI * 2);
+                ctx.fillStyle = Number(data[i].profit) >= 0 ? '#22c55e' : '#ef4444';
+                ctx.fill();
+                ctx.strokeStyle = '#0a0e1a';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            });
+
+            // Legend
+            ctx.font = '12px Inter';
+            ctx.fillStyle = '#818cf8';
+            ctx.fillRect(W - 180, 10, 12, 3);
+            ctx.fillText('Model', W - 162, 15);
+            ctx.fillStyle = 'rgba(239,68,68,0.5)';
+            ctx.fillRect(W - 100, 10, 12, 3);
+            ctx.fillStyle = '#ef4444';
+            ctx.fillText('Favorites', W - 82, 15);
+        }
+
+        // Resize handler
+        window.addEventListener('resize', () => {
+            fetch('multiday.csv').then(r => r.text()).then(text => {
+                const lines = text.trim().split('\n');
+                const headers = lines[0].split(',');
+                const data = lines.slice(1).map(line => {
+                    const vals = line.split(',');
+                    const row = {};
+                    headers.forEach((h, i) => row[h] = vals[i]);
+                    return row;
+                }).filter(r => r.date);
+                renderChart(data);
+            });
+        });
+
+        init();
+    </script>
+</body>
+
+</html>
