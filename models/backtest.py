@@ -137,6 +137,10 @@ class Backtester:
         daily_pnl = {}
 
         for race_id, race_df in races:
+            # --- Find the single best bet per race (max 1) ---
+            best_candidate = None
+            best_ev = -1
+
             for _, row in race_df.iterrows():
                 model_prob = row.get("win_prob", 0)
                 odds = row.get("odds_win", 0)
@@ -154,16 +158,15 @@ class Backtester:
                 # --- Place bet adjustments (Research Backlog #4) ---
                 is_place = self.config.bet_type == "place"
                 if is_place:
-                    # Use place_prob if available, else estimate from win_prob
                     model_prob = row.get("place_prob", model_prob * 2.5)
-                    model_prob = min(model_prob, 0.99)  # cap at 99%
-                    odds = odds * JRA_PLACE_PAYOUT_FACTOR  # approximate place odds
+                    model_prob = min(model_prob, 0.99)
+                    odds = odds * JRA_PLACE_PAYOUT_FACTOR
 
                 # Implied probability from market odds (after take)
                 market_prob = 1.0 / odds
 
                 # EV calculation
-                ev = model_prob - market_prob  # simplified: edge = model - market
+                ev = model_prob - market_prob
 
                 if ev < self.config.ev_threshold:
                     continue
@@ -172,63 +175,77 @@ class Backtester:
                 kelly = self._kelly_stake(model_prob, odds, balance)
 
                 if self.config.use_kelly:
-                    # Pure Kelly mode: skip bets with tiny Kelly fraction
                     kelly_frac = kelly / balance if balance > 0 else 0
                     if kelly_frac < self.config.min_kelly_fraction:
                         continue
                     stake = min(kelly, int(balance * self.config.max_bet_pct))
                 else:
-                    # Flat-stake mode: use flat_stake as floor
-                    stake = max(
-                        self.config.flat_stake,
-                        min(kelly, int(balance * self.config.max_bet_pct)),
-                    )
+                    stake = self.config.flat_stake
 
                 if stake > balance:
-                    continue  # can't afford
+                    continue
 
-                # Determine outcome
-                finish = row.get("finish_pos")
-                if is_place:
-                    won = finish is not None and finish <= 3
-                else:
-                    won = finish == 1 if finish is not None else False
-                payout = int(stake * odds) if won else 0
-                profit = payout - stake
+                # Track the highest-EV candidate for this race
+                if ev > best_ev:
+                    best_ev = ev
+                    best_candidate = {
+                        "row": row,
+                        "model_prob": model_prob,
+                        "market_prob": market_prob,
+                        "ev": ev,
+                        "odds": odds,
+                        "kelly": kelly,
+                        "stake": stake,
+                        "is_place": is_place,
+                    }
 
-                bet = BetRecord(
-                    race_id=race_id,
-                    entry_id=row.get("entry_id", 0),
-                    horse_name=row.get("horse_name", "?"),
-                    date=str(row.get("date", "")),
-                    race_name=row.get("race_name", ""),
-                    model_prob=round(model_prob, 4),
-                    market_prob=round(market_prob, 4),
-                    ev=round(ev, 4),
-                    kelly=round(kelly / balance if balance > 0 else 0, 4),
-                    stake=stake,
-                    odds=odds,
-                    finish_pos=finish,
-                    payout=payout,
-                    profit=profit,
-                )
-                result.bets.append(bet)
+            # --- Place the single best bet for this race ---
+            if best_candidate is None:
+                continue
 
-                # Update balance
-                balance += profit
-                result.balance_curve.append(balance)
+            c = best_candidate
+            row = c["row"]
+            finish = row.get("finish_pos")
+            if c["is_place"]:
+                won = finish is not None and finish <= 3
+            else:
+                won = finish == 1 if finish is not None else False
+            payout = int(c["stake"] * c["odds"]) if won else 0
+            profit = payout - c["stake"]
 
-                # Track drawdown
-                peak_balance = max(peak_balance, balance)
-                dd = peak_balance - balance
-                max_dd = max(max_dd, dd)
+            bet = BetRecord(
+                race_id=race_id,
+                entry_id=row.get("entry_id", 0),
+                horse_name=row.get("horse_name", "?"),
+                date=str(row.get("date", "")),
+                race_name=row.get("race_name", ""),
+                model_prob=round(c["model_prob"], 4),
+                market_prob=round(c["market_prob"], 4),
+                ev=round(c["ev"], 4),
+                kelly=round(c["kelly"] / balance if balance > 0 else 0, 4),
+                stake=c["stake"],
+                odds=c["odds"],
+                finish_pos=finish,
+                payout=payout,
+                profit=profit,
+            )
+            result.bets.append(bet)
 
-                # Daily P&L
-                date_str = str(row.get("date", "unknown"))
-                daily_pnl[date_str] = daily_pnl.get(date_str, 0) + profit
+            # Update balance
+            balance += profit
+            result.balance_curve.append(balance)
 
-                if won:
-                    result.winning_bets += 1
+            # Track drawdown
+            peak_balance = max(peak_balance, balance)
+            dd = peak_balance - balance
+            max_dd = max(max_dd, dd)
+
+            # Daily P&L
+            date_str = str(row.get("date", "unknown"))
+            daily_pnl[date_str] = daily_pnl.get(date_str, 0) + profit
+
+            if won:
+                result.winning_bets += 1
 
         # Compute summary stats
         result.total_bets = len(result.bets)
