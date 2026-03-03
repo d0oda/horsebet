@@ -461,8 +461,8 @@ def main():
                         help="Max odds to bet (default: 30.0)")
     parser.add_argument("--min-odds", type=float, default=1.0,
                         help="Min odds to bet (default: 1.0)")
-    parser.add_argument("--flat-stake", action="store_true",
-                        help="Use flat staking instead of Kelly")
+    parser.add_argument("--kelly", action="store_true",
+                        help="Use Kelly staking instead of flat (default: flat)")
     parser.add_argument("--calibration", type=str, default="isotonic",
                         choices=["none", "platt", "isotonic"],
                         help="Calibration method (default: isotonic)")
@@ -476,7 +476,7 @@ def main():
         ev_threshold=args.ev_threshold,
         max_odds=args.max_odds,
         min_odds=args.min_odds,
-        use_kelly=not args.flat_stake,
+        use_kelly=args.kelly,
         calibration_method=args.calibration,
         output_path=args.output,
         rebuild=args.rebuild,
