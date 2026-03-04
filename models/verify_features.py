@@ -49,6 +49,27 @@ FEATURE_GROUPS = {
     "Pedigree Fallback (Trainer)": [
         "trainer_offspring_win_pct", "trainer_offspring_avg_finish",
     ],
+    "Speed Figures": [
+        "speed_figure_last", "speed_figure_best", "speed_figure_avg3",
+    ],
+    "Jockey-Trainer Combo": [
+        "jt_combo_runs", "jt_combo_win_pct", "jt_combo_place_pct",
+    ],
+    "Beaten Lengths": [
+        "beaten_lengths_avg3", "beaten_lengths_best", "class_adjusted_margin",
+    ],
+    "Fitness Curve": [
+        "is_fresh", "is_rested", "is_stale",
+    ],
+    "Age × Class": [
+        "age_x_class", "is_improving_3yo",
+    ],
+    "Field Quality": [
+        "field_avg_career_win_pct", "horse_vs_field_quality",
+    ],
+    "Weight vs Field": [
+        "weight_vs_field_avg", "weight_per_kg_body",
+    ],
 }
 
 

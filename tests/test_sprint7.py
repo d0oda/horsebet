@@ -203,7 +203,7 @@ class TestPedigreeFeatures:
         fb._sire_cache = {}
         feats = fb._pedigree_features(
             horse_id=1, race_date="2024-06-01",
-            distance=2000, surface="turf", history_df=history_df,
+            distance=2000, surface="turf", trainer_id=None, history_df=history_df,
         )
         assert np.isnan(feats["sire_runners"])
         assert np.isnan(feats["sire_win_pct"])
@@ -219,7 +219,7 @@ class TestPedigreeFeatures:
 
         feats = fb._pedigree_features(
             horse_id=1, race_date="2024-06-01",
-            distance=2000, surface="turf", history_df=history_df,
+            distance=2000, surface="turf", trainer_id=100, history_df=history_df,
         )
         # Horse 3 (sibling) has races in history before 2024-06-01
         assert feats["sire_runners"] > 0
@@ -234,11 +234,11 @@ class TestPedigreeFeatures:
         # Horse 3 runs mainly on turf
         feats_turf = fb._pedigree_features(
             horse_id=1, race_date="2024-06-01",
-            distance=2000, surface="turf", history_df=history_df,
+            distance=2000, surface="turf", trainer_id=100, history_df=history_df,
         )
         feats_dirt = fb._pedigree_features(
             horse_id=1, race_date="2024-06-01",
-            distance=2000, surface="dirt", history_df=history_df,
+            distance=2000, surface="dirt", trainer_id=100, history_df=history_df,
         )
         # Horse 3 has mostly turf runs, so turf should have data
         if not np.isnan(feats_turf["sire_win_pct_surface"]):

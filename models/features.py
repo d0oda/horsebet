@@ -154,6 +154,7 @@ class FeatureBuilder:
                 res.time_secs,
                 res.last_3f_secs,
                 res.corner_positions,
+                res.margin,
                 r.field_size,
                 h.trainer_id
             FROM entries e
@@ -336,6 +337,38 @@ class FeatureBuilder:
         else:
             features["weight_trend"] = 0
 
+        # --- Beaten lengths / margin features (Sprint 8.4) ---
+        margins = hist["margin"].dropna() if "margin" in hist.columns else pd.Series(dtype=float)
+        if not margins.empty:
+            recent_margins = margins.head(3)
+            features["beaten_lengths_avg3"] = recent_margins.mean()
+            features["beaten_lengths_best"] = margins.min()  # smallest margin = best
+
+            # Class-adjusted margin: weight margin by class quality
+            # Lower class_rank = stronger race, so we scale margin down for strong races
+            class_weights = hist["race_class"].map(CLASS_RANK).fillna(10)
+            valid_mask = hist["margin"].notna()
+            if valid_mask.any():
+                weighted = hist.loc[valid_mask, "margin"] * (10.0 / class_weights[valid_mask])
+                features["class_adjusted_margin"] = weighted.head(3).mean()
+            else:
+                features["class_adjusted_margin"] = np.nan
+        else:
+            features["beaten_lengths_avg3"] = np.nan
+            features["beaten_lengths_best"] = np.nan
+            features["class_adjusted_margin"] = np.nan
+
+        # --- Fitness curve / layoff buckets (Sprint 8.5) ---
+        days = features.get("days_since_last", np.nan)
+        if not np.isnan(days) if isinstance(days, (int, float)) else days is not None:
+            features["is_fresh"] = 1 if 14 <= days <= 28 else 0
+            features["is_rested"] = 1 if 29 <= days <= 56 else 0
+            features["is_stale"] = 1 if days > 90 else 0
+        else:
+            features["is_fresh"] = np.nan
+            features["is_rested"] = np.nan
+            features["is_stale"] = np.nan
+
         return features
 
     def _empty_horse_features(self) -> dict:
@@ -372,6 +405,20 @@ class FeatureBuilder:
             "odds_slope", "odds_late_money", "odds_vol",
             # Cross-sectional odds features (always populated when odds exist)
             "odds_rank", "odds_ratio_to_fav", "odds_deviation",
+            # Sprint 8: beaten lengths
+            "beaten_lengths_avg3", "beaten_lengths_best", "class_adjusted_margin",
+            # Sprint 8: fitness curve
+            "is_fresh", "is_rested", "is_stale",
+            # Sprint 8: speed figures
+            "speed_figure_last", "speed_figure_best", "speed_figure_avg3",
+            # Sprint 8: jockey-trainer combo
+            "jt_combo_runs", "jt_combo_win_pct", "jt_combo_place_pct",
+            # Sprint 8: field quality
+            "field_avg_career_win_pct", "horse_vs_field_quality",
+            # Sprint 8: weight vs field
+            "weight_vs_field_avg", "weight_per_kg_body",
+            # Sprint 8: age × class
+            "age_x_class", "is_improving_3yo",
         ]
         return {k: np.nan for k in keys}
 
@@ -1082,6 +1129,182 @@ class FeatureBuilder:
         return [h for h in offspring if h != exclude_horse_id]
 
     # ------------------------------------------------------------------
+    # Feature Computation — Speed Figures (Sprint 8.1)
+    # ------------------------------------------------------------------
+
+    def _load_speed_baselines(self, history_df: pd.DataFrame):
+        """Pre-compute median times per (course_id, distance, going) for speed figures."""
+        if hasattr(self, "_speed_baselines"):
+            return
+
+        valid = history_df[
+            history_df["time_secs"].notna()
+            & history_df["time_secs"].gt(0)
+            & history_df["course_id"].notna()
+            & history_df["distance"].notna()
+            & history_df["going"].notna()
+        ].copy()
+
+        if valid.empty:
+            self._speed_baselines = {}
+            return
+
+        grouped = valid.groupby(["course_id", "distance", "going"])["time_secs"]
+        self._speed_baselines = grouped.median().to_dict()
+        log.info(f"Speed baselines: {len(self._speed_baselines)} (course, dist, going) combos")
+
+    def _speed_figure_features(
+        self, horse_id: int, race_date: str, distance: int,
+        course_id, going: str, history_df: pd.DataFrame
+    ) -> dict:
+        """
+        Compute normalised speed figures from historical race times.
+        Speed figure = (baseline_time - horse_time) / baseline_time * 1000
+        Positive = faster than baseline. Higher = better.
+        """
+        null_feats = {
+            "speed_figure_last": np.nan,
+            "speed_figure_best": np.nan,
+            "speed_figure_avg3": np.nan,
+        }
+
+        self._load_speed_baselines(history_df)
+        if not self._speed_baselines:
+            return null_feats
+
+        # Get horse history
+        group = self._horse_groups.get(horse_id) if hasattr(self, '_horse_groups') else None
+        if group is not None:
+            hist = group[group["date"] < race_date]
+        else:
+            hist = history_df[
+                (history_df["horse_id"] == horse_id)
+                & (history_df["date"] < race_date)
+            ]
+        hist = hist.sort_values("date", ascending=False)
+
+        if hist.empty:
+            return null_feats
+
+        # Compute speed figure for each past race
+        figures = []
+        for _, row in hist.iterrows():
+            t = row.get("time_secs")
+            d = row.get("distance")
+            c = row.get("course_id")
+            g = row.get("going")
+            if t and t > 0 and d and c and g:
+                baseline = self._speed_baselines.get((c, d, g))
+                if baseline and baseline > 0:
+                    fig = (baseline - t) / baseline * 1000
+                    figures.append(fig)
+
+        if not figures:
+            return null_feats
+
+        return {
+            "speed_figure_last": figures[0],
+            "speed_figure_best": max(figures),
+            "speed_figure_avg3": np.mean(figures[:3]),
+        }
+
+    # ------------------------------------------------------------------
+    # Feature Computation — Jockey-Trainer Combo (Sprint 8.2)
+    # ------------------------------------------------------------------
+
+    def _jockey_trainer_combo_features(
+        self, jockey_id, trainer_id, race_date: str,
+        history_df: pd.DataFrame
+    ) -> dict:
+        """
+        Compute historical win/place rate for a specific jockey-trainer pair.
+        Some jockeys perform significantly better for certain trainers.
+        """
+        null_feats = {
+            "jt_combo_runs": np.nan,
+            "jt_combo_win_pct": np.nan,
+            "jt_combo_place_pct": np.nan,
+        }
+
+        if jockey_id is None or trainer_id is None:
+            return null_feats
+
+        # Build combo index on first call
+        if not hasattr(self, "_jt_combo_groups"):
+            if "jockey_id" in history_df.columns and "trainer_id" in history_df.columns:
+                valid = history_df.dropna(subset=["jockey_id", "trainer_id"])
+                self._jt_combo_groups = dict(list(
+                    valid.groupby(["jockey_id", "trainer_id"])
+                ))
+            else:
+                self._jt_combo_groups = {}
+
+        group = self._jt_combo_groups.get((jockey_id, trainer_id))
+        if group is None or group.empty:
+            return null_feats
+
+        hist = group[group["date"] < race_date]
+        if hist.empty:
+            return null_feats
+
+        return {
+            "jt_combo_runs": len(hist),
+            "jt_combo_win_pct": (hist["finish_pos"] == 1).mean(),
+            "jt_combo_place_pct": (hist["finish_pos"] <= 3).mean(),
+        }
+
+    # ------------------------------------------------------------------
+    # Feature Computation — Field Quality (Sprint 8.3)
+    # ------------------------------------------------------------------
+
+    def _field_quality_features(
+        self, race_id: int, horse_career_win_pct: float,
+        race_df: pd.DataFrame, history_df: pd.DataFrame
+    ) -> dict:
+        """
+        Rate the overall strength of this race's field.
+        A horse's finish in a strong field is worth more than in a weak one.
+        """
+        null_feats = {
+            "field_avg_career_win_pct": np.nan,
+            "horse_vs_field_quality": np.nan,
+        }
+
+        # Cache field quality per race
+        if not hasattr(self, "_field_quality_cache"):
+            self._field_quality_cache = {}
+
+        if race_id not in self._field_quality_cache:
+            race_entries = race_df[race_df["race_id"] == race_id]
+            horse_ids = race_entries["horse_id"].unique()
+
+            # Compute career win pct for each horse from history
+            win_pcts = []
+            for hid in horse_ids:
+                group = self._horse_groups.get(hid) if hasattr(self, '_horse_groups') else None
+                if group is not None and not group.empty:
+                    finishes = group["finish_pos"].dropna()
+                    if len(finishes) > 0:
+                        win_pcts.append((finishes == 1).mean())
+
+            if win_pcts:
+                self._field_quality_cache[race_id] = np.mean(win_pcts)
+            else:
+                self._field_quality_cache[race_id] = None
+
+        field_avg = self._field_quality_cache.get(race_id)
+        if field_avg is None:
+            return null_feats
+
+        return {
+            "field_avg_career_win_pct": field_avg,
+            "horse_vs_field_quality": (
+                horse_career_win_pct - field_avg
+                if not np.isnan(horse_career_win_pct) else np.nan
+            ),
+        }
+
+    # ------------------------------------------------------------------
     # Feature Computation — Race-Level (Static)
     # ------------------------------------------------------------------
 
@@ -1319,6 +1542,70 @@ class FeatureBuilder:
                 )
             )
 
+            # --- Sprint 8: New domain-specific features ---
+
+            # Speed figures (normalised time by course/distance/going)
+            features.update(
+                self._speed_figure_features(
+                    horse_id=row["horse_id"],
+                    race_date=str(row["date"]),
+                    distance=row["distance"] or 0,
+                    course_id=row.get("course_id"),
+                    going=row.get("going") or "",
+                    history_df=history_df,
+                )
+            )
+
+            # Jockey-trainer combo win rates
+            features.update(
+                self._jockey_trainer_combo_features(
+                    jockey_id=row.get("jockey_id"),
+                    trainer_id=row.get("trainer_id"),
+                    race_date=str(row["date"]),
+                    history_df=history_df,
+                )
+            )
+
+            # Field quality index
+            features.update(
+                self._field_quality_features(
+                    race_id=row["race_id"],
+                    horse_career_win_pct=features.get("career_win_pct", np.nan),
+                    race_df=race_df,
+                    history_df=history_df,
+                )
+            )
+
+            # Weight carried vs. field average
+            if not hasattr(self, "_weight_field_cache"):
+                self._weight_field_cache = {}
+            rid = row["race_id"]
+            if rid not in self._weight_field_cache:
+                wc = race_df[race_df["race_id"] == rid]["weight_carried"].dropna()
+                self._weight_field_cache[rid] = wc.mean() if len(wc) > 0 else None
+            field_avg_wt = self._weight_field_cache.get(rid)
+            wt = row.get("weight_carried")
+            hw = row.get("horse_weight")
+            features["weight_vs_field_avg"] = (
+                wt - field_avg_wt if wt is not None and field_avg_wt is not None else np.nan
+            )
+            features["weight_per_kg_body"] = (
+                wt / hw if wt and hw and hw > 0 else np.nan
+            )
+
+            # Age × class interaction
+            age = features.get("age", np.nan)
+            class_rank = features.get("class_rank", np.nan)
+            class_change = features.get("class_change", np.nan)
+            if not np.isnan(age) and not np.isnan(class_rank):
+                features["age_x_class"] = age * class_rank
+            else:
+                features["age_x_class"] = np.nan
+            if not np.isnan(age) and not np.isnan(class_change):
+                features["is_improving_3yo"] = 1 if age == 3 and class_change < 0 else 0
+            else:
+                features["is_improving_3yo"] = np.nan
+
             feature_rows.append(features)
 
         df = pd.DataFrame(feature_rows)
@@ -1338,7 +1625,10 @@ class FeatureBuilder:
         )
 
         # Clean up group indices
-        for attr in ('_horse_groups', '_jockey_groups', '_trainer_groups', '_course_groups'):
+        for attr in (
+            '_horse_groups', '_jockey_groups', '_trainer_groups', '_course_groups',
+            '_jt_combo_groups', '_speed_baselines', '_field_quality_cache', '_weight_field_cache',
+        ):
             if hasattr(self, attr):
                 delattr(self, attr)
 
