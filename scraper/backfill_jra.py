@@ -815,31 +815,38 @@ def scrape_year(year: int, month: Optional[int] = None,
             stats["dates_with_races"] += 1
         return stats
 
-    log.info(f"Scraping {len(dates)} dates with {workers} workers...")
+    log.info(f"Scraping {len(dates)} dates with {workers} workers (chronological)...")
 
-    with ThreadPoolExecutor(max_workers=workers) as pool:
-        futures = {pool.submit(_scrape_date_batch, ymd): ymd for ymd in dates}
-        completed = 0
+    for batch_start in range(0, len(dates), workers):
+        batch_dates = dates[batch_start:batch_start + workers]
+        batch_num = batch_start // workers + 1
+        total_batches = (len(dates) + workers - 1) // workers
 
-        for future in as_completed(futures):
-            ymd = futures[future]
-            completed += 1
-            try:
-                batch = future.result()
-                stats["dates_checked"] += 1
-                if batch["saved"] > 0:
-                    stats["dates_with_races"] += 1
-                stats["races_saved"] += batch["saved"]
-                stats["races_skipped"] += batch["skipped"]
-                stats["sires_added"] += batch["sires"]
-            except Exception as e:
-                log.warning(f"  Date {ymd} failed: {e}")
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {pool.submit(_scrape_date_batch, ymd): ymd for ymd in batch_dates}
 
-            if completed % 10 == 0 or completed == len(dates):
-                log.info(f"  Progress: {completed}/{len(dates)} dates | "
-                         f"+{stats['races_saved']} races | "
-                         f"{stats['races_skipped']} skipped | "
-                         f"+{stats['sires_added']} sires")
+            for future in as_completed(futures):
+                ymd = futures[future]
+                try:
+                    batch = future.result()
+                    stats["dates_checked"] += 1
+                    if batch["saved"] > 0:
+                        stats["dates_with_races"] += 1
+                    stats["races_saved"] += batch["saved"]
+                    stats["races_skipped"] += batch["skipped"]
+                    stats["sires_added"] += batch["sires"]
+                except Exception as e:
+                    log.warning(f"  Date {ymd} failed: {e}")
+
+        # Progress after each batch
+        date_range = f"{batch_dates[0][:4]}-{batch_dates[0][4:6]}-{batch_dates[0][6:]}"
+        if len(batch_dates) > 1:
+            last = batch_dates[-1]
+            date_range += f" → {last[:4]}-{last[4:6]}-{last[6:]}"
+        log.info(f"  Batch {batch_num}/{total_batches} [{date_range}] | "
+                 f"+{stats['races_saved']} races | "
+                 f"{stats['races_skipped']} skipped | "
+                 f"+{stats['sires_added']} sires")
 
     return stats
 
