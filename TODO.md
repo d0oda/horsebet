@@ -1,66 +1,68 @@
-# UmaEdge — To-Do
+# UmaEdge — Data Backfill Status
 
-> Updated: 2026-02-28
-> Model: Hybrid Ensemble (Platt, 60/40 fund/mkt blend)
-> Feb 28 results: Favs (1-3x) +15.9% ROI ✅ | Longshots (30x+) -100% ❌ | Overall -73.8%
+> Updated: 2026-03-04
+> DB: 8,920 races | 38,872 horses | 121,563 results
 
 ---
 
-## 🔴 Priority 1 — Fix Longshot Bias
+## ✅ Completed
 
-The model assigns ~1.5% floor probability to every horse, creating fake "value" at high odds.
-206 bets at 30x+ → 0 winners → accounts for nearly all losses.
+| Backfill | Result |
+|----------|--------|
+| 2021 race coverage | 3,456 races / 106 dates scraped via JRA EN ✅ |
+| Sire names | All filled (only 1 ghost horse remaining — no valid ID) |
+| Race class | All 8,920 races have class assigned |
+| Jockey win rates | 627 / 628 computed (1 has no finished results) |
+| Trainer win rates | 734 / 743 computed (9 are orphaned/no results) |
+| Running style | All filled from corner positions ✅ |
 
-- [x] Recalibrate Platt scaling for low-probability region (< 5%)
-- [x] Evaluate isotonic regression as alternative (better in tails)
-- [x] Add `is_extreme_longshot` feature (odds > 50x) so model learns to discount
-- [x] Hard-cap bettable odds at 30x (or sweep 20x/30x/50x on historical data)
+---
 
-## 🟡 Priority 2 — Market Model Reweighting
+## 🔴 After Each Year Scrape — Re-run These (no scraping, instant)
 
-Market model should suppress longshot bets but isn't doing enough.
-`log_odds` feature not influential enough in combined prediction.
+Each year scrape adds new horses, results, and entries. Re-run these after each scrape finishes:
 
-- [x] Increase market model weight for high-odds horses
-- [x] Add odds-aware blending (weight market more when odds diverge from fundamental)
-- [x] Investigate why `log_odds` isn't suppressing longshot probabilities
+- [x] **Sire names** — already filled by JRA scraper inline
+- [x] **Race class** — already filled by JRA scraper inline
+- [x] **Jockey/trainer win rates** — recomputed with 2021 data
+- [x] **Running style** — backfill in progress now
+  ```
+  python -m scraper.backfill_running_style
+  ```
 
-## 🟡 Priority 3 — Bet Sizing & Selection
+---
 
-Flat ¥100/bet on 284 bets is poor bankroll management.
-Favs-only subset (22 bets) was +15.9% — lean into strength.
+## 🟡 Still Needed — Scraping Required
 
-- [x] Implement Kelly criterion position sizing
-- [x] Add configurable EV + odds filters to `predict_final.py`
-- [x] Backtest optimal odds ceiling on full historical data (not just 1 day)
+### Race Coverage Gaps
 
-## 🔵 Priority 4 — Evaluation & Data
+| Year | Races | Dates | Status |
+|------|-------|-------|--------|
+| 2019 | 2,084 | 91 | ✅ Good |
+| 2020 | 304 | 23 | 🔄 Scraping now |
+| 2021 | 3,456 | 106 | ✅ Complete |
+| 2022 | 550 | 43 | 🔄 Scraping now |
+| 2023 | 550 | 38 | 🔄 Scraping now |
+| 2024 | 681 | 44 | 🔄 Scraping now |
+| 2025 | 1,224 | 76 | � Scraping now |
+| 2026 | 72 | 2 | Current season |
 
-Single-day results are noisy. Need multi-day validation.
+Years 2020, 2022–2025 are scraping now in background:
+```
+for year in 2020 2022 2023 2024 2025; do
+  python -m scraper.backfill_jra --year $year --workers 4
+done
+```
 
-- [ ] Run multi-day backtests to validate the fav-vs-longshot ROI split
-- [ ] Scrape more 2025–2026 races for out-of-sample testing
-- [ ] Track favorites-only baseline vs full model
-- [ ] Build Sharpe ratio tracking across race days
+After scrapes finish, re-run:
+```
+python -m scraper.backfill_running_style
+```
+Then recompute jockey/trainer win rates via SQL.
 
-## ⚪ Priority 5 — Nice to Have
+---
 
-- [ ] Add odds range slider to results webpage
+## ⚪ Nice to Have
+
 - [ ] Per-venue ROI breakdown charts
-- [ ] Auto-generate results page after each prediction run
-- [ ] Pedigree (sire) feature backfill — still at ~5%
-- [ ] Weather interaction features
-
----
-
-## ✅ Done
-
-| Item | Result |
-|------|--------|
-| Fix scraper (encoding, draw/PP, dead API) | 36 races scraped clean |
-| Repair Feb 28 data | 520 entries, 519 w/ odds, 515 w/ results |
-| Run predictions | 36/36 races, model works end-to-end |
-| Results webpage | `results/` — dark theme, venue tabs, sortable value bets |
-| Hybrid ensemble + Platt | AUC 0.82 fund / 0.85 mkt |
-| Feature engineering | 203 features, ~90 entries/s build speed |
-| Scraper optimisation | Hierarchical probing, multi-worker |
+- [ ] Odds range slider on results page
