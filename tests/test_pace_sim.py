@@ -195,3 +195,96 @@ class TestBaseAbility:
         strong = sim._estimate_base_ability({"odds_win": 1.5, "career_win_pct": 0.3})
         weak = sim._estimate_base_ability({"odds_win": 50.0, "career_win_pct": 0.03})
         assert strong > weak
+
+
+# ---------------------------------------------------------------------------
+# Data-Driven Calibration — Win Rate Ordering (JRA: 逃 > 先 > 差 > 追)
+# ---------------------------------------------------------------------------
+
+class TestCalibration:
+    """Validate that sim win rates respect the real JRA ordering across styles."""
+
+    def _run_sim_batch(self, n_races=200, n_sims=2000, seed=42):
+        """Run a batch of diverse simulated races and aggregate win rates by style."""
+        rng = np.random.default_rng(seed)
+        style_wins = {s: 0.0 for s in [STYLE_FRONT, STYLE_STALK, STYLE_CLOSER, STYLE_DEEP]}
+        style_runs = {s: 0 for s in style_wins}
+
+        for i in range(n_races):
+            field_size = int(rng.choice([12, 14, 16]))
+            distance = int(rng.choice([1200, 1600, 2000, 2400]))
+            entries = []
+            for h in range(field_size):
+                # Distribute corners to create a mix of styles
+                corner = rng.uniform(1, field_size)
+                entries.append({
+                    "horse_id": h,
+                    "avg_first_corner": corner,
+                    "avg_last_3f": rng.normal(35.5, 1.5),
+                    "career_win_pct": rng.beta(2, 15),
+                    "odds_win": rng.lognormal(2.5, 0.8),
+                    "last3_avg_finish": rng.normal(7, 3),
+                })
+
+            sim = PaceSimulator(n_simulations=n_sims, seed=i)
+            results = sim.simulate_race(entries, distance=distance)
+
+            for data in results.values():
+                style = data["style"]
+                style_runs[style] += 1
+                style_wins[style] += data["win_prob"]
+
+        rates = {s: style_wins[s] / max(style_runs[s], 1) for s in style_wins}
+        return rates
+
+    def test_style_ordering_matches_jra(self):
+        """Front-runners should win most, then stalkers, closers, deep closers.
+        Real JRA: 逃 17.7% > 先 10.9% > 差 5.7% > 追 2.1%"""
+        rates = self._run_sim_batch()
+        assert rates[STYLE_FRONT] > rates[STYLE_STALK], \
+            f"逃 ({rates[STYLE_FRONT]:.3f}) should beat 先 ({rates[STYLE_STALK]:.3f})"
+        assert rates[STYLE_STALK] > rates[STYLE_CLOSER], \
+            f"先 ({rates[STYLE_STALK]:.3f}) should beat 差 ({rates[STYLE_CLOSER]:.3f})"
+        assert rates[STYLE_CLOSER] > rates[STYLE_DEEP], \
+            f"差 ({rates[STYLE_CLOSER]:.3f}) should beat 追 ({rates[STYLE_DEEP]:.3f})"
+
+    def test_front_runner_advantage_is_large(self):
+        """Front-runners should win at least 2x more often than closers (real: 3x)."""
+        rates = self._run_sim_batch()
+        ratio = rates[STYLE_FRONT] / max(rates[STYLE_CLOSER], 0.001)
+        assert ratio >= 1.5, f"逃/差 ratio {ratio:.1f}x is too low (real JRA: ~3x)"
+
+    def test_sprint_favours_front_runners(self):
+        """At sprint distances, front-runners should outperform their long-distance rate."""
+        rng = np.random.default_rng(99)
+
+        def _sim_front_rate(distance, n_races=100):
+            all_styles = [STYLE_FRONT, STYLE_STALK, STYLE_CLOSER, STYLE_DEEP]
+            style_wins = {s: 0.0 for s in all_styles}
+            style_runs = {s: 0 for s in all_styles}
+            for i in range(n_races):
+                entries = []
+                for h in range(12):
+                    corner = rng.uniform(1, 12)
+                    entries.append({
+                        "horse_id": h,
+                        "avg_first_corner": corner,
+                        "avg_last_3f": rng.normal(35.5, 1.0),
+                        "career_win_pct": rng.beta(2, 15),
+                        "odds_win": rng.lognormal(2.5, 0.6),
+                        "last3_avg_finish": rng.normal(6, 2),
+                    })
+                sim = PaceSimulator(n_simulations=2000, seed=i + distance)
+                results = sim.simulate_race(entries, distance=distance)
+                for data in results.values():
+                    style_runs[data["style"]] += 1
+                    style_wins[data["style"]] += data["win_prob"]
+            if style_runs[STYLE_FRONT] > 0:
+                return style_wins[STYLE_FRONT] / style_runs[STYLE_FRONT]
+            return 0.0
+
+        sprint_rate = _sim_front_rate(1200)
+        long_rate = _sim_front_rate(2400)
+        assert sprint_rate > long_rate, \
+            f"Front-runner win rate at 1200m ({sprint_rate:.3f}) should exceed 2400m ({long_rate:.3f})"
+

@@ -33,10 +33,12 @@ STYLE_DEEP = "追"    # Deep closer (追込)
 
 STYLE_PARAMS = {
     # style: (early_speed_mean, early_speed_std, closing_power_mean, closing_power_std)
-    STYLE_FRONT:  (0.90, 0.04, 0.70, 0.08),
-    STYLE_STALK:  (0.80, 0.05, 0.80, 0.07),
-    STYLE_CLOSER: (0.65, 0.06, 0.90, 0.06),
-    STYLE_DEEP:   (0.55, 0.07, 0.95, 0.05),
+    # Calibrated from 122k JRA results: 逃 wins 17.7%, 先 10.9%, 差 5.7%, 追 2.1%
+    # Early speed is the dominant factor — front-runners win 8x more than deep closers
+    STYLE_FRONT:  (0.97, 0.03, 0.78, 0.06),  # Fastest early, decent close
+    STYLE_STALK:  (0.85, 0.04, 0.84, 0.05),  # Balanced
+    STYLE_CLOSER: (0.68, 0.05, 0.88, 0.06),  # Slow early, strong close
+    STYLE_DEEP:   (0.55, 0.06, 0.90, 0.07),  # Very slow early, best close
 }
 
 
@@ -227,32 +229,40 @@ class PaceSimulator:
         # Pace effect
         pace_modifier = self._pace_modifier(style, pace)
 
-        # Distance effect — longer races favour closers
+        # Distance effect — calibrated from JRA data:
+        # Sprints: 逃 19.7%, 先 9.5%, 差 4.6%, 追 1.5%
+        # Long:    逃 17.3%, 先 13.8%, 差 7.1%, 追 2.2%
         dist_modifier = 1.0
-        if distance >= 2400:
-            if style in (STYLE_CLOSER, STYLE_DEEP):
-                dist_modifier = 1.05
-            elif style == STYLE_FRONT:
-                dist_modifier = 0.92
-        elif distance <= 1200:
-            if style in (STYLE_FRONT, STYLE_STALK):
-                dist_modifier = 1.05
-            elif style == STYLE_DEEP:
-                dist_modifier = 0.90
+        if distance <= 1400:  # Sprint — front-runners dominate
+            dist_mod_map = {
+                STYLE_FRONT: 1.08, STYLE_STALK: 1.03,
+                STYLE_CLOSER: 0.93, STYLE_DEEP: 0.85,
+            }
+            dist_modifier = dist_mod_map.get(style, 1.0)
+        elif distance >= 2200:  # Long — stalkers/closers improve
+            dist_mod_map = {
+                STYLE_FRONT: 1.00, STYLE_STALK: 1.05,
+                STYLE_CLOSER: 1.05, STYLE_DEEP: 1.00,
+            }
+            dist_modifier = dist_mod_map.get(style, 1.0)
 
-        # Energy depletion — front-runners tire more
+        # Energy depletion — real data shows only ~2% difference between styles
+        # but front-runner positional advantage is huge, model that via energy retention
         energy = 1.0
         if style == STYLE_FRONT:
-            energy = self.rng.normal(0.88, 0.06)
+            energy = self.rng.normal(0.96, 0.03)
         elif style == STYLE_STALK:
-            energy = self.rng.normal(0.93, 0.04)
+            energy = self.rng.normal(0.95, 0.03)
+        elif style == STYLE_CLOSER:
+            energy = self.rng.normal(0.93, 0.03)
         else:
-            energy = self.rng.normal(0.97, 0.03)
+            energy = self.rng.normal(0.91, 0.04)
 
-        # Final performance
+        # Final performance — early speed weighted much higher than closing power
+        # (JRA data: front-runners win 3x more than closers, 8x more than deep closers)
         performance = (
             base_ability
-            * (early_speed * 0.3 + closing_power * 0.7)
+            * (early_speed * 0.65 + closing_power * 0.35)
             * pace_modifier
             * dist_modifier
             * energy
@@ -267,19 +277,22 @@ class PaceSimulator:
         How pace scenario affects different running styles.
         Fast pace benefits closers; slow pace benefits front-runners.
         """
+        # Toned down from original — real data shows smaller pace effects
+        # than theoretical models suggest. Deep closers don't benefit from
+        # fast pace in JRA data (1.97% win rate regardless).
         modifiers = {
-            ("fast", STYLE_FRONT):   0.85,  # Front-runners struggle in fast pace
-            ("fast", STYLE_STALK):   0.95,
-            ("fast", STYLE_CLOSER):  1.10,  # Closers benefit
-            ("fast", STYLE_DEEP):    1.15,
+            ("fast", STYLE_FRONT):   0.92,  # Some penalty, not catastrophic
+            ("fast", STYLE_STALK):   0.97,
+            ("fast", STYLE_CLOSER):  1.05,  # Modest benefit
+            ("fast", STYLE_DEEP):    1.03,  # Barely benefits in reality
             ("moderate", STYLE_FRONT):  1.00,
             ("moderate", STYLE_STALK):  1.00,
             ("moderate", STYLE_CLOSER): 1.00,
             ("moderate", STYLE_DEEP):   1.00,
-            ("slow", STYLE_FRONT):   1.15,  # Front-runners benefit
-            ("slow", STYLE_STALK):   1.05,
-            ("slow", STYLE_CLOSER):  0.90,
-            ("slow", STYLE_DEEP):    0.85,  # Deep closers can't catch up
+            ("slow", STYLE_FRONT):   1.08,  # Front-runners benefit
+            ("slow", STYLE_STALK):   1.03,
+            ("slow", STYLE_CLOSER):  0.95,
+            ("slow", STYLE_DEEP):    0.92,
         }
         return modifiers.get((pace, style), 1.0)
 

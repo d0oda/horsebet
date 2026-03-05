@@ -33,6 +33,7 @@ from scraper.db import get_session
 from scraper.netkeiba import scrape_race_list, scrape_race, save_race_to_db
 from scraper.odds_watcher import fetch_win_odds
 from models.predict_final import predict_with_filters
+from models.paddock_scorer import score_race_paddock
 from results.build_data_json import build_data_json
 
 logging.basicConfig(
@@ -189,6 +190,41 @@ def step_odds(date: str, race_ids: list[str]) -> list[int]:
 
     log.info(f"✅ Updated odds for {len(updated_db_ids)} races")
     return updated_db_ids
+
+
+def step_paddock(date: str) -> int:
+    """
+    Step 2.5: Score unscored paddock comments using Gemini NLP.
+
+    Finds any paddock comments in the DB for today's races that
+    haven't been scored yet, and runs them through Gemini.
+
+    Returns:
+        Total number of comments scored.
+    """
+    log.info("━━━ Step 2.5: Paddock NLP scoring ━━━")
+
+    with get_session() as session:
+        races = session.execute(
+            text("SELECT id FROM horsebet.races WHERE date = :d ORDER BY course_id, race_number"),
+            {"d": date},
+        ).fetchall()
+
+    if not races:
+        log.info("  No races found")
+        return 0
+
+    total_scored = 0
+    for r in races:
+        scored = score_race_paddock(r.id)
+        total_scored += scored
+
+    if total_scored > 0:
+        log.info(f"✅ Scored {total_scored} paddock comments across {len(races)} races")
+    else:
+        log.info("  No unscored paddock comments found")
+
+    return total_scored
 
 
 def step_predict(date: str, version: str, ev_threshold: float,
@@ -425,6 +461,7 @@ Examples:
     parser.add_argument("--skip-scrape", action="store_true", help="Skip race scraping (already in DB)")
     parser.add_argument("--skip-odds", action="store_true", help="Skip odds fetching")
     parser.add_argument("--skip-predict", action="store_true", help="Skip prediction (reuse existing)")
+    parser.add_argument("--skip-paddock", action="store_true", help="Skip paddock NLP scoring")
     args = parser.parse_args()
 
     log.info(f"🏇 UmaEdge Pipeline — {args.date}")
@@ -454,6 +491,12 @@ Examples:
         log.info("━━━ Step 2: Odds → SKIPPED ━━━")
     else:
         updated_db_ids = step_odds(args.date, race_ids)
+
+    # Step 2.5: Paddock NLP
+    if args.skip_paddock:
+        log.info("━━━ Step 2.5: Paddock → SKIPPED ━━━")
+    else:
+        step_paddock(args.date)
 
     # Step 3: Predict
     pred_path = f"results/predictions_{args.date}.json"
