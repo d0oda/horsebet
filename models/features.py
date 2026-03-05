@@ -155,6 +155,7 @@ class FeatureBuilder:
                 res.last_3f_secs,
                 res.corner_positions,
                 res.margin,
+                res.first_3f_secs,
                 r.field_size,
                 h.trainer_id
             FROM entries e
@@ -369,6 +370,46 @@ class FeatureBuilder:
             features["is_rested"] = np.nan
             features["is_stale"] = np.nan
 
+        # --- Sectional times / early speed vs closing speed (Sprint 9.3) ---
+        # Build first_3f series: use first_3f_secs where available, fall back
+        # to (time_secs - last_3f_secs) for rows where it's missing.
+        if "first_3f_secs" in hist.columns:
+            first_3f_raw = hist["first_3f_secs"].copy()
+        else:
+            first_3f_raw = pd.Series(np.nan, index=hist.index)
+
+        # Fill gaps with derived value: time_secs - last_3f_secs
+        if "time_secs" in hist.columns and "last_3f_secs" in hist.columns:
+            derived = hist["time_secs"] - hist["last_3f_secs"]
+            # Only use derived where both components are valid & positive
+            valid_derived = derived[(hist["time_secs"].notna()) & (hist["last_3f_secs"].notna()) & (hist["time_secs"] > 0) & (hist["last_3f_secs"] > 0)]
+            first_3f_raw = first_3f_raw.fillna(valid_derived)
+
+        first_3f = first_3f_raw.dropna()
+        if not first_3f.empty:
+            features["avg_first_3f"] = first_3f.mean()
+            features["best_first_3f"] = first_3f.min()
+        else:
+            features["avg_first_3f"] = np.nan
+            features["best_first_3f"] = np.nan
+
+        # Derive early speed = time before last 3F (works even without first_3f_secs)
+        if "time_secs" in hist.columns and "last_3f_secs" in hist.columns:
+            valid_mask = hist["time_secs"].notna() & hist["last_3f_secs"].notna() & (hist["time_secs"] > 0) & (hist["last_3f_secs"] > 0)
+            valid = hist[valid_mask]
+            if not valid.empty:
+                early_times = valid["time_secs"] - valid["last_3f_secs"]
+                features["avg_early_speed"] = early_times.mean()
+                # Early-to-late ratio: lower = more front-loaded
+                ratios = early_times / valid["last_3f_secs"]
+                features["early_late_ratio_avg3"] = ratios.head(3).mean()
+            else:
+                features["avg_early_speed"] = np.nan
+                features["early_late_ratio_avg3"] = np.nan
+        else:
+            features["avg_early_speed"] = np.nan
+            features["early_late_ratio_avg3"] = np.nan
+
         return features
 
     def _empty_horse_features(self) -> dict:
@@ -409,6 +450,8 @@ class FeatureBuilder:
             "beaten_lengths_avg3", "beaten_lengths_best", "class_adjusted_margin",
             # Sprint 8: fitness curve
             "is_fresh", "is_rested", "is_stale",
+            # Sprint 9: sectional times
+            "avg_first_3f", "best_first_3f", "avg_early_speed", "early_late_ratio_avg3",
             # Sprint 8: speed figures
             "speed_figure_last", "speed_figure_best", "speed_figure_avg3",
             # Sprint 8: jockey-trainer combo
@@ -419,6 +462,12 @@ class FeatureBuilder:
             "weight_vs_field_avg", "weight_per_kg_body",
             # Sprint 8: age × class
             "age_x_class", "is_improving_3yo",
+            # Sprint 9: seasonal form
+            "month_of_year", "horse_month_win_pct", "season_code",
+            # Sprint 9: broodmare sire
+            "bms_runners", "bms_win_pct", "bms_win_pct_surface", "bms_win_pct_distance",
+            # Sprint 9: enhanced track bias
+            "draw_bias_90d",
         ]
         return {k: np.nan for k in keys}
 
@@ -1001,6 +1050,24 @@ class FeatureBuilder:
         else:
             features["course_month_bias"] = np.nan
 
+        # --- Rolling 90-day draw bias (Sprint 9.4) ---
+        if draw is not None and race_date and not course_hist.empty:
+            try:
+                cutoff = str(pd.to_datetime(race_date) - pd.Timedelta(days=90))[:10]
+                recent_90d = course_hist[course_hist["date"] >= cutoff]
+                if not recent_90d.empty and "draw" in recent_90d.columns:
+                    draw_90d = recent_90d[recent_90d["draw"] == draw]
+                    features["draw_bias_90d"] = (
+                        draw_90d["finish_pos"].mean()
+                        if len(draw_90d) >= 3 else np.nan
+                    )
+                else:
+                    features["draw_bias_90d"] = np.nan
+            except Exception:
+                features["draw_bias_90d"] = np.nan
+        else:
+            features["draw_bias_90d"] = np.nan
+
         return features
 
     # ------------------------------------------------------------------
@@ -1126,6 +1193,164 @@ class FeatureBuilder:
                 pass
 
         offspring = self._offspring_cache.get(sire_name, [])
+        return [h for h in offspring if h != exclude_horse_id]
+
+    # ------------------------------------------------------------------
+    # Feature Computation — Seasonal Form (Sprint 9.1)
+    # ------------------------------------------------------------------
+
+    def _seasonal_form_features(
+        self, horse_id: int, race_date: str, history_df: pd.DataFrame
+    ) -> dict:
+        """
+        Compute seasonal/monthly form patterns.
+        Some horses peak in specific seasons or months.
+        """
+        features = {}
+
+        # Extract month from race date
+        try:
+            month = int(race_date[5:7])
+            features["month_of_year"] = month
+            # Season: Spring(3-5)=0, Summer(6-8)=1, Autumn(9-11)=2, Winter(12-2)=3
+            if month in (3, 4, 5):
+                features["season_code"] = 0
+            elif month in (6, 7, 8):
+                features["season_code"] = 1
+            elif month in (9, 10, 11):
+                features["season_code"] = 2
+            else:
+                features["season_code"] = 3
+        except (ValueError, TypeError, IndexError):
+            features["month_of_year"] = np.nan
+            features["season_code"] = np.nan
+
+        # Horse-specific monthly win rate
+        group = self._horse_groups.get(horse_id) if hasattr(self, '_horse_groups') else None
+        if group is not None and not group.empty:
+            hist = group[group["date"] < race_date]
+            if not hist.empty and "date" in hist.columns:
+                try:
+                    month_val = features.get("month_of_year")
+                    if month_val is not None and not np.isnan(month_val):
+                        months = hist["date"].str[5:7].astype(int)
+                        same_month = hist[months == int(month_val)]
+                        if len(same_month) >= 2:
+                            features["horse_month_win_pct"] = (
+                                (same_month["finish_pos"] == 1).mean()
+                            )
+                        else:
+                            features["horse_month_win_pct"] = np.nan
+                    else:
+                        features["horse_month_win_pct"] = np.nan
+                except Exception:
+                    features["horse_month_win_pct"] = np.nan
+            else:
+                features["horse_month_win_pct"] = np.nan
+        else:
+            features["horse_month_win_pct"] = np.nan
+
+        return features
+
+    # ------------------------------------------------------------------
+    # Feature Computation — Broodmare Sire (Sprint 9.2)
+    # ------------------------------------------------------------------
+
+    def _broodmare_sire_features(
+        self, horse_id: int, race_date: str, distance: int,
+        surface: str, history_df: pd.DataFrame
+    ) -> dict:
+        """
+        Compute broodmare sire (母父) affinity features.
+        The dam's sire is equally important in Japanese racing
+        for surface and distance aptitude.
+        """
+        null_feats = {
+            "bms_runners": np.nan,
+            "bms_win_pct": np.nan,
+            "bms_win_pct_surface": np.nan,
+            "bms_win_pct_distance": np.nan,
+        }
+
+        bms_name = self._get_broodmare_sire_name(horse_id)
+        if not bms_name:
+            return null_feats
+
+        # Find all offspring with the same broodmare sire
+        bms_offspring = self._get_bms_offspring(bms_name, horse_id)
+        if not bms_offspring:
+            return null_feats
+
+        sib_hist = history_df[
+            (history_df["horse_id"].isin(bms_offspring))
+            & (history_df["date"] < race_date)
+        ]
+
+        if sib_hist.empty:
+            return null_feats
+
+        features = {
+            "bms_runners": len(sib_hist),
+            "bms_win_pct": (sib_hist["finish_pos"] == 1).mean(),
+        }
+
+        # BMS × surface affinity
+        surf_hist = sib_hist[sib_hist["surface"] == surface]
+        features["bms_win_pct_surface"] = (
+            (surf_hist["finish_pos"] == 1).mean()
+            if len(surf_hist) >= 3 else np.nan
+        )
+
+        # BMS × distance affinity (±200m)
+        dist_hist = sib_hist[
+            (sib_hist["distance"] >= distance - 200)
+            & (sib_hist["distance"] <= distance + 200)
+        ]
+        features["bms_win_pct_distance"] = (
+            (dist_hist["finish_pos"] == 1).mean()
+            if len(dist_hist) >= 3 else np.nan
+        )
+
+        return features
+
+    def _get_broodmare_sire_name(self, horse_id: int) -> Optional[str]:
+        """Look up broodmare sire name via broodmare_sire_id → sire_name."""
+        if not hasattr(self, "_bms_name_cache"):
+            self._bms_name_cache = {}
+            try:
+                with get_session() as session:
+                    # Join horse to its broodmare sire's name
+                    rows = session.execute(text(
+                        "SELECT h.id, bms.sire_name "
+                        "FROM horses h "
+                        "JOIN horses bms ON bms.id = h.broodmare_sire_id "
+                        "WHERE h.broodmare_sire_id IS NOT NULL "
+                        "AND bms.sire_name IS NOT NULL"
+                    )).fetchall()
+                    self._bms_name_cache = {r[0]: r[1] for r in rows}
+            except Exception:
+                pass
+        return self._bms_name_cache.get(horse_id)
+
+    def _get_bms_offspring(self, bms_name: str, exclude_horse_id: int) -> list[int]:
+        """Find all horse IDs that share the same broodmare sire name."""
+        if not hasattr(self, "_bms_offspring_cache"):
+            self._bms_offspring_cache = {}
+            try:
+                with get_session() as session:
+                    rows = session.execute(text(
+                        "SELECT h.id, bms.sire_name "
+                        "FROM horses h "
+                        "JOIN horses bms ON bms.id = h.broodmare_sire_id "
+                        "WHERE h.broodmare_sire_id IS NOT NULL "
+                        "AND bms.sire_name IS NOT NULL"
+                    )).fetchall()
+                    for hid, sname in rows:
+                        self._bms_offspring_cache.setdefault(sname, []).append(hid)
+            except Exception:
+                pass
+
+        offspring = self._bms_offspring_cache.get(bms_name, [])
         return [h for h in offspring if h != exclude_horse_id]
 
     # ------------------------------------------------------------------
@@ -1606,6 +1831,28 @@ class FeatureBuilder:
             else:
                 features["is_improving_3yo"] = np.nan
 
+            # --- Sprint 9: New features ---
+
+            # Seasonal / monthly form patterns
+            features.update(
+                self._seasonal_form_features(
+                    horse_id=row["horse_id"],
+                    race_date=str(row["date"]),
+                    history_df=history_df,
+                )
+            )
+
+            # Broodmare sire (母父) affinity
+            features.update(
+                self._broodmare_sire_features(
+                    horse_id=row["horse_id"],
+                    race_date=str(row["date"]),
+                    distance=row["distance"] or 0,
+                    surface=row["surface"] or "",
+                    history_df=history_df,
+                )
+            )
+
             feature_rows.append(features)
 
         df = pd.DataFrame(feature_rows)
@@ -1628,6 +1875,7 @@ class FeatureBuilder:
         for attr in (
             '_horse_groups', '_jockey_groups', '_trainer_groups', '_course_groups',
             '_jt_combo_groups', '_speed_baselines', '_field_quality_cache', '_weight_field_cache',
+            '_bms_name_cache', '_bms_offspring_cache',
         ):
             if hasattr(self, attr):
                 delattr(self, attr)
