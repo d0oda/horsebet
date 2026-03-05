@@ -15,6 +15,7 @@ Usage:
 """
 
 import logging
+import re
 import time
 from typing import Optional
 
@@ -47,6 +48,62 @@ GOING_MAP = {"良": 0, "稍重": 1, "重": 2, "不良": 3}
 SURFACE_MAP = {"turf": 0, "dirt": 1}
 SEX_MAP = {"牡": 0, "牝": 1, "セ": 2}  # male, female, gelding
 WEATHER_MAP = {"晴": 0, "曇": 1, "小雨": 2, "雨": 3, "小雪": 3, "雪": 3}
+
+# ---------------------------------------------------------------------------
+# Margin / beaten-lengths parser
+# ---------------------------------------------------------------------------
+
+_MARGIN_TEXT = {
+    # Japanese
+    "ハナ": 0.05, "クビ": 0.25, "アタマ": 0.1,
+    # English (JRA EN site)
+    "NS": 0.05, "NK": 0.25, "HD": 0.1,
+    # Large margin / distance
+    "大": 10.0, "DS": 10.0,
+    # Dead heat (same finish)
+    "同着": 0.0, "DH": 0.0,
+}
+
+
+def _parse_margin_to_lengths(val) -> float:
+    """Convert a JRA margin string to numeric beaten-lengths.
+
+    Handles: '0', '1', '1/2', '3/4', '1.1/4', '1 1/4', 'クビ', 'NK', '大', etc.
+    Returns NaN for unparseable values.
+    """
+    if pd.isna(val):
+        return np.nan
+    s = str(val).strip()
+    if not s:
+        return np.nan
+
+    # Text-based margins
+    if s in _MARGIN_TEXT:
+        return _MARGIN_TEXT[s]
+    # Compound like '1.1/4+クビ' — take the main part before '+'
+    if '+' in s:
+        s = s.split('+')[0].strip()
+
+    # Pure integer or float
+    try:
+        return float(s)
+    except ValueError:
+        pass
+
+    # Fraction only: '1/2', '3/4'
+    frac_match = re.match(r'^(\d+)/(\d+)$', s)
+    if frac_match:
+        return int(frac_match.group(1)) / int(frac_match.group(2))
+
+    # Mixed: '1.1/4' or '1 1/4' or '2.1/2'
+    mixed_match = re.match(r'^(\d+)[.\s](\d+)/(\d+)$', s)
+    if mixed_match:
+        whole = int(mixed_match.group(1))
+        numer = int(mixed_match.group(2))
+        denom = int(mixed_match.group(3))
+        return whole + numer / denom
+
+    return np.nan
 
 # All odds-derived features (raw + z-score normalised).
 # Excluding these forces the model to learn fundamental signals only.
@@ -339,7 +396,8 @@ class FeatureBuilder:
             features["weight_trend"] = 0
 
         # --- Beaten lengths / margin features (Sprint 8.4) ---
-        margins = hist["margin"].dropna() if "margin" in hist.columns else pd.Series(dtype=float)
+        raw_margins = hist["margin"].dropna() if "margin" in hist.columns else pd.Series(dtype=object)
+        margins = raw_margins.apply(_parse_margin_to_lengths).dropna()
         if not margins.empty:
             recent_margins = margins.head(3)
             features["beaten_lengths_avg3"] = recent_margins.mean()
@@ -348,9 +406,10 @@ class FeatureBuilder:
             # Class-adjusted margin: weight margin by class quality
             # Lower class_rank = stronger race, so we scale margin down for strong races
             class_weights = hist["race_class"].map(CLASS_RANK).fillna(10)
-            valid_mask = hist["margin"].notna()
+            parsed_margins = hist["margin"].apply(_parse_margin_to_lengths)
+            valid_mask = parsed_margins.notna()
             if valid_mask.any():
-                weighted = hist.loc[valid_mask, "margin"] * (10.0 / class_weights[valid_mask])
+                weighted = parsed_margins[valid_mask] * (10.0 / class_weights[valid_mask])
                 features["class_adjusted_margin"] = weighted.head(3).mean()
             else:
                 features["class_adjusted_margin"] = np.nan
@@ -442,8 +501,7 @@ class FeatureBuilder:
             "trainer_offspring_win_pct", "trainer_offspring_avg_finish",
             # Research backlog: course × jockey
             "jockey_course_runs", "jockey_course_win_pct", "jockey_course_place_pct",
-            # Odds movement (requires ≥2 snapshots per entry to produce values)
-            "odds_slope", "odds_late_money", "odds_vol",
+
             # Cross-sectional odds features (always populated when odds exist)
             "odds_rank", "odds_ratio_to_fav", "odds_deviation",
             # Sprint 8: beaten lengths
@@ -723,79 +781,7 @@ class FeatureBuilder:
             "pace_style_deep": 1 if style == STYLE_DEEP else 0,
         }
 
-    # ------------------------------------------------------------------
-    # Feature Computation — Odds Movement (Sprint 4.4)
-    # ------------------------------------------------------------------
 
-    def _load_odds_cache(self):
-        """Batch-load ALL odds snapshot data into memory (one DB query)."""
-        if hasattr(self, "_odds_cache"):
-            return  # already loaded
-
-        self._odds_cache = {}  # keyed by (race_id, post_position_str) -> [odds_values]
-        try:
-            with get_session() as session:
-                rows = session.execute(text("""
-                    SELECT race_id, combination, odds_value
-                    FROM odds_snapshots
-                    WHERE bet_type = 'win'
-                    ORDER BY race_id, combination, captured_at
-                """)).fetchall()
-
-            for race_id, combo, odds_val in rows:
-                key = (race_id, str(combo))
-                if key not in self._odds_cache:
-                    self._odds_cache[key] = []
-                self._odds_cache[key].append(odds_val)
-
-            log.info(f"Loaded odds cache: {len(self._odds_cache)} race×combo keys from {len(rows)} snapshots")
-        except Exception as e:
-            log.warning(f"Failed to load odds cache: {e}")
-
-    def _odds_movement_features(self, race_id: int, post_position: Optional[int]) -> dict:
-        """
-        Compute odds movement features from cached odds_snapshots data.
-        Falls back to NaN when no snapshot data exists.
-
-        Features:
-            odds_slope: regression slope of odds over time
-            odds_late_money: change in odds in last snapshot vs first
-            odds_vol: std dev of odds snapshots
-        """
-        null_feats = {
-            "odds_slope": np.nan,
-            "odds_late_money": np.nan,
-            "odds_vol": np.nan,
-        }
-
-        if post_position is None:
-            return null_feats
-
-        # Ensure cache is loaded
-        self._load_odds_cache()
-
-        key = (race_id, str(post_position))
-        odds_values = self._odds_cache.get(key)
-
-        if not odds_values or len(odds_values) < 2:
-            return null_feats
-
-        # Slope: simple linear regression over normalised time
-        x = np.arange(len(odds_values), dtype=float)
-        y = np.array(odds_values)
-        slope = np.polyfit(x, y, 1)[0] if len(x) >= 2 else np.nan
-
-        # Late money: last odds minus first odds (negative = money coming in)
-        late_money = odds_values[-1] - odds_values[0]
-
-        # Volatility
-        vol = np.std(odds_values)
-
-        return {
-            "odds_slope": slope,
-            "odds_late_money": late_money,
-            "odds_vol": vol,
-        }
 
     def _cross_sectional_odds_features(
         self, race_id: int, odds_win: Optional[float], race_df: pd.DataFrame
@@ -1750,13 +1736,7 @@ class FeatureBuilder:
                 )
             )
 
-            # Odds movement features (uses batch-cached odds data)
-            features.update(
-                self._odds_movement_features(
-                    race_id=row["race_id"],
-                    post_position=row.get("post_position"),
-                )
-            )
+
 
             # Cross-sectional odds features (always populated)
             features.update(

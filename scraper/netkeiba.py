@@ -294,15 +294,21 @@ def _parse_race_header(soup: BeautifulSoup, race_id: str) -> RaceData:
             race.surface = "dirt" if m.group(1) == "ダ" else "turf"
             race.distance = int(m.group(2))
         # Going
-        going_match = re.search(r"馬場[：:]\s*(良|稍重|重|不良)", detail_text)
+        going_match = re.search(r"馬場[：:]\s*(良|稍重|稍|不良|不|重)", detail_text)
         if going_match:
-            race.going = going_match.group(1)
+            going_val = going_match.group(1)
+            # Normalize abbreviated forms
+            if going_val == "稍":
+                going_val = "稍重"
+            elif going_val == "不":
+                going_val = "不良"
+            race.going = going_val
         else:
             # Also check spans for going
             for span in rd01.select("span"):
                 t = span.get_text(strip=True)
-                if t in ("良", "稍重", "重", "不良"):
-                    race.going = t
+                if t in ("良", "稍重", "稍", "重", "不良", "不"):
+                    race.going = {"稍": "稍重", "不": "不良"}.get(t, t)
                     break
         # Weather
         weather_match = re.search(r"天候[：:]\s*(\S+)", detail_text)
@@ -708,10 +714,18 @@ def _parse_legacy_race_page(soup: BeautifulSoup, race_id: str) -> Optional[RaceD
             race.surface = "dirt"
         elif "芝" in detail_text:
             race.surface = "turf"
-        going_match = re.search(r"[芝ダート]+\s*:\s*(良|稍重|重|不良)", detail_text)
+        going_match = re.search(r"[芝ダート]+\s*[：:]\s*(良|稍重|稍|不良|不|重)", detail_text)
+        if not going_match:
+            # Broader fallback: 馬場:良 format
+            going_match = re.search(r"馬場[：:]\s*(良|稍重|稍|不良|不|重)", detail_text)
         if going_match:
-            race.going = going_match.group(1)
-        weather_match = re.search(r"天候\s*:\s*(\S+)", detail_text)
+            going_val = going_match.group(1)
+            if going_val == "稍":
+                going_val = "稍重"
+            elif going_val == "不":
+                going_val = "不良"
+            race.going = going_val
+        weather_match = re.search(r"天候\s*[：:]\s*(\S+)", detail_text)
         if weather_match:
             race.weather = weather_match.group(1)
 

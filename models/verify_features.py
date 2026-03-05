@@ -32,9 +32,7 @@ FEATURE_GROUPS = {
         "horse_going_win_pct", "horse_wet_track_advantage", "horse_heavy_speed_diff",
         "going_x_dist_x_surface",
     ],
-    "Odds Movement (Time Series)": [
-        "odds_slope", "odds_late_money", "odds_vol",
-    ],
+
     "Odds (Cross-Sectional)": [
         "odds_rank", "odds_ratio_to_fav", "odds_deviation",
     ],
