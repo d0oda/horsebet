@@ -75,7 +75,7 @@ class PaperTrader:
     def place_paper_bets(
         self,
         race_id: int,
-        ev_threshold: float = 0.10,
+        ev_threshold: float = 0.30,
         flat_stake: int = 1000,
     ) -> list[PaperBet]:
         """

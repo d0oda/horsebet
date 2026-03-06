@@ -36,7 +36,7 @@ DEFAULT_STAKE = 100             # ¥100 per bet
 MAX_STAKE_PER_BET = 500         # ¥500 maximum per bet
 MAX_DAILY_LOSS = 5_000          # ¥5,000 daily loss limit
 MIN_MODEL_CONFIDENCE = 0.15     # minimum model probability
-MIN_EV_THRESHOLD = 0.10         # minimum EV to place a bet
+MIN_EV_THRESHOLD = 0.30         # minimum EV to place a bet
 REQUIRED_PAPER_WEEKENDS = 4     # profitable paper weekends before live
 
 

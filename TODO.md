@@ -8,12 +8,12 @@
 
 ## 🔴 Model — Retrain & Validate
 
-- [ ] Retrain model with cleaned features (dead odds movement features removed, margin parser fixed)
-- [ ] Run full backtest (`models/backtest.py`) and compare ROI vs previous model
-- [ ] Run multi-day backtest (`models/multiday_backtest.py`) to validate across 2021–2025
-- [ ] Check feature importances — confirm new Sprint 8/9 features are getting picked up
-- [ ] Evaluate ensemble model (`models/ensemble.py`) vs single model
-- [ ] Run drift detection (`models/drift.py`) on recent vs historical data
+- [x] ~~Retrain model with cleaned features~~ — rebuilt 122k entries, 251 features, cached
+- [x] ~~Run full backtest~~ — LGB AUC 0.8245, XGB AUC 0.8251, model ROI -2.5% vs fav -21.3%
+- [x] ~~Run multi-day backtest~~ — 78 days, 41% profitable, +18.8pp edge over favorites
+- [x] ~~Check feature importances~~ — Sprint 8/9 features (class_rank, sire, draw_bias, trainer) in top 15
+- [x] ~~Evaluate ensemble model~~ — Hybrid Combined AUC 0.8385 beats LGB-only 0.8245 (+1.4pp)
+- [x] ~~Run drift detection~~ — raw features drift as expected (cumulative), z-scored stable, win rate stable (7.39→7.12%)
 
 ---
 

@@ -458,19 +458,31 @@ def run_hybrid_ev_sweep(
     Train hybrid ensemble ONCE, then run backtests at multiple EV thresholds.
     Much more efficient than retraining for each threshold.
     """
+    import os
     from models.features import FeatureBuilder
     from models.ensemble import HybridEnsemble, DivergenceDetector
     from models.backtest import Backtester, BacktestConfig
     from scraper.db import get_session
     from sqlalchemy import text as sql_text
 
+    FEATURES_CACHE = os.path.join(os.path.dirname(__file__), "saved", "features_cache.pkl")
+
     # DB stats
     print_db_stats()
 
-    # Build features
-    log.info("\n📊 Building features...")
-    fb = FeatureBuilder()
-    df = fb.build_features_all()
+    # Build features (or load from cache)
+    if os.path.exists(FEATURES_CACHE):
+        log.info(f"\n📊 Loading cached features from {FEATURES_CACHE}...")
+        df = pd.read_pickle(FEATURES_CACHE)
+        log.info(f"  Loaded {len(df)} entries from cache")
+    else:
+        log.info("\n📊 Building features (no cache found)...")
+        fb = FeatureBuilder()
+        df = fb.build_features_all()
+        if not df.empty:
+            os.makedirs(os.path.dirname(FEATURES_CACHE), exist_ok=True)
+            df.to_pickle(FEATURES_CACHE)
+            log.info(f"  💾 Cached features to {FEATURES_CACHE}")
     if df.empty:
         log.error("No data available.")
         return
@@ -520,8 +532,8 @@ def run_hybrid_ev_sweep(
     except (PermissionError, OSError) as e:
         log.warning(f"Could not save hybrid model: {e}")
 
-    # Sweep thresholds
-    thresholds = [0.03, 0.05, 0.08, 0.10, 0.12]
+    # Sweep thresholds (full range including high-EV territory)
+    thresholds = [0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.40, 0.50]
     results = []
 
     for ev in thresholds:
@@ -533,6 +545,7 @@ def run_hybrid_ev_sweep(
             ev_threshold=ev, bet_type=bet_type,
             flat_stake=flat_stake, initial_bankroll=initial_bankroll,
             kelly_fraction=kelly_fraction,
+            use_kelly=(kelly_fraction > 0),
         )
         bt = Backtester(config)
         result = bt.run(pred_df)
@@ -584,9 +597,9 @@ def main():
         help="Run hybrid ensemble evaluation (fundamental vs market)",
     )
     parser.add_argument(
-        "--calibration", type=str, default="none",
+        "--calibration", type=str, default="isotonic",
         choices=["none", "platt", "isotonic"],
-        help="Calibration method (default: none)",
+        help="Calibration method (default: isotonic)",
     )
     parser.add_argument(
         "--ev-sweep", action="store_true",
@@ -599,7 +612,7 @@ def main():
     )
     parser.add_argument(
         "--flat", action="store_true",
-        help="Use flat bet sizing (¥100/bet, ¥1000 bankroll, no Kelly)",
+        help="Use flat bet sizing (¥1000/bet, no Kelly)",
     )
     args = parser.parse_args()
 
@@ -607,8 +620,8 @@ def main():
         run_hybrid_ev_sweep(
             calibration_method=args.calibration,
             bet_type=args.bet_type,
-            flat_stake=100 if args.flat else 1000,
-            initial_bankroll=1000 if args.flat else 100000,
+            flat_stake=1000,
+            initial_bankroll=100000,
             kelly_fraction=0.0 if args.flat else 0.25,
         )
     elif args.ev_sweep:

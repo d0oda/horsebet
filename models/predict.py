@@ -33,10 +33,10 @@ def predict_and_store(
     race_id: int,
     model_version: str = "latest",
     store_to_db: bool = True,
-    ev_threshold: float = 0.05,
+    ev_threshold: float = 0.30,
     use_hybrid: bool = False,
     max_odds: float = 30.0,
-    min_odds: float = 1.5,
+    min_odds: float = 2.0,
 ) -> pd.DataFrame:
     """
     Full prediction pipeline for a race:

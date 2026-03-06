@@ -34,9 +34,9 @@ log = logging.getLogger("predict_final")
 def predict_with_filters(
     race_ids: list[int],
     model_version: str = "2026_v2",
-    ev_threshold: float = 0.05,
+    ev_threshold: float = 0.30,
     max_odds: float = 30.0,
-    min_odds: float = 1.5,
+    min_odds: float = 2.0,
     bankroll: int = 100000,
     kelly_fraction: float = 0.25,
 ) -> pd.DataFrame:

@@ -1,0 +1,12 @@
+[
+  {
+    "version": "retrain_20260305",
+    "timestamp": "2026-03-05T16:39:16.128442",
+    "auc": 0.8385,
+    "log_loss": 0.2222,
+    "brier": 0.0579,
+    "n_samples": 18246,
+    "calibration_error": 0.0,
+    "notes": "Post-cleanup retrain: dead odds movement removed, margin parser fixed, Sprint 8/9 features"
+  }
+]

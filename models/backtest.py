@@ -41,14 +41,14 @@ JRA_PLACE_PAYOUT_FACTOR = 0.35  # Place pays ~35% of win odds on average
 @dataclass
 class BacktestConfig:
     """Parameters for the backtesting simulation."""
-    ev_threshold: float = 0.05       # Minimum EV to trigger a bet (5%)
+    ev_threshold: float = 0.30       # Minimum EV to trigger a bet (30%)
     flat_stake: int = 1000           # Yen per flat bet
     initial_bankroll: int = 100000   # Starting bankroll (yen)
     kelly_fraction: float = 0.25    # Quarter-Kelly
     max_bet_pct: float = 0.05       # Max 5% of bankroll per bet
     bet_type: str = "win"           # 'win' or 'place'
     max_odds: float = 30.0          # Skip horses with odds above this
-    min_odds: float = 1.0           # Skip horses with odds below this
+    min_odds: float = 2.0           # Skip horses with odds below this
     use_kelly: bool = True           # Pure Kelly sizing (no flat-stake floor)
     min_kelly_fraction: float = 0.005  # Min Kelly fraction to place a bet
 
@@ -364,11 +364,11 @@ class Backtester:
 
 def run_full_backtest(
     model_version: str = "latest",
-    ev_threshold: float = 0.05,
+    ev_threshold: float = 0.30,
     output_path: Optional[str] = None,
     bet_type: str = "win",
     max_odds: float = 30.0,
-    min_odds: float = 1.0,
+    min_odds: float = 2.0,
     use_kelly: bool = True,
 ):
     """
