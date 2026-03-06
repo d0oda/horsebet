@@ -44,12 +44,16 @@
     // ── Venue Tabs ──
     function renderVenueTabs() {
         const venues = ['all', ...Object.keys(venueMap)];
-        const labels = { all: 'All Venues', Hanshin: '🟣 阪神', Kokura: '🟢 小倉', Nakayama: '🔵 中山' };
-        document.getElementById('venueTabs').innerHTML = venues.map(v => `
-            <button class="venue-tab ${v === activeVenue ? 'active' : ''}" data-venue="${v}">
-                ${labels[v] || v}
-            </button>
-        `).join('');
+        const labels = { all: 'All Venues', Hanshin: '🟣 阪神', Kokura: '🟢 小倉', Nakayama: '🔵 中山', Kyoto: '🟤 京都', Chukyo: '🔵 中京', Tokyo: '⚪️ 東京', Niigata: '🟡 新潟', Fukushima: '🟠 福島', Sapporo: '❄️ 札幌', Hakodate: '⚓️ 函館' };
+        document.getElementById('venueTabs').innerHTML = venues.map(v => {
+            if (v === 'all') return `<button class="venue-tab ${v === activeVenue ? 'active' : ''}" data-venue="all">All Venues</button>`;
+
+            const baseMatch = v.match(/^([A-Za-z]+)/);
+            const baseVenue = baseMatch ? baseMatch[1] : v;
+            const labelStr = labels[baseVenue] ? v.replace(baseVenue, labels[baseVenue]) : v;
+
+            return `<button class="venue-tab ${v === activeVenue ? 'active' : ''}" data-venue="${v}">${labelStr}</button>`;
+        }).join('');
 
         document.querySelectorAll('.venue-tab').forEach(btn => {
             btn.addEventListener('click', () => {

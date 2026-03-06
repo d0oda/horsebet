@@ -337,8 +337,8 @@ def step_frontend(predictions_path: str, date: str):
 
         # Replace date in title and display
         content = re.sub(
-            r'<span id="race-date">.*?</span>',
-            f'<span id="race-date">{date_jp}</span>',
+            r'<span class="date-value">.*?</span>',
+            f'<span class="date-value">{date_jp}</span>',
             content,
         )
         content = re.sub(
