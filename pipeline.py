@@ -323,7 +323,7 @@ def step_frontend(predictions_path: str, date: str):
     """Step 4: Build data.json and update index.html."""
     log.info("━━━ Step 4: Building frontend ━━━")
 
-    build_data_json(predictions_path, date=date, output="results/data.json")
+    build_data_json([predictions_path], output="results/data.json")
 
     # Update index.html date
     html_path = Path("results/index.html")

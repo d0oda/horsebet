@@ -106,7 +106,7 @@ jobs:
           fi
 
           echo "🏇 Running pipeline for $DATE $FLAGS"
-          python pipeline.py --date "$DATE" --version 2025_hybrid --ev-threshold 0.15 $FLAGS
+          python pipeline.py --date "$DATE" --version 2026_v2 --ev-threshold 0.15 $FLAGS
 
       - name: Upload predictions artifact
         if: steps.check.outputs.is_race_day == 'true'
