@@ -88,9 +88,9 @@ class TestOdsCeiling:
         assert config.max_odds == 30.0
 
     def test_default_min_odds_is_1(self):
-        """Default min_odds should be 1.0."""
+        """Default min_odds should be 2.0."""
         config = BacktestConfig()
-        assert config.min_odds == 1.0
+        assert config.min_odds == 2.0
 
 
 # ---------------------------------------------------------------------------

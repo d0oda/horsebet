@@ -8,5 +8,25 @@
     "n_samples": 18246,
     "calibration_error": 0.0,
     "notes": "Post-cleanup retrain: dead odds movement removed, margin parser fixed, Sprint 8/9 features"
+  },
+  {
+    "version": "retrain_20260507_1627",
+    "timestamp": "2026-05-07T16:27:20.036328",
+    "auc": 0.832132,
+    "log_loss": 0,
+    "brier": 0.058344,
+    "n_samples": 36365,
+    "calibration_error": 0.0,
+    "notes": ""
+  },
+  {
+    "version": "retrain_20260507_1645",
+    "timestamp": "2026-05-07T16:45:43.500818",
+    "auc": 0.836102,
+    "log_loss": 0,
+    "brier": 0.057434,
+    "n_samples": 38022,
+    "calibration_error": 0.0,
+    "notes": ""
   }
 ]

@@ -113,7 +113,7 @@
                         <div class="race-stats">
                             ${winnerEntry ? `<div class="race-stat"><div class="race-stat-value" style="color:var(--gold)">🏆 ${winnerEntry.horse_name}</div><div class="race-stat-label">${winnerEntry.odds ? winnerEntry.odds.toFixed(1) + 'x' : ''}</div></div>` : ''}
                             ${betEntry ? `<div class="race-stat"><div class="race-stat-value" style="color:var(--accent-light)">${betEntry.horse_name}</div><div class="race-stat-label">Pick ${betEntry.is_winner ? '🏆' : '#' + (betEntry.finish_pos || '?')}</div></div>` : ''}
-                            ${betEntry ? (() => { const pnl = betEntry.is_winner ? Math.round(betEntry.odds * 100 - 100) : -100; const cls = pnl > 0 ? 'color:#4ade80' : 'color:#f87171'; return `<div class="race-stat"><div class="race-stat-value" style="${cls};font-weight:700">${pnl > 0 ? '+' : ''}¥${pnl.toLocaleString()}</div><div class="race-stat-label">P&L</div></div>`; })() : ''}
+                            ${betEntry ? (() => { const pnl = betEntry.is_winner ? Math.round(betEntry.odds * 1000 - 1000) : -1000; const cls = pnl > 0 ? 'color:#4ade80' : 'color:#f87171'; return `<div class="race-stat"><div class="race-stat-value" style="${cls};font-weight:700">${pnl > 0 ? '+' : ''}¥${pnl.toLocaleString()}</div><div class="race-stat-label">P&L</div></div>`; })() : ''}
                             <div class="race-stat">
                                 <div class="race-stat-value">${topPick ? topPick.prob_combined + '%' : '--'}</div>
                                 <div class="race-stat-label">Top Prob</div>
@@ -178,7 +178,7 @@
         const tbody = document.getElementById('valueTableBody');
         const bets = [...DATA.value_bets];
 
-        const getPnl = (b) => b.is_winner ? Math.round(b.odds * 100 - 100) : -100;
+        const getPnl = (b) => b.is_winner ? Math.round(b.odds * 1000 - 1000) : -1000;
         bets.sort((a, b) => {
             let va = sortCol === 'pnl' ? getPnl(a) : a[sortCol];
             let vb = sortCol === 'pnl' ? getPnl(b) : b[sortCol];
@@ -192,7 +192,7 @@
         tbody.innerHTML = bets.map(b => {
             const finClass = b.finish_pos === 1 ? 'finish-1' : b.finish_pos === 2 ? 'finish-2' : b.finish_pos === 3 ? 'finish-3' : 'finish-other';
             const rowClass = b.is_winner ? 'winner-row' : '';
-            const pnl = b.is_winner ? Math.round(b.odds * 100 - 100) : -100;
+            const pnl = b.is_winner ? Math.round(b.odds * 1000 - 1000) : -1000;
             const pnlClass = pnl > 0 ? 'ev-positive' : 'ev-negative';
             return `<tr class="${rowClass}">
                 <td>${b.venue}</td>

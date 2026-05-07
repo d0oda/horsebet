@@ -53,7 +53,7 @@ BASE_URL = "https://umanity.jp"
 RACE_CARD_URL = BASE_URL + "/racedata/race_8_1.php?code={code}"
 PEDIGREE_URL = BASE_URL + "/racedata/race_8_4.php?code={code}"
 RACE_MAIN_URL = BASE_URL + "/racedata/race_8.php?code={code}"
-PROGRAM_URL = BASE_URL + "/racedata/race_5.php?ymd={date}"
+PROGRAM_URL = BASE_URL + "/racedata/race_5.php?date={date}"
 
 DELAY_MIN = float(os.getenv("UMANITY_DELAY_MIN", 0.5))
 DELAY_MAX = float(os.getenv("UMANITY_DELAY_MAX", 1.5))
@@ -480,7 +480,8 @@ def scrape_umanity_race_list(date_str: str) -> list[str]:
     Returns:
         List of 16-digit Umanity race codes
     """
-    url = PROGRAM_URL.format(date=date_str)
+    date_slash = f"{date_str[:4]}/{date_str[4:6]}/{date_str[6:8]}"
+    url = PROGRAM_URL.format(date=date_slash)
     log.info(f"Fetching Umanity race program for {date_str}...")
     soup = _fetch(url)
     if not soup:
@@ -494,7 +495,7 @@ def scrape_umanity_race_list(date_str: str) -> list[str]:
             code = match.group(1)
             venue_code = code[8:10]
             try:
-                if int(venue_code) <= 10 and code not in codes:
+                if int(venue_code) <= 10 and code not in codes and code.startswith(date_str):
                     codes.append(code)
             except ValueError:
                 continue

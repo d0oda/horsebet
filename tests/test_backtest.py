@@ -23,7 +23,7 @@ from models.backtest import (
 class TestConfig:
     def test_defaults(self):
         config = BacktestConfig()
-        assert config.ev_threshold == 0.05
+        assert config.ev_threshold == 0.3
         assert config.flat_stake == 1000
         assert config.initial_bankroll == 100000
         assert config.kelly_fraction == 0.25
@@ -123,7 +123,8 @@ class TestBacktestRun:
 
     def test_no_bets_when_threshold_too_high(self):
         df = self._make_predictions()
-        bt = Backtester(BacktestConfig(ev_threshold=0.99))
+        # With odds maxing at 30.0, an EV of 15.0 (+1500% ROI) is virtually impossible
+        bt = Backtester(BacktestConfig(ev_threshold=15.0))
         result = bt.run(df)
 
         assert result.total_bets == 0

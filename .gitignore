@@ -32,3 +32,4 @@ Thumbs.db
 # Node (for web dashboard)
 node_modules/
 .next/
+data/features.parquet

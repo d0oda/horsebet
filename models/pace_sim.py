@@ -132,6 +132,12 @@ class PaceSimulator:
         pace_slow_prob = max(0.3 - n_front * 0.1, 0.1)
         pace_mod_prob = 1.0 - pace_fast_prob - pace_slow_prob
 
+        race_pace_probs = {
+            "fast": pace_fast_prob,
+            "moderate": pace_mod_prob,
+            "slow": pace_slow_prob
+        }
+
         # Run simulations
         win_counts = np.zeros(n_horses)
         place_counts = np.zeros(n_horses)
@@ -167,6 +173,12 @@ class PaceSimulator:
                 "place_prob": place_counts[i] / self.n_simulations,
                 "style": styles[i],
             }
+            
+        results["_race_level_"] = {
+            "pace_prob_fast": race_pace_probs["fast"],
+            "pace_prob_moderate": race_pace_probs["moderate"],
+            "pace_prob_slow": race_pace_probs["slow"]
+        }
 
         return results
 

@@ -1080,7 +1080,8 @@ def scrape_race_list(date_str: str) -> list[str]:
     The race list page loads race IDs via AJAX/JavaScript, so we also
     check the JS source for embedded race_id data.
     """
-    url = RACE_LIST_URL.format(date=date_str)
+    # Netkeiba now loads races dynamically via race_list_sub.html
+    url = BASE_URL + f"/top/race_list_sub.html?kaisai_date={date_str}"
     log.info(f"Fetching race list for {date_str}...")
     soup = _fetch(url)
     if not soup:
@@ -1088,10 +1089,10 @@ def scrape_race_list(date_str: str) -> list[str]:
 
     race_ids = []
 
-    # Method 1: Look for direct links (sometimes present)
-    links = soup.find_all("a", href=re.compile(r"/race/\d{12}"))
+    # Method 1: Look for direct links (e.g. result.html?race_id=...)
+    links = soup.find_all("a", href=re.compile(r"race_id=\d{12}"))
     for link in links:
-        match = re.search(r"/race/(\d{12})", link["href"])
+        match = re.search(r"race_id=(\d{12})", link["href"])
         if match:
             rid = match.group(1)
             if rid not in race_ids:

@@ -125,9 +125,20 @@ class FeatureBuilder:
     # Data Loading
     # ------------------------------------------------------------------
 
-    def _load_race_data(self, race_id: Optional[int] = None) -> pd.DataFrame:
-        """Load joined race/entry/result data. If race_id=None, load all."""
-        where = "AND r.id = :race_id" if race_id else ""
+    def _load_race_data(self, race_id=None, race_ids=None) -> pd.DataFrame:
+        """Load joined race/entry/result data. If race_id=None, load all unless race_ids is given."""
+        where = ""
+        params = {}
+        if race_id:
+            where = "AND r.id = :race_id"
+            params = {"race_id": race_id}
+        elif race_ids:
+            # SQLAlchemy text parameter for tuple doesn't always bind list nicely without an IN clause with explicit tuple
+            # If it's a list, handle it correctly
+            where = "AND r.id IN :race_ids"
+            # we must convert to tuple for sqlalchemy to expand it correctly
+            params = {"race_ids": tuple(race_ids)}
+            
         query = f"""
             SELECT
                 r.id AS race_id,
@@ -175,7 +186,11 @@ class FeatureBuilder:
         """
 
         with get_session() as session:
-            params = {"race_id": race_id} if race_id else {}
+            # When using IN with tuple, we need string interpolation for SQLite
+            if race_ids:
+                tuple_str = "(" + ",".join(str(x) for x in params["race_ids"]) + ")"
+                query = query.replace(":race_ids", tuple_str)
+                params = {}
             result = session.execute(text(query), params)
             rows = result.fetchall()
             columns = result.keys()
@@ -184,7 +199,6 @@ class FeatureBuilder:
         if df.empty:
             log.warning("No race data loaded")
         else:
-            # Ensure date is string for consistent comparison
             if "date" in df.columns:
                 df["date"] = df["date"].astype(str)
             log.info(f"Loaded {len(df)} entries across {df['race_id'].nunique()} races")
@@ -228,7 +242,6 @@ class FeatureBuilder:
             columns = result.keys()
 
         df = pd.DataFrame(rows, columns=columns)
-        # Ensure date is string for consistent comparison
         if "date" in df.columns:
             df["date"] = df["date"].astype(str)
         return df
@@ -245,13 +258,13 @@ class FeatureBuilder:
         # Use pre-indexed group if available, else fall back to filtering
         group = self._horse_groups.get(horse_id) if hasattr(self, '_horse_groups') else None
         if group is not None:
-            hist = group[group["date"] < race_date]
+            idx = group["date"].searchsorted(race_date, side="left")
+            hist = group.iloc[:idx].iloc[::-1]
         else:
             hist = history_df[
                 (history_df["horse_id"] == horse_id)
                 & (history_df["date"] < race_date)
             ]
-        hist = hist.sort_values("date", ascending=False)
 
         features = {}
 
@@ -501,6 +514,10 @@ class FeatureBuilder:
             "trainer_offspring_win_pct", "trainer_offspring_avg_finish",
             # Research backlog: course × jockey
             "jockey_course_runs", "jockey_course_win_pct", "jockey_course_place_pct",
+            "trainer_course_runs", "trainer_course_win_pct", "trainer_course_place_pct",
+            
+            "pace_scenario", "pace_prob_fast", "pace_prob_moderate", "pace_prob_slow",
+            "training_center_distance",
 
             # Cross-sectional odds features (always populated when odds exist)
             "odds_rank", "odds_ratio_to_fav", "odds_deviation",
@@ -550,13 +567,13 @@ class FeatureBuilder:
         # Use pre-indexed group if available
         group = self._jockey_groups.get(jockey_id) if hasattr(self, '_jockey_groups') else None
         if group is not None:
-            hist = group[group["date"] < race_date]
+            idx = group["date"].searchsorted(race_date, side="left")
+            hist = group.iloc[:idx].iloc[::-1]
         else:
             hist = history_df[
                 (history_df["jockey_id"] == jockey_id)
                 & (history_df["date"] < race_date)
             ]
-        hist = hist.sort_values("date", ascending=False)
 
         if hist.empty:
             return null_feats
@@ -602,13 +619,13 @@ class FeatureBuilder:
         # Use pre-indexed group if available
         group = self._trainer_groups.get(trainer_id) if hasattr(self, '_trainer_groups') else None
         if group is not None:
-            hist = group[group["date"] < race_date]
+            idx = group["date"].searchsorted(race_date, side="left")
+            hist = group.iloc[:idx].iloc[::-1]
         else:
             hist = history_df[
                 (history_df["trainer_id"] == trainer_id)
                 & (history_df["date"] < race_date)
             ]
-        hist = hist.sort_values("date", ascending=False)
 
         if hist.empty:
             return null_feats
@@ -662,10 +679,9 @@ class FeatureBuilder:
         # Use pre-indexed group if available
         group = self._jockey_groups.get(jockey_id) if hasattr(self, '_jockey_groups') else None
         if group is not None:
-            hist = group[
-                (group["course_id"] == course_id)
-                & (group["date"] < race_date)
-            ]
+            idx = group["date"].searchsorted(race_date, side="left")
+            hist = group.iloc[:idx].iloc[::-1]
+            hist = hist[hist["course_id"] == course_id]
         else:
             hist = history_df[
                 (history_df["jockey_id"] == jockey_id)
@@ -684,8 +700,139 @@ class FeatureBuilder:
         return features
 
     # ------------------------------------------------------------------
-    # Feature Computation — Pace Simulation
+    # Feature Computation — Course × Trainer Interaction
     # ------------------------------------------------------------------
+
+    def _course_trainer_features(
+        self, trainer_id: Optional[int], course_id: Optional[int],
+        race_date: str, history_df: pd.DataFrame
+    ) -> dict:
+        """Compute course-specific trainer performance."""
+        null_feats = {
+            "trainer_course_runs": np.nan,
+            "trainer_course_win_pct": np.nan,
+            "trainer_course_place_pct": np.nan,
+        }
+
+        if trainer_id is None or course_id is None or "course_id" not in history_df.columns:
+            return null_feats
+
+        group = self._trainer_groups.get(trainer_id) if hasattr(self, '_trainer_groups') else None
+        if group is not None:
+            idx = group["date"].searchsorted(race_date, side="left")
+            hist = group.iloc[:idx].iloc[::-1]
+            hist = hist[hist["course_id"] == course_id]
+        else:
+            hist = history_df[
+                (history_df["trainer_id"] == trainer_id)
+                & (history_df["course_id"] == course_id)
+                & (history_df["date"] < race_date)
+            ]
+
+        if hist.empty:
+            return null_feats
+
+        return {
+            "trainer_course_runs": len(hist),
+            "trainer_course_win_pct": (hist["finish_pos"] == 1).mean(),
+            "trainer_course_place_pct": (hist["finish_pos"] <= 3).mean(),
+        }
+
+    # ------------------------------------------------------------------
+    # Feature Computation — Shipping / Travel Metrics
+    # ------------------------------------------------------------------
+
+    def _infer_trainer_base(self, trainer_id: Optional[int], history_df: pd.DataFrame) -> str:
+        """Infer trainer base (Miho/East vs Ritto/West) based on historical starts."""
+        if trainer_id is None:
+            return "Unknown"
+        
+        # Check cache
+        if not hasattr(self, "_trainer_bases"):
+            self._trainer_bases = {}
+        if trainer_id in self._trainer_bases:
+            return self._trainer_bases[trainer_id]
+
+        group = self._trainer_groups.get(trainer_id) if hasattr(self, '_trainer_groups') else None
+        if group is not None:
+            hist = group
+        else:
+            hist = history_df[history_df["trainer_id"] == trainer_id]
+
+        if hist.empty or "course_id" not in hist.columns:
+            self._trainer_bases[trainer_id] = "Unknown"
+            return "Unknown"
+
+        # Kanto courses (East): 05=Tokyo, 06=Nakayama, 03=Fukushima, 04=Niigata
+        # Kansai courses (West): 08=Kyoto, 09=Hanshin, 07=Chukyo, 10=Kokura
+        # Hokkaido courses: 01=Sapporo, 02=Hakodate
+        kanto_courses = {5, 6, 3, 4}
+        kansai_courses = {8, 9, 7, 10}
+
+        starts = hist["course_id"].dropna()
+        if starts.empty:
+            self._trainer_bases[trainer_id] = "Unknown"
+            return "Unknown"
+
+        kanto_starts = starts.isin(kanto_courses).sum()
+        kansai_starts = starts.isin(kansai_courses).sum()
+
+        if kanto_starts > kansai_starts:
+            base = "Miho"
+        elif kansai_starts > kanto_starts:
+            base = "Ritto"
+        else:
+            base = "Unknown"
+        
+        self._trainer_bases[trainer_id] = base
+        return base
+
+    def _shipping_distance_features(self, trainer_id: Optional[int], course_id: Optional[int], history_df: pd.DataFrame) -> dict:
+        """Compute estimated shipping distance in kilometers."""
+        null_feats = {"training_center_distance": 0.0}
+        
+        if trainer_id is None or course_id is None:
+            return null_feats
+            
+        base = self._infer_trainer_base(trainer_id, history_df)
+        if base == "Unknown":
+            return null_feats
+            
+        # Rough distances in km from training centers
+        # Miho (Ibaraki) - near Tokyo
+        miho_distances = {
+            6: 50,    # Nakayama (Chiba)
+            5: 100,   # Tokyo
+            3: 200,   # Fukushima
+            4: 300,   # Niigata
+            7: 350,   # Chukyo (Nagoya)
+            8: 500,   # Kyoto
+            9: 550,   # Hanshin (Osaka)
+            10: 1000, # Kokura (Kyushu)
+            2: 800,   # Hakodate (Hokkaido)
+            1: 1000,  # Sapporo (Hokkaido)
+        }
+        
+        # Ritto (Shiga) - near Kyoto
+        ritto_distances = {
+            8: 50,    # Kyoto
+            9: 100,   # Hanshin
+            7: 150,   # Chukyo
+            10: 600,  # Kokura
+            4: 450,   # Niigata
+            5: 450,   # Tokyo
+            6: 500,   # Nakayama
+            3: 650,   # Fukushima
+            2: 1200,  # Hakodate
+            1: 1400,  # Sapporo
+        }
+        
+        if base == "Miho":
+            dist = miho_distances.get(course_id, 0.0)
+        else:
+            dist = ritto_distances.get(course_id, 0.0)
+            
+        return {"training_center_distance": float(dist)}
 
     def _get_pace_features(self, race_id: int, horse_id: int, race_df: pd.DataFrame, history_df: pd.DataFrame) -> dict:
         """
@@ -701,6 +848,10 @@ class FeatureBuilder:
             "pace_style_stalk": 0,
             "pace_style_closer": 0,
             "pace_style_deep": 0,
+            "pace_scenario": 0,
+            "pace_prob_fast": np.nan,
+            "pace_prob_moderate": np.nan,
+            "pace_prob_slow": np.nan,
         }
 
         # Check cache
@@ -771,7 +922,15 @@ class FeatureBuilder:
         if pace_data is None:
             return null_feats
 
+        # Calculate density of early speed
+        front_runners = sum(
+            1 for k, p in self._pace_cache.get(race_id, {}).items()
+            if k != "_race_level_" and p.get("style") == STYLE_FRONT
+        )
+
         style = pace_data.get("style", "")
+        race_level = self._pace_cache.get(race_id, {}).get("_race_level_", {})
+        
         return {
             "pace_win_prob": pace_data.get("win_prob", np.nan),
             "pace_place_prob": pace_data.get("place_prob", np.nan),
@@ -779,6 +938,10 @@ class FeatureBuilder:
             "pace_style_stalk": 1 if style == STYLE_STALK else 0,
             "pace_style_closer": 1 if style == STYLE_CLOSER else 0,
             "pace_style_deep": 1 if style == STYLE_DEEP else 0,
+            "pace_scenario": front_runners,
+            "pace_prob_fast": race_level.get("pace_prob_fast", np.nan),
+            "pace_prob_moderate": race_level.get("pace_prob_moderate", np.nan),
+            "pace_prob_slow": race_level.get("pace_prob_slow", np.nan),
         }
 
 
@@ -887,7 +1050,8 @@ class FeatureBuilder:
         if horse_id is not None:
             group = self._horse_groups.get(horse_id) if hasattr(self, '_horse_groups') else None
             if group is not None:
-                hist = group[group["date"] < race_date]
+                idx = group["date"].searchsorted(race_date, side="left")
+                hist = group.iloc[:idx].iloc[::-1]
             else:
                 hist = history_df[
                     (history_df["horse_id"] == horse_id)
@@ -972,7 +1136,8 @@ class FeatureBuilder:
         # Use pre-indexed group if available
         group = self._course_groups.get(course_id) if hasattr(self, '_course_groups') else None
         if group is not None:
-            course_hist = group[group["date"] < race_date]
+            idx = group["date"].searchsorted(race_date, side="left")
+            course_hist = group.iloc[:idx].iloc[::-1]
         else:
             course_hist = history_df[
                 (history_df["course_id"] == course_id)
@@ -1134,7 +1299,8 @@ class FeatureBuilder:
         if trainer_id is not None and "trainer_id" in history_df.columns:
             group = self._trainer_groups.get(trainer_id) if hasattr(self, '_trainer_groups') else None
             if group is not None:
-                trainer_hist = group[group["date"] < race_date]
+                idx = group["date"].searchsorted(race_date, side="left")
+                trainer_hist = group.iloc[:idx].iloc[::-1]
             else:
                 trainer_hist = history_df[
                     (history_df["trainer_id"] == trainer_id)
@@ -1214,7 +1380,8 @@ class FeatureBuilder:
         # Horse-specific monthly win rate
         group = self._horse_groups.get(horse_id) if hasattr(self, '_horse_groups') else None
         if group is not None and not group.empty:
-            hist = group[group["date"] < race_date]
+            idx = group["date"].searchsorted(race_date, side="left")
+            hist = group.iloc[:idx].iloc[::-1]
             if not hist.empty and "date" in hist.columns:
                 try:
                     month_val = features.get("month_of_year")
@@ -1386,13 +1553,13 @@ class FeatureBuilder:
         # Get horse history
         group = self._horse_groups.get(horse_id) if hasattr(self, '_horse_groups') else None
         if group is not None:
-            hist = group[group["date"] < race_date]
+            idx = group["date"].searchsorted(race_date, side="left")
+            hist = group.iloc[:idx].iloc[::-1]
         else:
             hist = history_df[
                 (history_df["horse_id"] == horse_id)
                 & (history_df["date"] < race_date)
             ]
-        hist = hist.sort_values("date", ascending=False)
 
         if hist.empty:
             return null_feats
@@ -1454,7 +1621,8 @@ class FeatureBuilder:
         if group is None or group.empty:
             return null_feats
 
-        hist = group[group["date"] < race_date]
+        idx = group["date"].searchsorted(race_date, side="left")
+        hist = group.iloc[:idx].iloc[::-1]
         if hist.empty:
             return null_feats
 
@@ -1574,13 +1742,18 @@ class FeatureBuilder:
         Z-score normalise features within each race.
         This lets the model see relative strengths (e.g., "fastest in THIS field").
         """
+        new_cols = {}
         for col in feature_cols:
             if col in df.columns and df[col].dtype in [np.float64, np.float32, np.int64, np.int32, float, int]:
                 group_mean = df.groupby("race_id")[col].transform("mean")
                 group_std = df.groupby("race_id")[col].transform("std")
                 # Avoid division by zero
                 group_std = group_std.replace(0, 1)
-                df[f"{col}_z"] = (df[col] - group_mean) / group_std
+                new_cols[f"{col}_z"] = (df[col] - group_mean) / group_std
+
+        if new_cols:
+            new_df = pd.DataFrame(new_cols)
+            df = pd.concat([df, new_df], axis=1)
 
         return df
 
@@ -1592,20 +1765,25 @@ class FeatureBuilder:
         """Build feature vectors for all entries in a single race."""
         return self._build(race_id=race_id)
 
+    def build_features_for_races(self, race_ids: list[int]) -> pd.DataFrame:
+        """Build feature vectors for multiple races simultaneously."""
+        return self._build(race_ids=race_ids)
+
     def build_features_all(self) -> pd.DataFrame:
         """Build feature vectors for all races in the database."""
         return self._build(race_id=None)
 
-    def _build(self, race_id: Optional[int] = None) -> pd.DataFrame:
+    def _build(self, race_id: Optional[int] = None, race_ids: Optional[list[int]] = None) -> pd.DataFrame:
         """Core feature building logic."""
         t0 = time.time()
         log.info("Loading race data...")
-        race_df = self._load_race_data(race_id)
+        race_df = self._load_race_data(race_id=race_id, race_ids=race_ids)
         if race_df.empty:
             return pd.DataFrame()
 
         log.info("Loading horse/jockey history for rolling features...")
         history_df = self._load_horse_history()
+        history_df = history_df.sort_values("date", ascending=True)
 
         # Pre-index history by entity for O(1) lookups (major speedup)
         log.info("Pre-indexing history for fast lookups...")
@@ -1736,7 +1914,24 @@ class FeatureBuilder:
                 )
             )
 
+            # Course × trainer interaction
+            features.update(
+                self._course_trainer_features(
+                    trainer_id=row.get("trainer_id"),
+                    course_id=row.get("course_id"),
+                    race_date=str(row["date"]),
+                    history_df=history_df,
+                )
+            )
 
+            # Shipping distance metrics
+            features.update(
+                self._shipping_distance_features(
+                    trainer_id=row.get("trainer_id"),
+                    course_id=row.get("course_id"),
+                    history_df=history_df,
+                )
+            )
 
             # Cross-sectional odds features (always populated)
             features.update(

@@ -39,6 +39,8 @@ def predict_with_filters(
     min_odds: float = 2.0,
     bankroll: int = 100000,
     kelly_fraction: float = 0.25,
+    flat: bool = False,
+    hybrid=None,
 ) -> pd.DataFrame:
     """
     Run predictions with all P1-P3 filters applied.
@@ -50,21 +52,25 @@ def predict_with_filters(
     from models.features import FeatureBuilder
     from models.ensemble import HybridEnsemble
 
-    log.info(f"Loading model version: {model_version}")
-    try:
-        hybrid = HybridEnsemble.load(version=model_version)
-    except FileNotFoundError:
-        log.error(f"Model version '{model_version}' not found")
-        return pd.DataFrame()
+    if hybrid is None:
+        log.info(f"Loading model version: {model_version}")
+        try:
+            hybrid = HybridEnsemble.load(version=model_version)
+        except FileNotFoundError:
+            log.error(f"Model version '{model_version}' not found")
+            return pd.DataFrame()
 
     all_results = []
+    
+    fb = FeatureBuilder()
+    log.info(f"Building features for {len(race_ids)} races...")
+    all_features_df = fb.build_features_for_races(race_ids)
 
     for race_id in race_ids:
         log.info(f"Processing race {race_id}...")
 
         # Build features
-        fb = FeatureBuilder()
-        features_df = fb.build_features_for_race(race_id)
+        features_df = all_features_df[all_features_df["race_id"] == race_id].copy() if not all_features_df.empty else pd.DataFrame()
         if features_df.empty:
             log.warning(f"No features for race {race_id}, skipping")
             continue
@@ -101,31 +107,46 @@ def predict_with_filters(
         for i, (_, row) in enumerate(features_df.iterrows()):
             entry_id = row["entry_id"]
             info = entry_map.get(entry_id, {})
-            odds = info.get("odds") or 0
-            name = info.get("name", "?")
-
             combined_p = float(combined[i])
             fund_p = float(fundamental[i])
             mkt_p = float(market[i])
+            
+        # Normalize probabilities to sum to 1.0 for the race
+        comb_sum = sum(float(c) for c in combined)
+        fund_sum = sum(float(f) for f in fundamental)
+        mkt_sum = sum(float(m) for m in market)
+
+        for i, (_, row) in enumerate(features_df.iterrows()):
+            entry_id = row["entry_id"]
+            info = entry_map.get(entry_id, {})
+            odds = info.get("odds") or 0
+            name = info.get("name", "?")
+
+            combined_p = float(combined[i]) / comb_sum if comb_sum > 0 else 0
+            fund_p = float(fundamental[i]) / fund_sum if fund_sum > 0 else 0
+            mkt_p = float(market[i]) / mkt_sum if mkt_sum > 0 else 0
 
             market_prob = (1.0 / odds) if odds > 0 else 0
-            ev = combined_p - market_prob
+            ev = (combined_p * odds) - 1.0
 
-            # Kelly sizing
-            b = odds - 1
-            if b > 0 and combined_p > 0:
-                kelly = max(0, (b * combined_p - (1 - combined_p)) / b)
-                kelly *= kelly_fraction
-            else:
+            # Stake sizing
+            if flat:
                 kelly = 0
-
-            recommended_stake = int(bankroll * kelly)
+                recommended_stake = 1000
+            else:
+                b = odds - 1
+                if b > 0 and combined_p > 0:
+                    kelly = max(0, ev / b)
+                    kelly *= kelly_fraction
+                else:
+                    kelly = 0
+                recommended_stake = int(bankroll * kelly)
 
             # Value bet filters (P1 + P3)
             is_value = (
                 ev >= ev_threshold
                 and min_odds <= odds <= max_odds
-                and kelly >= 0.005  # Min Kelly fraction
+                and (flat or kelly >= 0.005)  # Min Kelly fraction if not flat
             )
 
             all_results.append({
@@ -173,6 +194,7 @@ def main():
     parser.add_argument("--min-odds", type=float, default=1.5, help="Min odds (default: 1.5)")
     parser.add_argument("--bankroll", type=int, default=100000, help="Bankroll in yen")
     parser.add_argument("--kelly", type=float, default=0.25, help="Kelly fraction (default: 0.25)")
+    parser.add_argument("--flat", action="store_true", help="Use flat betting (¥1000) instead of Kelly")
     parser.add_argument("--output", type=str, help="Output JSON path")
     parser.add_argument("--value-only", action="store_true", help="Only show value bets")
     args = parser.parse_args()
@@ -204,6 +226,7 @@ def main():
         min_odds=args.min_odds,
         bankroll=args.bankroll,
         kelly_fraction=args.kelly,
+        flat=args.flat,
     )
 
     if df.empty:
@@ -217,9 +240,10 @@ def main():
     value_bets = df[df["is_value_bet"]]
     total_stake = value_bets["recommended_stake"].sum()
 
+    stake_label = "Flat stake" if args.flat else "Kelly stake"
     print(f"\n🎯 UmaEdge Predictions — {len(race_ids)} race(s)")
     print(f"   Filters: EV≥{args.ev_threshold:.0%}, odds {args.min_odds}x-{args.max_odds}x")
-    print(f"   Value bets: {len(value_bets)} | Total Kelly stake: ¥{total_stake:,}")
+    print(f"   Value bets: {len(value_bets)} | Total {stake_label}: ¥{total_stake:,}")
     print("-" * 85)
     print(f"{'Horse':<16} {'Fund':>5} {'Mkt':>5} {'Comb':>5} {'Odds':>5} "
           f"{'EV':>6} {'Kelly':>6} {'Stake':>7} {'Bet':>3}")

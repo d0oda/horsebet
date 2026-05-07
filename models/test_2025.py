@@ -336,7 +336,7 @@ def run_2025_evaluation(
 def run_hybrid_evaluation(
     ev_threshold: float = 0.10,
     output_path: str = None,
-    calibration_method: str = "isotonic",
+    calibration_method: str = "none",
     bet_type: str = "win",
 ):
     """
@@ -597,9 +597,9 @@ def main():
         help="Run hybrid ensemble evaluation (fundamental vs market)",
     )
     parser.add_argument(
-        "--calibration", type=str, default="isotonic",
+        "--calibration", type=str, default="none",
         choices=["none", "platt", "isotonic"],
-        help="Calibration method (default: isotonic)",
+        help="Calibration method (default: none)",
     )
     parser.add_argument(
         "--ev-sweep", action="store_true",

@@ -147,7 +147,7 @@ class HybridEnsemble:
         self,
         fundamental_weight: float = 0.6,
         market_weight: float = 0.4,
-        calibration_method: str = "isotonic",
+        calibration_method: str = "none",
     ):
         """
         Args:

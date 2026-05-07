@@ -165,8 +165,8 @@ class Backtester:
                 # Implied probability from market odds (after take)
                 market_prob = 1.0 / odds
 
-                # EV calculation
-                ev = model_prob - market_prob
+                # EV calculation (ROI)
+                ev = (model_prob * odds) - 1.0
 
                 if ev < self.config.ev_threshold:
                     continue
@@ -289,7 +289,8 @@ class Backtester:
         if b <= 0:
             return 0
 
-        kelly = (b * p - q) / b
+        ev = (p * odds) - 1.0
+        kelly = ev / b
         kelly = max(0, kelly)  # don't bet negative edge
         kelly *= self.config.kelly_fraction  # fractional Kelly
 

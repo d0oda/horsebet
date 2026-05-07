@@ -36,14 +36,14 @@ def run_step_5_2():
     """5.2 — Re-run EV sweep with expanded data + isotonic calibration."""
     banner("Sprint 5.2 — EV Sweep (with odds, isotonic calibration)")
     from models.test_2025 import run_ev_sweep
-    run_ev_sweep(exclude_odds=False, calibration_method="isotonic")
+    run_ev_sweep(exclude_odds=False, calibration_method="none")
 
 
 def run_step_5_3():
     """5.3 — Odds-free backtest EV sweep."""
     banner("Sprint 5.3 — EV Sweep (ODDS-FREE, isotonic calibration)")
     from models.test_2025 import run_ev_sweep
-    run_ev_sweep(exclude_odds=True, calibration_method="isotonic")
+    run_ev_sweep(exclude_odds=True, calibration_method="none")
 
 
 def run_step_5_4():
@@ -54,7 +54,7 @@ def run_step_5_4():
 
     result = run_2025_evaluation(
         ev_threshold=0.05,
-        calibration_method="isotonic",
+        calibration_method="none",
     )
     if result and result.bets:
         modes = analyse_losing_bets(result)

@@ -16,6 +16,7 @@ requests>=2.31
 
 # --- Data Processing ---
 pandas>=2.1
+pyarrow>=14.0
 numpy>=1.26
 
 # --- Machine Learning ---

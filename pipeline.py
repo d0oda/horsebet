@@ -258,13 +258,158 @@ def step_predict(date: str, version: str, ev_threshold: float,
         predict_ids = all_race_ids
         log.info(f"━━━ Step 3: Predicting all {len(predict_ids)} races ({version}) ━━━")
 
-    df = predict_with_filters(
-        race_ids=predict_ids,
-        model_version=version,
-        ev_threshold=ev_threshold,
-        max_odds=max_odds,
-        min_odds=min_odds,
-    )
+    import json
+    from pathlib import Path
+    from models.train import MODELS_DIR
+
+    meta_path = MODELS_DIR / version / "metadata.json"
+    with open(meta_path) as f:
+        meta = json.load(f)
+
+    if meta.get("type") == "hybrid":
+        df = predict_with_filters(
+            race_ids=predict_ids,
+            model_version=version,
+            ev_threshold=ev_threshold,
+            max_odds=max_odds,
+            min_odds=min_odds,
+        )
+    else:
+        import pandas as pd
+        from models.features import FeatureBuilder
+        from models.ensemble import HybridEnsemble
+        from models.predict import _store_predictions, _store_value_bets
+
+        # 1. Build features for ALL races in one pass (single DB fetch)
+        log.info(f"Building features for all {len(predict_ids)} races (bulk)...")
+        fb = FeatureBuilder()
+        features_df = fb.build_features_for_races(predict_ids)
+        if features_df.empty:
+            log.error("No features could be built")
+            df = pd.DataFrame()
+        else:
+            # 2. Load metadata to determine model type
+            from models.train import MODELS_DIR
+            import json
+            meta_path = MODELS_DIR / version / "metadata.json"
+            with open(meta_path) as f:
+                meta = json.load(f)
+
+            is_hybrid = "fundamental_weight" in meta or meta.get("type") == "hybrid"
+
+            if is_hybrid:
+                log.info("Running model inference (HybridEnsemble)...")
+                try:
+                    hybrid = HybridEnsemble.load(version=version)
+                except FileNotFoundError:
+                    log.error(f"Model version '{version}' not found")
+                    return output_path
+
+                all_model_cols = set(hybrid.fund_feature_cols) | set(hybrid.mkt_feature_cols)
+                for col in all_model_cols:
+                    if col not in features_df.columns:
+                        features_df[col] = 0
+
+                preds = hybrid.predict(features_df)
+                combined_probs = preds["combined"]
+                fund_probs = preds["fundamental"]
+                mkt_probs = preds["market"]
+            else:
+                log.info("Running model inference (Standard Ensemble)...")
+                import xgboost as xgb
+                from models.train import load_model, ensemble_predict
+                
+                lgb_model, xgb_model, meta = load_model(version)
+                feature_cols = meta["feature_cols"]
+
+                for col in feature_cols:
+                    if col not in features_df.columns:
+                        features_df[col] = 0
+
+                X = features_df[feature_cols].fillna(0).values
+                lgb_probs = lgb_model.predict(X)
+                xgb_probs = xgb_model.predict(xgb.DMatrix(X, feature_names=feature_cols))
+                model_probs = ensemble_predict(lgb_probs, xgb_probs)
+
+                calibrator = meta.get("calibrator")
+                if calibrator is not None:
+                    model_probs = calibrator.predict(model_probs)
+                    log.info("Applied calibrator to predictions")
+
+                # Replicate the naive 0.6/0.4 blending for non-hybrid models to maintain previous behavior
+                combined_probs = []
+                for i, (_, row) in enumerate(features_df.iterrows()):
+                    model_p = float(model_probs[i])
+                    # If odds_free, overlay pace. If not odds_free, it's an odds-aware model, use directly.
+                    if meta.get("odds_free", False):
+                        pace_p = row.get("pace_win_prob")
+                        pace_p = float(pace_p) if pd.notna(pace_p) else model_p
+                        combined_probs.append(0.6 * model_p + 0.4 * pace_p)
+                    else:
+                        combined_probs.append(model_p)
+                        
+                fund_probs = combined_probs
+                mkt_probs = combined_probs
+
+            # 4. Normalize and detect value bets
+            # Bulk-fetch entry data
+            entry_ids = features_df["entry_id"].tolist()
+            with get_session() as session:
+                entry_rows = session.execute(
+                    text("SELECT id, horse_id, odds_win FROM entries WHERE id = ANY(:ids)"),
+                    {"ids": entry_ids}
+                ).fetchall()
+            entry_map = {r.id: (r.horse_id, r.odds_win or 0) for r in entry_rows}
+
+            # Calculate unnormalized combined probabilities
+            features_df["_unnorm_combined"] = combined_probs
+            race_sums = features_df.groupby("race_id")["_unnorm_combined"].transform("sum")
+            features_df["combined_win"] = features_df["_unnorm_combined"] / race_sums.replace(0, 1)
+
+            result_rows = []
+            for i, (_, row) in enumerate(features_df.iterrows()):
+                entry_id = int(row["entry_id"])
+                race_id = int(row["race_id"])
+                horse_id, odds = entry_map.get(entry_id, (None, 0))
+
+                fund_p = float(fund_probs[i])
+                mkt_p = float(mkt_probs[i])
+                combined_win = row["combined_win"]
+                market_prob = (1.0 / odds) if odds > 0 else 0
+                
+                # Retrieve pace place probabilities
+                pace_place_p = row.get("pace_place_prob")
+                pace_place_p = float(pace_place_p) if pd.notna(pace_place_p) else None
+
+                # Proper EV calculation
+                ev = (combined_win * odds) - 1.0 if odds > 0 else 0
+                
+                # Flat sizing (1000 yen default)
+                quarter_kelly = 0
+                recommended_stake = 1000
+
+                result_rows.append({
+                    "race_id": race_id,
+                    "entry_id": entry_id,
+                    "horse_name": row.get("horse_name", ""),
+                    "model_win_prob": round(fund_p, 4),
+                    "pace_win_prob": round(mkt_p, 4),  # Outputting mkt_p here for UI compatibility
+                    "combined_win_prob": round(combined_win, 4),
+                    "pace_place_prob": round(pace_place_p, 4) if pace_place_p else None,
+                    "odds": odds,
+                    "market_prob": round(market_prob, 4),
+                    "ev": round(ev, 4),
+                    "is_value": ev >= ev_threshold and min_odds <= odds <= max_odds,
+                    "kelly_fraction": quarter_kelly,
+                    "recommended_stake": recommended_stake
+                })
+
+            df = pd.DataFrame(result_rows)
+            df = df.sort_values("combined_win_prob", ascending=False)
+
+            # 5. Store to DB
+            _store_predictions(df, version)
+            _store_value_bets(df, version, ev_threshold)
 
     if df.empty:
         log.error("No predictions generated")
@@ -294,7 +439,14 @@ def step_predict(date: str, version: str, ev_threshold: float,
         log.info(f"✅ Merged {len(new_preds)} updated + {len(kept)} existing predictions")
     else:
         # Save full predictions
-        value_bets = df[df["is_value_bet"]]
+        if "is_value_bet" in df.columns:
+            value_bets = df[df["is_value_bet"]]
+        elif "is_value" in df.columns:
+            value_bets = df[df["is_value"]]
+            df = df.rename(columns={"is_value": "is_value_bet"})
+        else:
+            value_bets = pd.DataFrame()
+
         output_data = {
             "model": version,
             "date": date,
