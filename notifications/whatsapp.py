@@ -56,8 +56,11 @@ class WhatsAppNotifier:
                 timeout=15,
             )
 
-            if resp.status_code == 200:
-                log.info("📨 WhatsApp message sent")
+            if resp.status_code in (200, 210):
+                if resp.status_code == 210:
+                    log.info("📨 WhatsApp message queued (rate limit active)")
+                else:
+                    log.info("📨 WhatsApp message sent")
                 return True
             else:
                 log.warning(f"CallMeBot API error: {resp.status_code} {resp.text}")
