@@ -153,7 +153,7 @@ def _fetch(url: str, retries: int = 3) -> Optional[BeautifulSoup]:
     for attempt in range(retries):
         try:
             _sleep()
-            resp = requests.get(url, headers=HEADERS, timeout=30)
+            resp = requests.get(url, headers=HEADERS, timeout=(10.0, 20.0))
             resp.encoding = "EUC-JP"  # netkeiba uses EUC-JP
             if resp.status_code == 200:
                 return BeautifulSoup(resp.text, "lxml")

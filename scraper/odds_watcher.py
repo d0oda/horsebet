@@ -64,34 +64,39 @@ def fetch_win_odds(race_id: str) -> list[dict]:
         f"https://race.netkeiba.com/api/api_get_jra_odds.html"
         f"?race_id={race_id}&type=1&action=init"
     )
-    try:
-        resp = requests.get(api_url, headers=HEADERS, timeout=15)
-        if resp.status_code == 200:
-            data = _json.loads(resp.text)
-            if data.get("status") != "NG" and isinstance(data.get("data"), dict):
-                odds_data = data["data"].get("odds", {})
-                # Key "1" = tansho (win) odds
-                tansho = odds_data.get("1", {})
-                if tansho and isinstance(tansho, dict):
-                    odds_list = []
-                    for horse_num, values in tansho.items():
-                        # values = [odds_str, unknown, popularity_rank]
-                        if isinstance(values, list) and len(values) >= 1:
-                            odds_str = str(values[0])
-                            if odds_str in ("", "---", "取消", "除外", "0"):
-                                continue
-                            try:
-                                odds_list.append({
-                                    "combination": str(int(horse_num)),
-                                    "odds_value": float(odds_str.replace(",", "")),
-                                })
-                            except (ValueError, TypeError):
-                                continue
-                    if odds_list:
-                        log.info(f"Got {len(odds_list)} odds from API for {race_id}")
-                        return odds_list
-    except Exception as e:
-        log.debug(f"API odds fetch failed for {race_id}: {e}")
+    for attempt in range(3):
+        try:
+            resp = requests.get(api_url, headers=HEADERS, timeout=(5.0, 10.0))
+            if resp.status_code == 200:
+                data = _json.loads(resp.text)
+                if data.get("status") != "NG" and isinstance(data.get("data"), dict):
+                    odds_data = data["data"].get("odds", {})
+                    # Key "1" = tansho (win) odds
+                    tansho = odds_data.get("1", {})
+                    if tansho and isinstance(tansho, dict):
+                        odds_list = []
+                        for horse_num, values in tansho.items():
+                            # values = [odds_str, unknown, popularity_rank]
+                            if isinstance(values, list) and len(values) >= 1:
+                                odds_str = str(values[0])
+                                if odds_str in ("", "---", "取消", "除外", "0"):
+                                    continue
+                                try:
+                                    odds_list.append({
+                                        "combination": str(int(horse_num)),
+                                        "odds_value": float(odds_str.replace(",", "")),
+                                    })
+                                except (ValueError, TypeError):
+                                    continue
+                        if odds_list:
+                            log.info(f"Got {len(odds_list)} odds from API for {race_id}")
+                            return odds_list
+            log.warning(f"API odds fetch failed for {race_id} on attempt {attempt + 1}: status {resp.status_code}")
+        except Exception as e:
+            log.warning(f"API odds fetch exception for {race_id} on attempt {attempt + 1}: {e}")
+        
+        if attempt < 2:
+            time.sleep(2 * (attempt + 1))
 
     return []
 

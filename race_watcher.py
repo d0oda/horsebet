@@ -233,11 +233,7 @@ def format_pre_race_message(race, top_entries, prev_result, prev_race, is_first)
     if lines:
         lines.append(f"{'─' * 24}\n")
 
-    lines.append(
-        f"🏇 *{venue} R{rn}* {post}\n"
-        f"   {race['surface']} {race['distance']}m {race['race_name']}\n"
-    )
-
+    lines.append(f"🏇 *{venue} R{rn}* {post}")
     lines.append("📊 *Top 3 by EV:*")
     medals = ["🥇", "🥈", "🥉"]
     for i, e in enumerate(top_entries[:3]):
@@ -268,6 +264,10 @@ def notify_race(race, prev_race, is_first_at_venue):
 
     if not top3:
         log.info("   ⚠️ No entries for this race")
+        return prev_result
+
+    if top3[0].get("ev", -999) < 20.0:
+        log.info(f"   ⏭️ Skipped: Top EV is {top3[0].get('ev', 0):+.1f}% (below 20% threshold)")
         return prev_result
 
     msg = format_pre_race_message(race, top3, prev_result, prev_race, is_first_at_venue)
@@ -323,19 +323,9 @@ def run_once(date: str, lead_time_min: int):
 
     log.info(f"   {len(ready)} race(s) ready to notify")
 
-    # Startup message on first run
+    # Startup message on first run (removed to only send race info)
     if not notified_ids:
-        venues = sorted(set(r["venue"] for r in races))
-        startup_msg = (
-            f"🏇 *UmaEdge — {date}*\n"
-            f"Venues: {', '.join(venues)}\n"
-            f"Races: {len(races)} ({races[0]['post_time']} – {races[-1]['post_time']})\n"
-            f"Top 3 by EV before each race.\n"
-            f"Let's go! 🍀"
-        )
-        notify_message(startup_msg)
-        log.info("📨 Startup message sent")
-        time_module.sleep(2)
+        log.info("📨 Starting new run, no startup message sent.")
 
     # 4. Notify
     for race in ready:
@@ -350,7 +340,7 @@ def run_once(date: str, lead_time_min: int):
         time_module.sleep(3)
 
     if len(notified_ids) >= len(races):
-        notify_message("🏁 All races complete. See you next time! 🏇")
+        log.info("🏁 All races complete. (Closing message removed)")
 
     state["notified"] = list(notified_ids)
     state["venue_last_race"] = venue_last_race_ids
@@ -375,16 +365,7 @@ def run_continuous(date: str, lead_time_min: int, test_mode: bool):
     venue_last_race: dict[str, dict] = {}
     notified = set()
 
-    venues = sorted(set(r["venue"] for r in races))
-    startup_msg = (
-        f"🏇 *UmaEdge Watcher — {date}*\n"
-        f"Venues: {', '.join(venues)}\n"
-        f"Races: {len(races)} ({races[0]['post_time']} – {races[-1]['post_time']})\n"
-        f"Sending top 3 by EV before each race.\n"
-        f"Let's go! 🍀"
-    )
-    notify_message(startup_msg)
-    log.info("📨 Startup message sent")
+    log.info("📨 Starting new run, no startup message sent.")
 
     while True:
         now = datetime.now(JST)
@@ -400,8 +381,7 @@ def run_continuous(date: str, lead_time_min: int, test_mode: bool):
 
         if next_race is None:
             if len(notified) >= len(races):
-                log.info("✅ All races notified.")
-                notify_message("🏁 All races complete. See you next time! 🏇")
+                log.info("✅ All races notified. (Closing message removed)")
                 break
             remaining = [r for r in races if r["id"] not in notified]
             if remaining:
