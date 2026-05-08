@@ -15,18 +15,30 @@
    ► Bet: #8 ゴーゴータカシ
       Odds: 11.5x | Win Prob: 11.6% | EV: +32.9%
 
+🏇 Race 2 @ Tokyo (05-09)
+   ► Bet: #2 グスク
+      Odds: 9.8x | Win Prob: 13.2% | EV: +28.9%
+
 🏇 Race 5 @ Tokyo (05-09)
    ► Bet: #17 ミッキーキャロット
       Odds: 27.2x | Win Prob: 5.6% | EV: +52.6%
 
+🏇 Race 12 @ Tokyo (05-09)
+   ► Bet: #3 モーニングマジック
+      Odds: 2.5x | Win Prob: 51.4% | EV: +28.5%
+
 🏇 Race 1 @ Kyoto (05-09)
    ► Bet: #10 アーガイルショア
       Odds: 10.6x | Win Prob: 13.7% | EV: +45.0%
+
+🏇 Race 7 @ Kyoto (05-09)
+   ► Bet: #5 ステイクオール
+      Odds: 3.1x | Win Prob: 41.8% | EV: +29.7%
 
 🏇 Race 12 @ Kyoto (05-09)
    ► Bet: #7 ニホンピロデヴィン
       Odds: 2.8x | Win Prob: 47.3% | EV: +32.6%
 
 ============================================================
-💰 Total Recommended Bets: 6
+💰 Total Recommended Bets: 9
 ============================================================
