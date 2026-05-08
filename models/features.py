@@ -1781,31 +1781,34 @@ class FeatureBuilder:
         if race_df.empty:
             return pd.DataFrame()
 
-        log.info("Loading horse/jockey history for rolling features...")
-        history_df = self._load_horse_history()
-        history_df = history_df.sort_values("date", ascending=True)
+        if not hasattr(self, '_horse_groups'):
+            log.info("Loading horse/jockey history for rolling features...")
+            history_df = self._load_horse_history()
+            history_df = history_df.sort_values("date", ascending=True)
 
-        # Pre-index history by entity for O(1) lookups (major speedup)
-        log.info("Pre-indexing history for fast lookups...")
-        self._horse_groups = dict(list(history_df.groupby("horse_id")))
-        self._jockey_groups = (
-            dict(list(history_df.groupby("jockey_id")))
-            if "jockey_id" in history_df.columns else {}
-        )
-        self._trainer_groups = (
-            dict(list(history_df.groupby("trainer_id")))
-            if "trainer_id" in history_df.columns else {}
-        )
-        self._course_groups = (
-            dict(list(history_df.groupby("course_id")))
-            if "course_id" in history_df.columns else {}
-        )
-        log.info(
-            f"Indexed: {len(self._horse_groups)} horses, "
-            f"{len(self._jockey_groups)} jockeys, "
-            f"{len(self._trainer_groups)} trainers, "
-            f"{len(self._course_groups)} courses"
-        )
+            # Pre-index history by entity for O(1) lookups (major speedup)
+            log.info("Pre-indexing history for fast lookups...")
+            self._horse_groups = dict(list(history_df.groupby("horse_id")))
+            self._jockey_groups = (
+                dict(list(history_df.groupby("jockey_id")))
+                if "jockey_id" in history_df.columns else {}
+            )
+            self._trainer_groups = (
+                dict(list(history_df.groupby("trainer_id")))
+                if "trainer_id" in history_df.columns else {}
+            )
+            self._course_groups = (
+                dict(list(history_df.groupby("course_id")))
+                if "course_id" in history_df.columns else {}
+            )
+            log.info(
+                f"Indexed: {len(self._horse_groups)} horses, "
+                f"{len(self._jockey_groups)} jockeys, "
+                f"{len(self._trainer_groups)} trainers, "
+                f"{len(self._course_groups)} courses"
+            )
+        else:
+            history_df = pd.DataFrame(columns=["horse_id", "date", "jockey_id", "trainer_id", "course_id"])
 
         total = len(race_df)
         log.info(f"Building features for {total} entries...")
@@ -2047,13 +2050,13 @@ class FeatureBuilder:
         )
 
         # Clean up group indices
-        for attr in (
-            '_horse_groups', '_jockey_groups', '_trainer_groups', '_course_groups',
-            '_jt_combo_groups', '_speed_baselines', '_field_quality_cache', '_weight_field_cache',
-            '_bms_name_cache', '_bms_offspring_cache',
-        ):
-            if hasattr(self, attr):
-                delattr(self, attr)
+        # for attr in (
+        #     '_horse_groups', '_jockey_groups', '_trainer_groups', '_course_groups',
+        #     '_jt_combo_groups', '_speed_baselines', '_field_quality_cache', '_weight_field_cache',
+        #     '_bms_name_cache', '_bms_offspring_cache',
+        # ):
+        #     if hasattr(self, attr):
+        #         delattr(self, attr)
 
         return df
 

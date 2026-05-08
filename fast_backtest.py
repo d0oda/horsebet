@@ -6,7 +6,7 @@ from scraper.db import get_session
 from sqlalchemy import text
 import pandas as pd
 
-def run_fast(date_str, version="retrain_20260507_1645", ev_threshold=0.2):
+def run_fast(date_str, fb, version="retrain_20260507_1645", ev_threshold=0.2):
     with get_session() as session:
         rows = session.execute(
             text("SELECT id FROM horsebet.races WHERE date = :d ORDER BY course_id, race_number"),
@@ -18,33 +18,37 @@ def run_fast(date_str, version="retrain_20260507_1645", ev_threshold=0.2):
         return
 
     print(f"Building features for {date_str} ({len(race_ids)} races)...")
-    fb = FeatureBuilder()
     features_df = fb.build_features_for_races(race_ids)
 
     if features_df.empty:
         return
 
     from models.train import MODELS_DIR, load_model, ensemble_predict
+    from models.ensemble import HybridEnsemble
     import json
     meta_path = MODELS_DIR / version / "metadata.json"
     with open(meta_path) as f:
         meta = json.load(f)
 
-    lgb_model, xgb_model, meta = load_model(version)
-    feature_cols = meta["feature_cols"]
-    for col in feature_cols:
-        if col not in features_df.columns:
-            features_df[col] = 0
+    if meta.get("type") == "hybrid":
+        hybrid = HybridEnsemble.load(version)
+        model_probs = hybrid.predict(features_df)["combined"]
+    else:
+        lgb_model, xgb_model, meta = load_model(version)
+        feature_cols = meta["feature_cols"]
+        for col in feature_cols:
+            if col not in features_df.columns:
+                features_df[col] = 0
 
-    X = features_df[feature_cols].fillna(0).values
-    lgb_probs = lgb_model.predict(X)
-    import xgboost as xgb
-    xgb_probs = xgb_model.predict(xgb.DMatrix(X, feature_names=feature_cols))
-    model_probs = ensemble_predict(lgb_probs, xgb_probs)
-    
-    calibrator = meta.get("calibrator")
-    if calibrator is not None:
-        model_probs = calibrator.predict(model_probs)
+        X = features_df[feature_cols].fillna(0).values
+        lgb_probs = lgb_model.predict(X)
+        import xgboost as xgb
+        xgb_probs = xgb_model.predict(xgb.DMatrix(X, feature_names=feature_cols))
+        model_probs = ensemble_predict(lgb_probs, xgb_probs)
+        
+        calibrator = meta.get("calibrator")
+        if calibrator is not None:
+            model_probs = calibrator.predict(model_probs)
 
     entry_ids = features_df["entry_id"].tolist()
     with get_session() as session:
@@ -92,8 +96,8 @@ def run_fast(date_str, version="retrain_20260507_1645", ev_threshold=0.2):
     df = pd.DataFrame(result_rows)
     df = df.sort_values("combined_win_prob", ascending=False)
 
-    _store_predictions(df, version)
-    _store_value_bets(df, version, ev_threshold)
+    # _store_predictions(df, version)
+    # _store_value_bets(df, version, ev_threshold)
     
     # Save JSON just for analyze_april.py to work
     import json
@@ -102,9 +106,14 @@ def run_fast(date_str, version="retrain_20260507_1645", ev_threshold=0.2):
         json.dump(out, f, indent=2)
 
 if __name__ == "__main__":
+    import sys
+    version = sys.argv[1] if len(sys.argv) > 1 else "retrain_20260507_1645"
+    ev_threshold = float(sys.argv[2]) if len(sys.argv) > 2 else 0.30
+
     dates = [
         '2026-04-04', '2026-04-05', '2026-04-11', '2026-04-12', 
         '2026-04-18', '2026-04-19', '2026-04-25', '2026-04-26'
     ]
+    fb = FeatureBuilder()
     for d in dates:
-        run_fast(d)
+        run_fast(d, fb, version=version, ev_threshold=ev_threshold)

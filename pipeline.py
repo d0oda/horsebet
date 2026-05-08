@@ -44,7 +44,7 @@ logging.basicConfig(
 log = logging.getLogger("pipeline")
 
 # Odds fetch window: how far ahead (min) to look for upcoming races
-ODDS_WINDOW_MIN = 20   # fetch for races starting within 20 min
+ODDS_WINDOW_MIN = 2880   # fetch for races starting within 48 hours (temporary for pre-race predictions)
 ODDS_FINISHED_GRACE = 5  # skip races finished more than 5 min ago
 
 
@@ -133,7 +133,8 @@ def step_odds(date: str, race_ids: list[str]) -> list[int]:
             continue
 
         # post_time is a time object from DB
-        post_dt = datetime.combine(now_jst.date(), info.post_time, tzinfo=JST)
+        race_date = datetime.strptime(date, "%Y-%m-%d").date()
+        post_dt = datetime.combine(race_date, info.post_time, tzinfo=JST)
         mins_until = (post_dt - now_jst).total_seconds() / 60
 
         if mins_until < -ODDS_FINISHED_GRACE:
@@ -528,7 +529,8 @@ def step_results(date: str, race_ids: list[str]):
     for r in races:
         if not r.post_time:
             continue
-        post_dt = datetime.combine(now_jst.date(), r.post_time, tzinfo=JST)
+        race_date = datetime.strptime(date, "%Y-%m-%d").date()
+        post_dt = datetime.combine(race_date, r.post_time, tzinfo=JST)
         mins_since = (now_jst - post_dt).total_seconds() / 60
         if mins_since > 10:
             # Check if we already have COMPLETE results (all entries have finish_pos)
@@ -606,8 +608,8 @@ Examples:
         """,
     )
     parser.add_argument("--date", required=True, help="Race date (YYYY-MM-DD)")
-    parser.add_argument("--version", default="2026_v2", help="Model version (default: 2026_v2)")
-    parser.add_argument("--ev-threshold", type=float, default=0.30, help="Min EV for value bet (default: 30%%)")
+    parser.add_argument("--version", default="retrain_20260507_1645", help="Model version (default: retrain_20260507_1645)")
+    parser.add_argument("--ev-threshold", type=float, default=0.30, help="Min EV for value bet (default: 30%)")
     parser.add_argument("--max-odds", type=float, default=30.0, help="Max odds filter (default: 30)")
     parser.add_argument("--min-odds", type=float, default=2.0, help="Min odds filter (default: 2.0)")
     parser.add_argument("--skip-scrape", action="store_true", help="Skip race scraping (already in DB)")
