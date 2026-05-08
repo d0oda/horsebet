@@ -28,7 +28,7 @@ def build_data_json(predictions_paths: list, output: str = None):
     global_total_bets = 0
     global_total_winners = 0
     global_total_returns = 0
-    model_name = '2026_v2'
+    model_name = 'retrain_20260507_1645'
     dates = []
 
     for path in predictions_paths:
@@ -87,16 +87,16 @@ def build_data_json(predictions_paths: list, output: str = None):
                     'draw': e.draw,
                     'odds': e.odds_win or 0,
                     'popularity': e.popularity or 0,
-                    'prob_combined': round((p.get('combined_prob', 0)) * 100, 1),
-                    'prob_fund': round((p.get('fundamental_prob', 0)) * 100, 1),
-                    'prob_mkt': round((p.get('market_model_prob', 0)) * 100, 1),
+                    'prob_combined': round((p.get('combined_win_prob', p.get('combined_prob', 0))) * 100, 1),
+                    'prob_fund': round((p.get('model_win_prob', p.get('fundamental_prob', 0))) * 100, 1),
+                    'prob_mkt': round((p.get('pace_win_prob', p.get('market_model_prob', 0))) * 100, 1),
                     'ev': round((p.get('ev', 0)) * 100, 1),
                     'finish_pos': finish,
                     'time_secs': e.time_secs,
                     'last_3f': e.last_3f_secs,
                     'is_winner': finish == 1 if finish else False,
                     'is_bet': False,
-                    '_is_value': p.get('is_value_bet', False),
+                    '_is_value': p.get('is_value_bet', p.get('is_value', False)),
                 })
 
             entries_out.sort(key=lambda x: x['prob_combined'], reverse=True)
@@ -112,7 +112,7 @@ def build_data_json(predictions_paths: list, output: str = None):
                 is_winner = best.get('finish_pos') == 1
                 if is_winner:
                     global_total_winners += 1
-                    global_total_returns += int(best['odds'] * 100)
+                    global_total_returns += int(best['odds'] * 1000)
 
                 all_value_bets.append({
                     'venue': venue_with_date,
@@ -146,7 +146,7 @@ def build_data_json(predictions_paths: list, output: str = None):
                 'date': str(r.date)
             })
 
-    total_stake = global_total_bets * 100
+    total_stake = global_total_bets * 1000
     display_date = " & ".join(sorted(list(set(dates)))) if dates else "Unknown Dates"
     
     data = {
