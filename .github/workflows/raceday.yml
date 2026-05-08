@@ -6,7 +6,7 @@ on:
   # Two cron entries needed: one for late Friday/Saturday, one for early Sat/Sun
   schedule:
     - cron: '*/10 0-8 * * 0,6'    # Sat & Sun 00:00-08:59 UTC
-    - cron: '30/10 23 * * 5,6'    # Fri & Sat 23:30-23:59 UTC (Sat/Sun JST morning)
+    - cron: '30,40,50 23 * * 5,6'    # Fri & Sat 23:30-23:59 UTC (Sat/Sun JST morning)
 
   # Manual trigger with date override
   workflow_dispatch:
@@ -30,6 +30,7 @@ env:
   DATABASE_URL: ${{ secrets.DATABASE_URL }}
   GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
   PYTHON_VERSION: '3.10'
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 permissions:
   contents: write
@@ -83,21 +84,8 @@ jobs:
         run: |
           DATE="${{ steps.date.outputs.date }}"
           FLAGS=""
-
-          # On cron schedule: check if races exist in DB already
-          # Only scrape on the very first run of the day (e.g. 23:30 UTC / 08:30 JST)
-          # Otherwise just update odds
-          HOUR=$(date -u +%H)
-          MINUTE=$(date -u +%M)
           
-          if [ "${{ github.event_name }}" = "schedule" ]; then
-            if [ "$HOUR" = "23" ] && [ "$MINUTE" = "30" ]; then
-              echo "🌅 First run of the day - full scrape enabled"
-            else
-              echo "⚡ Live odds update - skipping scrape"
-              FLAGS="$FLAGS --skip-scrape"
-            fi
-          elif [ "${{ inputs.skip_scrape }}" = "true" ]; then
+          if [ "${{ inputs.skip_scrape }}" = "true" ]; then
             FLAGS="$FLAGS --skip-scrape"
           fi
           
