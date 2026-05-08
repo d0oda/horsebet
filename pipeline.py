@@ -427,6 +427,13 @@ def step_predict(date: str, version: str, ev_threshold: float,
         updated_race_ids = set(race_db_ids)
         kept = [p for p in existing.get("predictions", [])
                 if p.get("race_id") not in updated_race_ids]
+                
+        # Re-evaluate value bets for kept predictions in case EV threshold or odds filters changed
+        for p in kept:
+            ev = p.get("ev", 0)
+            odds = p.get("odds", 0)
+            p["is_value_bet"] = (ev >= ev_threshold) and (min_odds <= odds <= max_odds)
+
         new_preds = df.to_dict(orient="records")
         all_preds = kept + new_preds
 
@@ -616,6 +623,7 @@ Examples:
     parser.add_argument("--skip-odds", action="store_true", help="Skip odds fetching")
     parser.add_argument("--skip-predict", action="store_true", help="Skip prediction (reuse existing)")
     parser.add_argument("--skip-paddock", action="store_true", help="Skip paddock NLP scoring")
+    parser.add_argument("--force-predict", action="store_true", help="Force prediction for all races")
     args = parser.parse_args()
 
     log.info(f"🏇 UmaEdge Pipeline — {args.date}")
@@ -656,15 +664,15 @@ Examples:
     pred_path = f"results/predictions_{args.date}.json"
     if args.skip_predict and Path(pred_path).exists():
         log.info(f"━━━ Step 3: Predict → SKIPPED (using {pred_path}) ━━━")
+    elif args.force_predict or not Path(pred_path).exists():
+        # First run or forced: predict all
+        pred_path = step_predict(args.date, args.version, args.ev_threshold,
+                                 args.max_odds, args.min_odds)
     elif updated_db_ids:
         # Incremental: only re-predict races with freshly updated odds
         pred_path = step_predict(args.date, args.version, args.ev_threshold,
                                  args.max_odds, args.min_odds,
                                  race_db_ids=updated_db_ids)
-    elif not Path(pred_path).exists():
-        # First run: predict all
-        pred_path = step_predict(args.date, args.version, args.ev_threshold,
-                                 args.max_odds, args.min_odds)
     else:
         # No odds updated and predictions exist — skip
         log.info(f"━━━ Step 3: No odds updates, using existing predictions ━━━")
