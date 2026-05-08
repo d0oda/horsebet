@@ -1,0 +1,631 @@
+pipeline	Set up job	﻿2026-05-08T09:10:34.6870986Z Current runner version: '2.334.0'
+pipeline	Set up job	2026-05-08T09:10:34.6948991Z ##[group]Runner Image Provisioner
+pipeline	Set up job	2026-05-08T09:10:34.6950400Z Hosted Compute Agent
+pipeline	Set up job	2026-05-08T09:10:34.6951525Z Version: 20260213.493
+pipeline	Set up job	2026-05-08T09:10:34.6952580Z Commit: 5c115507f6dd24b8de37d8bbe0bb4509d0cc0fa3
+pipeline	Set up job	2026-05-08T09:10:34.6953823Z Build Date: 2026-02-13T00:28:41Z
+pipeline	Set up job	2026-05-08T09:10:34.6955134Z Worker ID: {d4cf8751-441a-4964-9af1-9149f6668a02}
+pipeline	Set up job	2026-05-08T09:10:34.6956309Z Azure Region: northcentralus
+pipeline	Set up job	2026-05-08T09:10:34.6977800Z ##[endgroup]
+pipeline	Set up job	2026-05-08T09:10:34.6980204Z ##[group]Operating System
+pipeline	Set up job	2026-05-08T09:10:34.6981214Z Ubuntu
+pipeline	Set up job	2026-05-08T09:10:34.6982130Z 24.04.4
+pipeline	Set up job	2026-05-08T09:10:34.6982956Z LTS
+pipeline	Set up job	2026-05-08T09:10:34.6983765Z ##[endgroup]
+pipeline	Set up job	2026-05-08T09:10:34.6984773Z ##[group]Runner Image
+pipeline	Set up job	2026-05-08T09:10:34.6985764Z Image: ubuntu-24.04
+pipeline	Set up job	2026-05-08T09:10:34.6986692Z Version: 20260413.86.1
+pipeline	Set up job	2026-05-08T09:10:34.6988881Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260413.86/images/ubuntu/Ubuntu2404-Readme.md
+pipeline	Set up job	2026-05-08T09:10:34.6991740Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260413.86
+pipeline	Set up job	2026-05-08T09:10:34.6993401Z ##[endgroup]
+pipeline	Set up job	2026-05-08T09:10:34.6995110Z ##[group]GITHUB_TOKEN Permissions
+pipeline	Set up job	2026-05-08T09:10:34.7018421Z Contents: write
+pipeline	Set up job	2026-05-08T09:10:34.7019399Z Metadata: read
+pipeline	Set up job	2026-05-08T09:10:34.7020246Z ##[endgroup]
+pipeline	Set up job	2026-05-08T09:10:34.7023432Z Secret source: Actions
+pipeline	Set up job	2026-05-08T09:10:34.7024643Z Prepare workflow directory
+pipeline	Set up job	2026-05-08T09:10:34.7843934Z Prepare all required actions
+pipeline	Set up job	2026-05-08T09:10:34.7898894Z Getting action download info
+pipeline	Set up job	2026-05-08T09:10:35.1772051Z Download action repository 'actions/checkout@v4' (SHA:34e114876b0b11c390a56381ad16ebd13914f8d5)
+pipeline	Set up job	2026-05-08T09:10:35.3115651Z Download action repository 'actions/setup-python@v5' (SHA:a26af69be951a213d495a4c3e4e4022e16d87065)
+pipeline	Set up job	2026-05-08T09:10:35.3989305Z Download action repository 'actions/upload-artifact@v4' (SHA:ea165f8d65b6e75b540449e92b4886f43607fa02)
+pipeline	Set up job	2026-05-08T09:10:35.5200477Z Download action repository 'peaceiris/actions-gh-pages@v4' (SHA:4f9cc6602d3f66b9c108549d475ec49e8ef4d45e)
+pipeline	Set up job	2026-05-08T09:10:35.9940433Z Complete job name: pipeline
+pipeline	Checkout	﻿2026-05-08T09:10:36.0653822Z ##[group]Run actions/checkout@v4
+pipeline	Checkout	2026-05-08T09:10:36.0655115Z with:
+pipeline	Checkout	2026-05-08T09:10:36.0655593Z   repository: d0oda/horsebet
+pipeline	Checkout	2026-05-08T09:10:36.0656314Z   token: ***
+pipeline	Checkout	2026-05-08T09:10:36.0656743Z   ssh-strict: true
+pipeline	Checkout	2026-05-08T09:10:36.0657176Z   ssh-user: git
+pipeline	Checkout	2026-05-08T09:10:36.0658079Z   persist-credentials: true
+pipeline	Checkout	2026-05-08T09:10:36.0658612Z   clean: true
+pipeline	Checkout	2026-05-08T09:10:36.0659055Z   sparse-checkout-cone-mode: true
+pipeline	Checkout	2026-05-08T09:10:36.0659571Z   fetch-depth: 1
+pipeline	Checkout	2026-05-08T09:10:36.0660030Z   fetch-tags: false
+pipeline	Checkout	2026-05-08T09:10:36.0660462Z   show-progress: true
+pipeline	Checkout	2026-05-08T09:10:36.0660903Z   lfs: false
+pipeline	Checkout	2026-05-08T09:10:36.0661303Z   submodules: false
+pipeline	Checkout	2026-05-08T09:10:36.0661741Z   set-safe-directory: true
+pipeline	Checkout	2026-05-08T09:10:36.0662576Z env:
+pipeline	Checkout	2026-05-08T09:10:36.0663781Z   DATABASE_URL: ***
+pipeline	Checkout	2026-05-08T09:10:36.0664223Z   GEMINI_API_KEY: 
+pipeline	Checkout	2026-05-08T09:10:36.0664685Z   PYTHON_VERSION: 3.10
+pipeline	Checkout	2026-05-08T09:10:36.0665172Z   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+pipeline	Checkout	2026-05-08T09:10:36.0665713Z ##[endgroup]
+pipeline	Checkout	2026-05-08T09:10:36.1816624Z Syncing repository: d0oda/horsebet
+pipeline	Checkout	2026-05-08T09:10:36.1819957Z ##[group]Getting Git version info
+pipeline	Checkout	2026-05-08T09:10:36.1821209Z Working directory is '/home/runner/work/horsebet/horsebet'
+pipeline	Checkout	2026-05-08T09:10:36.1822978Z [command]/usr/bin/git version
+pipeline	Checkout	2026-05-08T09:10:36.1829260Z git version 2.53.0
+pipeline	Checkout	2026-05-08T09:10:36.1854925Z ##[endgroup]
+pipeline	Checkout	2026-05-08T09:10:36.1873555Z Temporarily overriding HOME='/home/runner/work/_temp/89394a9b-aced-4250-a550-d6a2aca8e463' before making global git config changes
+pipeline	Checkout	2026-05-08T09:10:36.1878179Z Adding repository directory to the temporary git global config as a safe directory
+pipeline	Checkout	2026-05-08T09:10:36.1881902Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/horsebet/horsebet
+pipeline	Checkout	2026-05-08T09:10:36.1925654Z Deleting the contents of '/home/runner/work/horsebet/horsebet'
+pipeline	Checkout	2026-05-08T09:10:36.1931550Z ##[group]Initializing the repository
+pipeline	Checkout	2026-05-08T09:10:36.1938962Z [command]/usr/bin/git init /home/runner/work/horsebet/horsebet
+pipeline	Checkout	2026-05-08T09:10:36.2020554Z hint: Using 'master' as the name for the initial branch. This default branch name
+pipeline	Checkout	2026-05-08T09:10:36.2028962Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+pipeline	Checkout	2026-05-08T09:10:36.2031143Z hint: to use in all of your new repositories, which will suppress this warning,
+pipeline	Checkout	2026-05-08T09:10:36.2033043Z hint: call:
+pipeline	Checkout	2026-05-08T09:10:36.2034097Z hint:
+pipeline	Checkout	2026-05-08T09:10:36.2035342Z hint: 	git config --global init.defaultBranch <name>
+pipeline	Checkout	2026-05-08T09:10:36.2036878Z hint:
+pipeline	Checkout	2026-05-08T09:10:36.2039593Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+pipeline	Checkout	2026-05-08T09:10:36.2041752Z hint: 'development'. The just-created branch can be renamed via this command:
+pipeline	Checkout	2026-05-08T09:10:36.2043375Z hint:
+pipeline	Checkout	2026-05-08T09:10:36.2044301Z hint: 	git branch -m <name>
+pipeline	Checkout	2026-05-08T09:10:36.2045598Z hint:
+pipeline	Checkout	2026-05-08T09:10:36.2048843Z hint: Disable this message with "git config set advice.defaultBranchName false"
+pipeline	Checkout	2026-05-08T09:10:36.2051077Z Initialized empty Git repository in /home/runner/work/horsebet/horsebet/.git/
+pipeline	Checkout	2026-05-08T09:10:36.2055166Z [command]/usr/bin/git remote add origin https://github.com/d0oda/horsebet
+pipeline	Checkout	2026-05-08T09:10:36.2113470Z ##[endgroup]
+pipeline	Checkout	2026-05-08T09:10:36.2115122Z ##[group]Disabling automatic garbage collection
+pipeline	Checkout	2026-05-08T09:10:36.2118670Z [command]/usr/bin/git config --local gc.auto 0
+pipeline	Checkout	2026-05-08T09:10:36.2161863Z ##[endgroup]
+pipeline	Checkout	2026-05-08T09:10:36.2163392Z ##[group]Setting up auth
+pipeline	Checkout	2026-05-08T09:10:36.2164892Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+pipeline	Checkout	2026-05-08T09:10:36.2202322Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+pipeline	Checkout	2026-05-08T09:10:36.2526474Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+pipeline	Checkout	2026-05-08T09:10:36.2565236Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+pipeline	Checkout	2026-05-08T09:10:36.2818181Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+pipeline	Checkout	2026-05-08T09:10:36.2845139Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+pipeline	Checkout	2026-05-08T09:10:36.3132891Z [command]/usr/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***
+pipeline	Checkout	2026-05-08T09:10:36.3188819Z ##[endgroup]
+pipeline	Checkout	2026-05-08T09:10:36.3189738Z ##[group]Fetching the repository
+pipeline	Checkout	2026-05-08T09:10:36.3191203Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +4cdff92b83af4d89b73240b9e7b3cbaacd175b5c:refs/remotes/origin/main
+pipeline	Checkout	2026-05-08T09:10:37.1490539Z From https://github.com/d0oda/horsebet
+pipeline	Checkout	2026-05-08T09:10:37.1513908Z  * [new ref]         4cdff92b83af4d89b73240b9e7b3cbaacd175b5c -> origin/main
+pipeline	Checkout	2026-05-08T09:10:37.1534263Z ##[endgroup]
+pipeline	Checkout	2026-05-08T09:10:37.1536686Z ##[group]Determining the checkout info
+pipeline	Checkout	2026-05-08T09:10:37.1539592Z ##[endgroup]
+pipeline	Checkout	2026-05-08T09:10:37.1544362Z [command]/usr/bin/git sparse-checkout disable
+pipeline	Checkout	2026-05-08T09:10:37.1589450Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+pipeline	Checkout	2026-05-08T09:10:37.1623069Z ##[group]Checking out the ref
+pipeline	Checkout	2026-05-08T09:10:37.1627273Z [command]/usr/bin/git checkout --progress --force -B main refs/remotes/origin/main
+pipeline	Checkout	2026-05-08T09:10:37.2114556Z Switched to a new branch 'main'
+pipeline	Checkout	2026-05-08T09:10:37.2117545Z branch 'main' set up to track 'origin/main'.
+pipeline	Checkout	2026-05-08T09:10:37.2128239Z ##[endgroup]
+pipeline	Checkout	2026-05-08T09:10:37.2185149Z [command]/usr/bin/git log -1 --format=%H
+pipeline	Checkout	2026-05-08T09:10:37.2212656Z 4cdff92b83af4d89b73240b9e7b3cbaacd175b5c
+pipeline	Set up Python	﻿2026-05-08T09:10:37.2597885Z ##[group]Run actions/setup-python@v5
+pipeline	Set up Python	2026-05-08T09:10:37.2599448Z with:
+pipeline	Set up Python	2026-05-08T09:10:37.2600277Z   python-version: 3.10
+pipeline	Set up Python	2026-05-08T09:10:37.2601231Z   cache: pip
+pipeline	Set up Python	2026-05-08T09:10:37.2602079Z   check-latest: false
+pipeline	Set up Python	2026-05-08T09:10:37.2603379Z   token: ***
+pipeline	Set up Python	2026-05-08T09:10:37.2604257Z   update-environment: true
+pipeline	Set up Python	2026-05-08T09:10:37.2605330Z   allow-prereleases: false
+pipeline	Set up Python	2026-05-08T09:10:37.2606368Z   freethreaded: false
+pipeline	Set up Python	2026-05-08T09:10:37.2607261Z env:
+pipeline	Set up Python	2026-05-08T09:10:37.2610022Z   DATABASE_URL: ***
+pipeline	Set up Python	2026-05-08T09:10:37.2610920Z   GEMINI_API_KEY: 
+pipeline	Set up Python	2026-05-08T09:10:37.2611781Z   PYTHON_VERSION: 3.10
+pipeline	Set up Python	2026-05-08T09:10:37.2612765Z   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+pipeline	Set up Python	2026-05-08T09:10:37.2613949Z ##[endgroup]
+pipeline	Set up Python	2026-05-08T09:10:37.4058889Z ##[group]Installed versions
+pipeline	Set up Python	2026-05-08T09:10:37.4150479Z (node:2066) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+pipeline	Set up Python	2026-05-08T09:10:37.4154597Z (Use `node --trace-deprecation ...` to show where the warning was created)
+pipeline	Set up Python	2026-05-08T09:10:37.4189557Z Successfully set up CPython (3.10.20)
+pipeline	Set up Python	2026-05-08T09:10:37.4191925Z ##[endgroup]
+pipeline	Set up Python	2026-05-08T09:10:37.4947817Z [command]/opt/hostedtoolcache/Python/3.10.20/x64/bin/pip cache dir
+pipeline	Set up Python	2026-05-08T09:10:37.9030840Z /home/runner/.cache/pip
+pipeline	Set up Python	2026-05-08T09:10:38.0131035Z pip cache is not found
+pipeline	Install dependencies	﻿2026-05-08T09:10:38.0296083Z ##[group]Run pip install --upgrade pip
+pipeline	Install dependencies	2026-05-08T09:10:38.0297776Z [36;1mpip install --upgrade pip[0m
+pipeline	Install dependencies	2026-05-08T09:10:38.0298955Z [36;1mpip install -r requirements.txt[0m
+pipeline	Install dependencies	2026-05-08T09:10:38.0330322Z shell: /usr/bin/bash -e {0}
+pipeline	Install dependencies	2026-05-08T09:10:38.0331283Z env:
+pipeline	Install dependencies	2026-05-08T09:10:38.0333733Z   DATABASE_URL: ***
+pipeline	Install dependencies	2026-05-08T09:10:38.0334567Z   GEMINI_API_KEY: 
+pipeline	Install dependencies	2026-05-08T09:10:38.0335374Z   PYTHON_VERSION: 3.10
+pipeline	Install dependencies	2026-05-08T09:10:38.0336300Z   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+pipeline	Install dependencies	2026-05-08T09:10:38.0337953Z   pythonLocation: /opt/hostedtoolcache/Python/3.10.20/x64
+pipeline	Install dependencies	2026-05-08T09:10:38.0339673Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.10.20/x64/lib/pkgconfig
+pipeline	Install dependencies	2026-05-08T09:10:38.0341401Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.10.20/x64
+pipeline	Install dependencies	2026-05-08T09:10:38.0342961Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.10.20/x64
+pipeline	Install dependencies	2026-05-08T09:10:38.0344504Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.10.20/x64
+pipeline	Install dependencies	2026-05-08T09:10:38.0346070Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.10.20/x64/lib
+pipeline	Install dependencies	2026-05-08T09:10:38.0347727Z ##[endgroup]
+pipeline	Install dependencies	2026-05-08T09:10:38.8896793Z Requirement already satisfied: pip in /opt/hostedtoolcache/Python/3.10.20/x64/lib/python3.10/site-packages (26.0.1)
+pipeline	Install dependencies	2026-05-08T09:10:39.0968254Z Collecting pip
+pipeline	Install dependencies	2026-05-08T09:10:39.1586521Z   Downloading pip-26.1.1-py3-none-any.whl.metadata (4.6 kB)
+pipeline	Install dependencies	2026-05-08T09:10:39.1665970Z Downloading pip-26.1.1-py3-none-any.whl (1.8 MB)
+pipeline	Install dependencies	2026-05-08T09:10:39.2171431Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.8/1.8 MB 88.4 MB/s  0:00:00
+pipeline	Install dependencies	2026-05-08T09:10:39.2447234Z Installing collected packages: pip
+pipeline	Install dependencies	2026-05-08T09:10:39.2448677Z   Attempting uninstall: pip
+pipeline	Install dependencies	2026-05-08T09:10:39.2456626Z     Found existing installation: pip 26.0.1
+pipeline	Install dependencies	2026-05-08T09:10:39.2971062Z     Uninstalling pip-26.0.1:
+pipeline	Install dependencies	2026-05-08T09:10:39.3039719Z       Successfully uninstalled pip-26.0.1
+pipeline	Install dependencies	2026-05-08T09:10:40.1484587Z Successfully installed pip-26.1.1
+pipeline	Install dependencies	2026-05-08T09:10:41.6702464Z Collecting sqlalchemy>=2.0 (from -r requirements.txt (line 6))
+pipeline	Install dependencies	2026-05-08T09:10:41.7237286Z   Downloading sqlalchemy-2.0.49-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (9.5 kB)
+pipeline	Install dependencies	2026-05-08T09:10:41.8080297Z Collecting psycopg2-binary>=2.9 (from -r requirements.txt (line 7))
+pipeline	Install dependencies	2026-05-08T09:10:41.8120886Z   Downloading psycopg2_binary-2.9.12-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (4.9 kB)
+pipeline	Install dependencies	2026-05-08T09:10:41.8415695Z Collecting supabase>=2.0 (from -r requirements.txt (line 8))
+pipeline	Install dependencies	2026-05-08T09:10:41.8454380Z   Downloading supabase-2.30.0-py3-none-any.whl.metadata (4.6 kB)
+pipeline	Install dependencies	2026-05-08T09:10:41.8767093Z Collecting selenium>=4.15 (from -r requirements.txt (line 11))
+pipeline	Install dependencies	2026-05-08T09:10:41.8805992Z   Downloading selenium-4.43.0-py3-none-any.whl.metadata (7.5 kB)
+pipeline	Install dependencies	2026-05-08T09:10:41.8988073Z Collecting undetected-chromedriver>=3.5 (from -r requirements.txt (line 12))
+pipeline	Install dependencies	2026-05-08T09:10:41.9025571Z   Downloading undetected-chromedriver-3.5.5.tar.gz (65 kB)
+pipeline	Install dependencies	2026-05-08T09:10:41.9201852Z   Installing build dependencies: started
+pipeline	Install dependencies	2026-05-08T09:10:42.7388926Z   Installing build dependencies: finished with status 'done'
+pipeline	Install dependencies	2026-05-08T09:10:42.7398156Z   Getting requirements to build wheel: started
+pipeline	Install dependencies	2026-05-08T09:10:43.0759263Z   Getting requirements to build wheel: finished with status 'done'
+pipeline	Install dependencies	2026-05-08T09:10:43.0771867Z   Preparing metadata (pyproject.toml): started
+pipeline	Install dependencies	2026-05-08T09:10:43.2567003Z   Preparing metadata (pyproject.toml): finished with status 'done'
+pipeline	Install dependencies	2026-05-08T09:10:43.2747015Z Collecting beautifulsoup4>=4.12 (from -r requirements.txt (line 13))
+pipeline	Install dependencies	2026-05-08T09:10:43.2784757Z   Downloading beautifulsoup4-4.14.3-py3-none-any.whl.metadata (3.8 kB)
+pipeline	Install dependencies	2026-05-08T09:10:43.5193686Z Collecting lxml>=5.0 (from -r requirements.txt (line 14))
+pipeline	Install dependencies	2026-05-08T09:10:43.5258721Z   Downloading lxml-6.1.0-cp310-cp310-manylinux_2_26_x86_64.manylinux_2_28_x86_64.whl.metadata (4.0 kB)
+pipeline	Install dependencies	2026-05-08T09:10:43.5630451Z Collecting requests>=2.31 (from -r requirements.txt (line 15))
+pipeline	Install dependencies	2026-05-08T09:10:43.5688298Z   Downloading requests-2.33.1-py3-none-any.whl.metadata (4.8 kB)
+pipeline	Install dependencies	2026-05-08T09:10:43.7000634Z Collecting pandas>=2.1 (from -r requirements.txt (line 18))
+pipeline	Install dependencies	2026-05-08T09:10:43.7048494Z   Downloading pandas-2.3.3-cp310-cp310-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl.metadata (91 kB)
+pipeline	Install dependencies	2026-05-08T09:10:43.8235129Z Collecting pyarrow>=14.0 (from -r requirements.txt (line 19))
+pipeline	Install dependencies	2026-05-08T09:10:43.8276393Z   Downloading pyarrow-24.0.0-cp310-cp310-manylinux_2_28_x86_64.whl.metadata (3.0 kB)
+pipeline	Install dependencies	2026-05-08T09:10:44.0648382Z Collecting numpy>=1.26 (from -r requirements.txt (line 20))
+pipeline	Install dependencies	2026-05-08T09:10:44.0697593Z   Downloading numpy-2.2.6-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (62 kB)
+pipeline	Install dependencies	2026-05-08T09:10:44.0938115Z Collecting lightgbm>=4.1 (from -r requirements.txt (line 23))
+pipeline	Install dependencies	2026-05-08T09:10:44.1003045Z   Downloading lightgbm-4.6.0-py3-none-manylinux_2_28_x86_64.whl.metadata (17 kB)
+pipeline	Install dependencies	2026-05-08T09:10:44.1375098Z Collecting xgboost>=2.0 (from -r requirements.txt (line 24))
+pipeline	Install dependencies	2026-05-08T09:10:44.1419228Z   Downloading xgboost-3.2.0-py3-none-manylinux_2_28_x86_64.whl.metadata (2.1 kB)
+pipeline	Install dependencies	2026-05-08T09:10:44.2388509Z Collecting scikit-learn>=1.3 (from -r requirements.txt (line 25))
+pipeline	Install dependencies	2026-05-08T09:10:44.2429487Z   Downloading scikit_learn-1.7.2-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (11 kB)
+pipeline	Install dependencies	2026-05-08T09:10:44.2955465Z Collecting shap>=0.43 (from -r requirements.txt (line 26))
+pipeline	Install dependencies	2026-05-08T09:10:44.2995165Z   Downloading shap-0.49.1-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (25 kB)
+pipeline	Install dependencies	2026-05-08T09:10:44.3577584Z Collecting fastapi>=0.104 (from -r requirements.txt (line 29))
+pipeline	Install dependencies	2026-05-08T09:10:44.3617058Z   Downloading fastapi-0.136.1-py3-none-any.whl.metadata (28 kB)
+pipeline	Install dependencies	2026-05-08T09:10:44.3920938Z Collecting uvicorn>=0.24 (from -r requirements.txt (line 30))
+pipeline	Install dependencies	2026-05-08T09:10:44.3957204Z   Downloading uvicorn-0.46.0-py3-none-any.whl.metadata (6.7 kB)
+pipeline	Install dependencies	2026-05-08T09:10:44.4169347Z Collecting gunicorn>=21.0 (from -r requirements.txt (line 31))
+pipeline	Install dependencies	2026-05-08T09:10:44.4212638Z   Downloading gunicorn-26.0.0-py3-none-any.whl.metadata (5.4 kB)
+pipeline	Install dependencies	2026-05-08T09:10:44.5735153Z Collecting pydantic>=2.5 (from -r requirements.txt (line 32))
+pipeline	Install dependencies	2026-05-08T09:10:44.5776649Z   Downloading pydantic-2.13.4-py3-none-any.whl.metadata (109 kB)
+pipeline	Install dependencies	2026-05-08T09:10:44.6054659Z Collecting google-genai>=1.0 (from -r requirements.txt (line 35))
+pipeline	Install dependencies	2026-05-08T09:10:44.6094297Z   Downloading google_genai-2.0.0-py3-none-any.whl.metadata (52 kB)
+pipeline	Install dependencies	2026-05-08T09:10:44.6849840Z Collecting langchain>=0.1 (from -r requirements.txt (line 36))
+pipeline	Install dependencies	2026-05-08T09:10:44.6888733Z   Downloading langchain-1.2.17-py3-none-any.whl.metadata (5.8 kB)
+pipeline	Install dependencies	2026-05-08T09:10:44.7451440Z Collecting pulp>=2.7 (from -r requirements.txt (line 39))
+pipeline	Install dependencies	2026-05-08T09:10:44.7491010Z   Downloading pulp-3.3.1-py3-none-any.whl.metadata (8.3 kB)
+pipeline	Install dependencies	2026-05-08T09:10:44.7681659Z Collecting python-dotenv>=1.0 (from -r requirements.txt (line 42))
+pipeline	Install dependencies	2026-05-08T09:10:44.7718176Z   Downloading python_dotenv-1.2.2-py3-none-any.whl.metadata (27 kB)
+pipeline	Install dependencies	2026-05-08T09:10:44.8002705Z Collecting tqdm>=4.66 (from -r requirements.txt (line 43))
+pipeline	Install dependencies	2026-05-08T09:10:44.8039895Z   Downloading tqdm-4.67.3-py3-none-any.whl.metadata (57 kB)
+pipeline	Install dependencies	2026-05-08T09:10:44.8389080Z Collecting pytest>=7.4 (from -r requirements.txt (line 46))
+pipeline	Install dependencies	2026-05-08T09:10:44.8434438Z   Downloading pytest-9.0.3-py3-none-any.whl.metadata (7.6 kB)
+pipeline	Install dependencies	2026-05-08T09:10:44.8652384Z Collecting pytest-asyncio>=0.23 (from -r requirements.txt (line 47))
+pipeline	Install dependencies	2026-05-08T09:10:44.8693211Z   Downloading pytest_asyncio-1.3.0-py3-none-any.whl.metadata (4.1 kB)
+pipeline	Install dependencies	2026-05-08T09:10:44.8882016Z Collecting httpx>=0.25 (from -r requirements.txt (line 48))
+pipeline	Install dependencies	2026-05-08T09:10:44.8921916Z   Downloading httpx-0.28.1-py3-none-any.whl.metadata (7.1 kB)
+pipeline	Install dependencies	2026-05-08T09:10:45.0595797Z Collecting greenlet>=1 (from sqlalchemy>=2.0->-r requirements.txt (line 6))
+pipeline	Install dependencies	2026-05-08T09:10:45.0638636Z   Downloading greenlet-3.5.0-cp310-cp310-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl.metadata (3.7 kB)
+pipeline	Install dependencies	2026-05-08T09:10:45.0823148Z Collecting typing-extensions>=4.6.0 (from sqlalchemy>=2.0->-r requirements.txt (line 6))
+pipeline	Install dependencies	2026-05-08T09:10:45.0862784Z   Downloading typing_extensions-4.15.0-py3-none-any.whl.metadata (3.3 kB)
+pipeline	Install dependencies	2026-05-08T09:10:45.1044497Z Collecting realtime==2.30.0 (from supabase>=2.0->-r requirements.txt (line 8))
+pipeline	Install dependencies	2026-05-08T09:10:45.1085069Z   Downloading realtime-2.30.0-py3-none-any.whl.metadata (7.0 kB)
+pipeline	Install dependencies	2026-05-08T09:10:45.1262856Z Collecting supabase-functions==2.30.0 (from supabase>=2.0->-r requirements.txt (line 8))
+pipeline	Install dependencies	2026-05-08T09:10:45.1303591Z   Downloading supabase_functions-2.30.0-py3-none-any.whl.metadata (2.4 kB)
+pipeline	Install dependencies	2026-05-08T09:10:45.1484218Z Collecting storage3==2.30.0 (from supabase>=2.0->-r requirements.txt (line 8))
+pipeline	Install dependencies	2026-05-08T09:10:45.1529913Z   Downloading storage3-2.30.0-py3-none-any.whl.metadata (2.1 kB)
+pipeline	Install dependencies	2026-05-08T09:10:45.1768630Z Collecting supabase-auth==2.30.0 (from supabase>=2.0->-r requirements.txt (line 8))
+pipeline	Install dependencies	2026-05-08T09:10:45.1808910Z   Downloading supabase_auth-2.30.0-py3-none-any.whl.metadata (6.4 kB)
+pipeline	Install dependencies	2026-05-08T09:10:45.2041623Z Collecting postgrest==2.30.0 (from supabase>=2.0->-r requirements.txt (line 8))
+pipeline	Install dependencies	2026-05-08T09:10:45.2081421Z   Downloading postgrest-2.30.0-py3-none-any.whl.metadata (3.4 kB)
+pipeline	Install dependencies	2026-05-08T09:10:45.5463417Z Collecting yarl>=1.22.0 (from supabase>=2.0->-r requirements.txt (line 8))
+pipeline	Install dependencies	2026-05-08T09:10:45.5504531Z   Downloading yarl-1.23.0-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (79 kB)
+pipeline	Install dependencies	2026-05-08T09:10:45.5669908Z Collecting deprecation>=2.1.0 (from postgrest==2.30.0->supabase>=2.0->-r requirements.txt (line 8))
+pipeline	Install dependencies	2026-05-08T09:10:45.5705513Z   Downloading deprecation-2.1.0-py2.py3-none-any.whl.metadata (4.6 kB)
+pipeline	Install dependencies	2026-05-08T09:10:45.5913450Z Collecting strenum>=0.4.9 (from postgrest==2.30.0->supabase>=2.0->-r requirements.txt (line 8))
+pipeline	Install dependencies	2026-05-08T09:10:45.5951272Z   Downloading StrEnum-0.4.15-py3-none-any.whl.metadata (5.3 kB)
+pipeline	Install dependencies	2026-05-08T09:10:45.7028212Z Collecting websockets<16,>=11 (from realtime==2.30.0->supabase>=2.0->-r requirements.txt (line 8))
+pipeline	Install dependencies	2026-05-08T09:10:45.7074726Z   Downloading websockets-15.0.1-cp310-cp310-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (6.8 kB)
+pipeline	Install dependencies	2026-05-08T09:10:45.8058423Z Collecting pyiceberg>=0.10.0 (from storage3==2.30.0->supabase>=2.0->-r requirements.txt (line 8))
+pipeline	Install dependencies	2026-05-08T09:10:45.8100796Z   Downloading pyiceberg-0.11.1-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (4.8 kB)
+pipeline	Install dependencies	2026-05-08T09:10:45.8443541Z Collecting pyjwt>=2.10.1 (from pyjwt[crypto]>=2.10.1->supabase-auth==2.30.0->supabase>=2.0->-r requirements.txt (line 8))
+pipeline	Install dependencies	2026-05-08T09:10:45.8480642Z   Downloading pyjwt-2.12.1-py3-none-any.whl.metadata (4.1 kB)
+pipeline	Install dependencies	2026-05-08T09:10:45.8648495Z Collecting annotated-types>=0.6.0 (from pydantic>=2.5->-r requirements.txt (line 32))
+pipeline	Install dependencies	2026-05-08T09:10:45.8687349Z   Downloading annotated_types-0.7.0-py3-none-any.whl.metadata (15 kB)
+pipeline	Install dependencies	2026-05-08T09:10:46.7929531Z Collecting pydantic-core==2.46.4 (from pydantic>=2.5->-r requirements.txt (line 32))
+pipeline	Install dependencies	2026-05-08T09:10:46.7970219Z   Downloading pydantic_core-2.46.4-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (6.6 kB)
+pipeline	Install dependencies	2026-05-08T09:10:47.4663622Z Collecting typing-inspection>=0.4.2 (from pydantic>=2.5->-r requirements.txt (line 32))
+pipeline	Install dependencies	2026-05-08T09:10:47.4705441Z   Downloading typing_inspection-0.4.2-py3-none-any.whl.metadata (2.6 kB)
+pipeline	Install dependencies	2026-05-08T09:10:47.4932964Z Collecting anyio (from httpx>=0.25->-r requirements.txt (line 48))
+pipeline	Install dependencies	2026-05-08T09:10:47.4973459Z   Downloading anyio-4.13.0-py3-none-any.whl.metadata (4.5 kB)
+pipeline	Install dependencies	2026-05-08T09:10:47.5190238Z Collecting certifi (from httpx>=0.25->-r requirements.txt (line 48))
+pipeline	Install dependencies	2026-05-08T09:10:47.5241907Z   Downloading certifi-2026.4.22-py3-none-any.whl.metadata (2.5 kB)
+pipeline	Install dependencies	2026-05-08T09:10:47.5416509Z Collecting httpcore==1.* (from httpx>=0.25->-r requirements.txt (line 48))
+pipeline	Install dependencies	2026-05-08T09:10:47.5460579Z   Downloading httpcore-1.0.9-py3-none-any.whl.metadata (21 kB)
+pipeline	Install dependencies	2026-05-08T09:10:47.5630194Z Collecting idna (from httpx>=0.25->-r requirements.txt (line 48))
+pipeline	Install dependencies	2026-05-08T09:10:47.5671001Z   Downloading idna-3.13-py3-none-any.whl.metadata (8.0 kB)
+pipeline	Install dependencies	2026-05-08T09:10:47.5810971Z Collecting h11>=0.16 (from httpcore==1.*->httpx>=0.25->-r requirements.txt (line 48))
+pipeline	Install dependencies	2026-05-08T09:10:47.5849405Z   Downloading h11-0.16.0-py3-none-any.whl.metadata (8.3 kB)
+pipeline	Install dependencies	2026-05-08T09:10:47.6030744Z Collecting h2<5,>=3 (from httpx[http2]<0.29,>=0.26->postgrest==2.30.0->supabase>=2.0->-r requirements.txt (line 8))
+pipeline	Install dependencies	2026-05-08T09:10:47.6070610Z   Downloading h2-4.3.0-py3-none-any.whl.metadata (5.1 kB)
+pipeline	Install dependencies	2026-05-08T09:10:47.6219409Z Collecting hyperframe<7,>=6.1 (from h2<5,>=3->httpx[http2]<0.29,>=0.26->postgrest==2.30.0->supabase>=2.0->-r requirements.txt (line 8))
+pipeline	Install dependencies	2026-05-08T09:10:47.6257535Z   Downloading hyperframe-6.1.0-py3-none-any.whl.metadata (4.3 kB)
+pipeline	Install dependencies	2026-05-08T09:10:47.6363721Z Collecting hpack<5,>=4.1 (from h2<5,>=3->httpx[http2]<0.29,>=0.26->postgrest==2.30.0->supabase>=2.0->-r requirements.txt (line 8))
+pipeline	Install dependencies	2026-05-08T09:10:47.6411550Z   Downloading hpack-4.1.0-py3-none-any.whl.metadata (4.6 kB)
+pipeline	Install dependencies	2026-05-08T09:10:47.6607550Z Collecting trio<1.0,>=0.31.0 (from selenium>=4.15->-r requirements.txt (line 11))
+pipeline	Install dependencies	2026-05-08T09:10:47.6645046Z   Downloading trio-0.33.0-py3-none-any.whl.metadata (8.5 kB)
+pipeline	Install dependencies	2026-05-08T09:10:47.6773140Z Collecting trio-websocket<1.0,>=0.12.2 (from selenium>=4.15->-r requirements.txt (line 11))
+pipeline	Install dependencies	2026-05-08T09:10:47.6810278Z   Downloading trio_websocket-0.12.2-py3-none-any.whl.metadata (5.1 kB)
+pipeline	Install dependencies	2026-05-08T09:10:47.7038832Z Collecting urllib3<3.0,>=2.6.3 (from urllib3[socks]<3.0,>=2.6.3->selenium>=4.15->-r requirements.txt (line 11))
+pipeline	Install dependencies	2026-05-08T09:10:47.7077014Z   Downloading urllib3-2.7.0-py3-none-any.whl.metadata (6.9 kB)
+pipeline	Install dependencies	2026-05-08T09:10:47.7267984Z Collecting websocket-client<2.0,>=1.8.0 (from selenium>=4.15->-r requirements.txt (line 11))
+pipeline	Install dependencies	2026-05-08T09:10:47.7311122Z   Downloading websocket_client-1.9.0-py3-none-any.whl.metadata (8.3 kB)
+pipeline	Install dependencies	2026-05-08T09:10:47.7479587Z Collecting attrs>=23.2.0 (from trio<1.0,>=0.31.0->selenium>=4.15->-r requirements.txt (line 11))
+pipeline	Install dependencies	2026-05-08T09:10:47.7541626Z   Downloading attrs-26.1.0-py3-none-any.whl.metadata (8.8 kB)
+pipeline	Install dependencies	2026-05-08T09:10:47.7702454Z Collecting sortedcontainers (from trio<1.0,>=0.31.0->selenium>=4.15->-r requirements.txt (line 11))
+pipeline	Install dependencies	2026-05-08T09:10:47.7743939Z   Downloading sortedcontainers-2.4.0-py2.py3-none-any.whl.metadata (10 kB)
+pipeline	Install dependencies	2026-05-08T09:10:47.7848424Z Collecting outcome (from trio<1.0,>=0.31.0->selenium>=4.15->-r requirements.txt (line 11))
+pipeline	Install dependencies	2026-05-08T09:10:47.7885592Z   Downloading outcome-1.3.0.post0-py2.py3-none-any.whl.metadata (2.6 kB)
+pipeline	Install dependencies	2026-05-08T09:10:47.7977182Z Collecting sniffio>=1.3.0 (from trio<1.0,>=0.31.0->selenium>=4.15->-r requirements.txt (line 11))
+pipeline	Install dependencies	2026-05-08T09:10:47.8015987Z   Downloading sniffio-1.3.1-py3-none-any.whl.metadata (3.9 kB)
+pipeline	Install dependencies	2026-05-08T09:10:47.8145064Z Collecting exceptiongroup (from trio<1.0,>=0.31.0->selenium>=4.15->-r requirements.txt (line 11))
+pipeline	Install dependencies	2026-05-08T09:10:47.8183110Z   Downloading exceptiongroup-1.3.1-py3-none-any.whl.metadata (6.7 kB)
+pipeline	Install dependencies	2026-05-08T09:10:47.8343434Z Collecting wsproto>=0.14 (from trio-websocket<1.0,>=0.12.2->selenium>=4.15->-r requirements.txt (line 11))
+pipeline	Install dependencies	2026-05-08T09:10:47.8381842Z   Downloading wsproto-1.3.2-py3-none-any.whl.metadata (5.2 kB)
+pipeline	Install dependencies	2026-05-08T09:10:47.8519684Z Collecting pysocks!=1.5.7,<2.0,>=1.5.6 (from urllib3[socks]<3.0,>=2.6.3->selenium>=4.15->-r requirements.txt (line 11))
+pipeline	Install dependencies	2026-05-08T09:10:47.8557273Z   Downloading PySocks-1.7.1-py3-none-any.whl.metadata (13 kB)
+pipeline	Install dependencies	2026-05-08T09:10:47.8825079Z Collecting soupsieve>=1.6.1 (from beautifulsoup4>=4.12->-r requirements.txt (line 13))
+pipeline	Install dependencies	2026-05-08T09:10:47.8864832Z   Downloading soupsieve-2.8.3-py3-none-any.whl.metadata (4.6 kB)
+pipeline	Install dependencies	2026-05-08T09:10:48.0449201Z Collecting charset_normalizer<4,>=2 (from requests>=2.31->-r requirements.txt (line 15))
+pipeline	Install dependencies	2026-05-08T09:10:48.0498216Z   Downloading charset_normalizer-3.4.7-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (40 kB)
+pipeline	Install dependencies	2026-05-08T09:10:48.0729450Z Collecting python-dateutil>=2.8.2 (from pandas>=2.1->-r requirements.txt (line 18))
+pipeline	Install dependencies	2026-05-08T09:10:48.0766671Z   Downloading python_dateutil-2.9.0.post0-py2.py3-none-any.whl.metadata (8.4 kB)
+pipeline	Install dependencies	2026-05-08T09:10:48.1169061Z Collecting pytz>=2020.1 (from pandas>=2.1->-r requirements.txt (line 18))
+pipeline	Install dependencies	2026-05-08T09:10:48.1213253Z   Downloading pytz-2026.2-py2.py3-none-any.whl.metadata (22 kB)
+pipeline	Install dependencies	2026-05-08T09:10:48.1365007Z Collecting tzdata>=2022.7 (from pandas>=2.1->-r requirements.txt (line 18))
+pipeline	Install dependencies	2026-05-08T09:10:48.1404288Z   Downloading tzdata-2026.2-py2.py3-none-any.whl.metadata (1.4 kB)
+pipeline	Install dependencies	2026-05-08T09:10:48.2875522Z Collecting scipy (from lightgbm>=4.1->-r requirements.txt (line 23))
+pipeline	Install dependencies	2026-05-08T09:10:48.2917763Z   Downloading scipy-1.15.3-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (61 kB)
+pipeline	Install dependencies	2026-05-08T09:10:48.4049244Z Collecting nvidia-nccl-cu12 (from xgboost>=2.0->-r requirements.txt (line 24))
+pipeline	Install dependencies	2026-05-08T09:10:48.4088497Z   Downloading nvidia_nccl_cu12-2.30.4-py3-none-manylinux_2_18_x86_64.whl.metadata (2.1 kB)
+pipeline	Install dependencies	2026-05-08T09:10:48.4425483Z Collecting joblib>=1.2.0 (from scikit-learn>=1.3->-r requirements.txt (line 25))
+pipeline	Install dependencies	2026-05-08T09:10:48.4464494Z   Downloading joblib-1.5.3-py3-none-any.whl.metadata (5.5 kB)
+pipeline	Install dependencies	2026-05-08T09:10:48.4580125Z Collecting threadpoolctl>=3.1.0 (from scikit-learn>=1.3->-r requirements.txt (line 25))
+pipeline	Install dependencies	2026-05-08T09:10:48.4617374Z   Downloading threadpoolctl-3.6.0-py3-none-any.whl.metadata (13 kB)
+pipeline	Install dependencies	2026-05-08T09:10:48.4827316Z Collecting packaging>20.9 (from shap>=0.43->-r requirements.txt (line 26))
+pipeline	Install dependencies	2026-05-08T09:10:48.4862421Z   Downloading packaging-26.2-py3-none-any.whl.metadata (3.5 kB)
+pipeline	Install dependencies	2026-05-08T09:10:48.4957083Z Collecting slicer==0.0.8 (from shap>=0.43->-r requirements.txt (line 26))
+pipeline	Install dependencies	2026-05-08T09:10:48.4994627Z   Downloading slicer-0.0.8-py3-none-any.whl.metadata (4.0 kB)
+pipeline	Install dependencies	2026-05-08T09:10:48.6125740Z Collecting numba>=0.54 (from shap>=0.43->-r requirements.txt (line 26))
+pipeline	Install dependencies	2026-05-08T09:10:48.6165821Z   Downloading numba-0.65.1-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (2.9 kB)
+pipeline	Install dependencies	2026-05-08T09:10:48.6333298Z Collecting cloudpickle (from shap>=0.43->-r requirements.txt (line 26))
+pipeline	Install dependencies	2026-05-08T09:10:48.6371624Z   Downloading cloudpickle-3.1.2-py3-none-any.whl.metadata (7.1 kB)
+pipeline	Install dependencies	2026-05-08T09:10:48.6642412Z Collecting starlette>=0.46.0 (from fastapi>=0.104->-r requirements.txt (line 29))
+pipeline	Install dependencies	2026-05-08T09:10:48.6682741Z   Downloading starlette-1.0.0-py3-none-any.whl.metadata (6.3 kB)
+pipeline	Install dependencies	2026-05-08T09:10:48.6935796Z Collecting annotated-doc>=0.0.2 (from fastapi>=0.104->-r requirements.txt (line 29))
+pipeline	Install dependencies	2026-05-08T09:10:48.6973125Z   Downloading annotated_doc-0.0.4-py3-none-any.whl.metadata (6.6 kB)
+pipeline	Install dependencies	2026-05-08T09:10:48.7152800Z Collecting click>=7.0 (from uvicorn>=0.24->-r requirements.txt (line 30))
+pipeline	Install dependencies	2026-05-08T09:10:48.7231889Z   Downloading click-8.3.3-py3-none-any.whl.metadata (2.6 kB)
+pipeline	Install dependencies	2026-05-08T09:10:48.7620355Z Collecting google-auth<3.0.0,>=2.48.1 (from google-auth[requests]<3.0.0,>=2.48.1->google-genai>=1.0->-r requirements.txt (line 35))
+pipeline	Install dependencies	2026-05-08T09:10:48.7659042Z   Downloading google_auth-2.52.0-py3-none-any.whl.metadata (5.5 kB)
+pipeline	Install dependencies	2026-05-08T09:10:48.7909530Z Collecting tenacity<9.2.0,>=8.2.3 (from google-genai>=1.0->-r requirements.txt (line 35))
+pipeline	Install dependencies	2026-05-08T09:10:48.7948185Z   Downloading tenacity-9.1.4-py3-none-any.whl.metadata (1.2 kB)
+pipeline	Install dependencies	2026-05-08T09:10:48.8095540Z Collecting distro<2,>=1.7.0 (from google-genai>=1.0->-r requirements.txt (line 35))
+pipeline	Install dependencies	2026-05-08T09:10:48.8132451Z   Downloading distro-1.9.0-py3-none-any.whl.metadata (6.8 kB)
+pipeline	Install dependencies	2026-05-08T09:10:48.8437074Z Collecting pyasn1-modules>=0.2.1 (from google-auth<3.0.0,>=2.48.1->google-auth[requests]<3.0.0,>=2.48.1->google-genai>=1.0->-r requirements.txt (line 35))
+pipeline	Install dependencies	2026-05-08T09:10:48.8476187Z   Downloading pyasn1_modules-0.4.2-py3-none-any.whl.metadata (3.5 kB)
+pipeline	Install dependencies	2026-05-08T09:10:49.1220289Z Collecting cryptography>=38.0.3 (from google-auth<3.0.0,>=2.48.1->google-auth[requests]<3.0.0,>=2.48.1->google-genai>=1.0->-r requirements.txt (line 35))
+pipeline	Install dependencies	2026-05-08T09:10:49.1261692Z   Downloading cryptography-48.0.0-cp39-abi3-manylinux_2_34_x86_64.whl.metadata (4.3 kB)
+pipeline	Install dependencies	2026-05-08T09:10:49.1799531Z Collecting langchain-core<2.0.0,>=1.3.2 (from langchain>=0.1->-r requirements.txt (line 36))
+pipeline	Install dependencies	2026-05-08T09:10:49.1840002Z   Downloading langchain_core-1.3.3-py3-none-any.whl.metadata (4.5 kB)
+pipeline	Install dependencies	2026-05-08T09:10:49.2241741Z Collecting langgraph<1.2.0,>=1.1.10 (from langchain>=0.1->-r requirements.txt (line 36))
+pipeline	Install dependencies	2026-05-08T09:10:49.2282041Z   Downloading langgraph-1.1.10-py3-none-any.whl.metadata (8.0 kB)
+pipeline	Install dependencies	2026-05-08T09:10:49.2506249Z Collecting jsonpatch<2.0.0,>=1.33.0 (from langchain-core<2.0.0,>=1.3.2->langchain>=0.1->-r requirements.txt (line 36))
+pipeline	Install dependencies	2026-05-08T09:10:49.2542152Z   Downloading jsonpatch-1.33-py2.py3-none-any.whl.metadata (3.0 kB)
+pipeline	Install dependencies	2026-05-08T09:10:49.2641110Z Collecting langchain-protocol>=0.0.10 (from langchain-core<2.0.0,>=1.3.2->langchain>=0.1->-r requirements.txt (line 36))
+pipeline	Install dependencies	2026-05-08T09:10:49.2678398Z   Downloading langchain_protocol-0.0.15-py3-none-any.whl.metadata (2.4 kB)
+pipeline	Install dependencies	2026-05-08T09:10:49.3390221Z Collecting langsmith<1.0.0,>=0.3.45 (from langchain-core<2.0.0,>=1.3.2->langchain>=0.1->-r requirements.txt (line 36))
+pipeline	Install dependencies	2026-05-08T09:10:49.3430581Z   Downloading langsmith-0.8.3-py3-none-any.whl.metadata (15 kB)
+pipeline	Install dependencies	2026-05-08T09:10:49.3914096Z Collecting pyyaml<7.0.0,>=5.3.0 (from langchain-core<2.0.0,>=1.3.2->langchain>=0.1->-r requirements.txt (line 36))
+pipeline	Install dependencies	2026-05-08T09:10:49.3954739Z   Downloading pyyaml-6.0.3-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (2.4 kB)
+pipeline	Install dependencies	2026-05-08T09:10:49.4724965Z Collecting uuid-utils<1.0,>=0.12.0 (from langchain-core<2.0.0,>=1.3.2->langchain>=0.1->-r requirements.txt (line 36))
+pipeline	Install dependencies	2026-05-08T09:10:49.4765693Z   Downloading uuid_utils-0.14.1-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (4.8 kB)
+pipeline	Install dependencies	2026-05-08T09:10:49.4909402Z Collecting jsonpointer>=1.9 (from jsonpatch<2.0.0,>=1.33.0->langchain-core<2.0.0,>=1.3.2->langchain>=0.1->-r requirements.txt (line 36))
+pipeline	Install dependencies	2026-05-08T09:10:49.4946059Z   Downloading jsonpointer-3.1.1-py3-none-any.whl.metadata (2.4 kB)
+pipeline	Install dependencies	2026-05-08T09:10:49.5191378Z Collecting langgraph-checkpoint<5.0.0,>=2.1.0 (from langgraph<1.2.0,>=1.1.10->langchain>=0.1->-r requirements.txt (line 36))
+pipeline	Install dependencies	2026-05-08T09:10:49.5233347Z   Downloading langgraph_checkpoint-4.0.3-py3-none-any.whl.metadata (5.2 kB)
+pipeline	Install dependencies	2026-05-08T09:10:49.5390670Z Collecting langgraph-prebuilt<1.1.0,>=1.0.12 (from langgraph<1.2.0,>=1.1.10->langchain>=0.1->-r requirements.txt (line 36))
+pipeline	Install dependencies	2026-05-08T09:10:49.5431060Z   Downloading langgraph_prebuilt-1.0.13-py3-none-any.whl.metadata (5.2 kB)
+pipeline	Install dependencies	2026-05-08T09:10:49.5654619Z Collecting langgraph-sdk<0.4.0,>=0.3.0 (from langgraph<1.2.0,>=1.1.10->langchain>=0.1->-r requirements.txt (line 36))
+pipeline	Install dependencies	2026-05-08T09:10:49.5692891Z   Downloading langgraph_sdk-0.3.14-py3-none-any.whl.metadata (1.7 kB)
+pipeline	Install dependencies	2026-05-08T09:10:49.7278860Z Collecting xxhash>=3.5.0 (from langgraph<1.2.0,>=1.1.10->langchain>=0.1->-r requirements.txt (line 36))
+pipeline	Install dependencies	2026-05-08T09:10:49.7324753Z   Downloading xxhash-3.7.0-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (13 kB)
+pipeline	Install dependencies	2026-05-08T09:10:49.7951286Z Collecting ormsgpack>=1.12.0 (from langgraph-checkpoint<5.0.0,>=2.1.0->langgraph<1.2.0,>=1.1.10->langchain>=0.1->-r requirements.txt (line 36))
+pipeline	Install dependencies	2026-05-08T09:10:49.7990673Z   Downloading ormsgpack-1.12.2-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (3.2 kB)
+pipeline	Install dependencies	2026-05-08T09:10:50.0919999Z Collecting orjson>=3.11.5 (from langgraph-sdk<0.4.0,>=0.3.0->langgraph<1.2.0,>=1.1.10->langchain>=0.1->-r requirements.txt (line 36))
+pipeline	Install dependencies	2026-05-08T09:10:50.0961025Z   Downloading orjson-3.11.9-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (41 kB)
+pipeline	Install dependencies	2026-05-08T09:10:50.1202554Z Collecting requests-toolbelt>=1.0.0 (from langsmith<1.0.0,>=0.3.45->langchain-core<2.0.0,>=1.3.2->langchain>=0.1->-r requirements.txt (line 36))
+pipeline	Install dependencies	2026-05-08T09:10:50.1240405Z   Downloading requests_toolbelt-1.0.0-py2.py3-none-any.whl.metadata (14 kB)
+pipeline	Install dependencies	2026-05-08T09:10:50.2140037Z Collecting zstandard>=0.23.0 (from langsmith<1.0.0,>=0.3.45->langchain-core<2.0.0,>=1.3.2->langchain>=0.1->-r requirements.txt (line 36))
+pipeline	Install dependencies	2026-05-08T09:10:50.2180303Z   Downloading zstandard-0.25.0-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (3.3 kB)
+pipeline	Install dependencies	2026-05-08T09:10:50.2382795Z Collecting iniconfig>=1.0.1 (from pytest>=7.4->-r requirements.txt (line 46))
+pipeline	Install dependencies	2026-05-08T09:10:50.2419790Z   Downloading iniconfig-2.3.0-py3-none-any.whl.metadata (2.5 kB)
+pipeline	Install dependencies	2026-05-08T09:10:50.2553802Z Collecting pluggy<2,>=1.5 (from pytest>=7.4->-r requirements.txt (line 46))
+pipeline	Install dependencies	2026-05-08T09:10:50.2590936Z   Downloading pluggy-1.6.0-py3-none-any.whl.metadata (4.8 kB)
+pipeline	Install dependencies	2026-05-08T09:10:50.2789042Z Collecting pygments>=2.7.2 (from pytest>=7.4->-r requirements.txt (line 46))
+pipeline	Install dependencies	2026-05-08T09:10:50.2843588Z   Downloading pygments-2.20.0-py3-none-any.whl.metadata (2.5 kB)
+pipeline	Install dependencies	2026-05-08T09:10:50.3084074Z Collecting tomli>=1 (from pytest>=7.4->-r requirements.txt (line 46))
+pipeline	Install dependencies	2026-05-08T09:10:50.3122329Z   Downloading tomli-2.4.1-py3-none-any.whl.metadata (10 kB)
+pipeline	Install dependencies	2026-05-08T09:10:50.3254858Z Collecting backports-asyncio-runner<2,>=1.1 (from pytest-asyncio>=0.23->-r requirements.txt (line 47))
+pipeline	Install dependencies	2026-05-08T09:10:50.3291339Z   Downloading backports_asyncio_runner-1.2.0-py3-none-any.whl.metadata (7.5 kB)
+pipeline	Install dependencies	2026-05-08T09:10:50.5335488Z Collecting cffi>=2.0.0 (from cryptography>=38.0.3->google-auth<3.0.0,>=2.48.1->google-auth[requests]<3.0.0,>=2.48.1->google-genai>=1.0->-r requirements.txt (line 35))
+pipeline	Install dependencies	2026-05-08T09:10:50.5376152Z   Downloading cffi-2.0.0-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (2.6 kB)
+pipeline	Install dependencies	2026-05-08T09:10:50.5529031Z Collecting pycparser (from cffi>=2.0.0->cryptography>=38.0.3->google-auth<3.0.0,>=2.48.1->google-auth[requests]<3.0.0,>=2.48.1->google-genai>=1.0->-r requirements.txt (line 35))
+pipeline	Install dependencies	2026-05-08T09:10:50.5566474Z   Downloading pycparser-3.0-py3-none-any.whl.metadata (8.2 kB)
+pipeline	Install dependencies	2026-05-08T09:10:50.6359894Z Collecting llvmlite<0.48,>=0.47.0dev0 (from numba>=0.54->shap>=0.43->-r requirements.txt (line 26))
+pipeline	Install dependencies	2026-05-08T09:10:50.6400945Z   Downloading llvmlite-0.47.0-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (5.0 kB)
+pipeline	Install dependencies	2026-05-08T09:10:50.6749670Z Collecting pyasn1<0.7.0,>=0.6.1 (from pyasn1-modules>=0.2.1->google-auth<3.0.0,>=2.48.1->google-auth[requests]<3.0.0,>=2.48.1->google-genai>=1.0->-r requirements.txt (line 35))
+pipeline	Install dependencies	2026-05-08T09:10:50.6788009Z   Downloading pyasn1-0.6.3-py3-none-any.whl.metadata (8.4 kB)
+pipeline	Install dependencies	2026-05-08T09:10:50.7337779Z Collecting mmh3<6.0.0,>=4.0.0 (from pyiceberg>=0.10.0->storage3==2.30.0->supabase>=2.0->-r requirements.txt (line 8))
+pipeline	Install dependencies	2026-05-08T09:10:50.7379381Z   Downloading mmh3-5.2.1-cp310-cp310-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl.metadata (14 kB)
+pipeline	Install dependencies	2026-05-08T09:10:50.7812847Z Collecting rich<15.0.0,>=10.11.0 (from pyiceberg>=0.10.0->storage3==2.30.0->supabase>=2.0->-r requirements.txt (line 8))
+pipeline	Install dependencies	2026-05-08T09:10:50.7852423Z   Downloading rich-14.3.4-py3-none-any.whl.metadata (18 kB)
+pipeline	Install dependencies	2026-05-08T09:10:50.7996790Z Collecting strictyaml<2.0.0,>=1.7.0 (from pyiceberg>=0.10.0->storage3==2.30.0->supabase>=2.0->-r requirements.txt (line 8))
+pipeline	Install dependencies	2026-05-08T09:10:50.8033488Z   Downloading strictyaml-1.7.3-py3-none-any.whl.metadata (11 kB)
+pipeline	Install dependencies	2026-05-08T09:10:50.8311726Z Collecting fsspec>=2023.1.0 (from pyiceberg>=0.10.0->storage3==2.30.0->supabase>=2.0->-r requirements.txt (line 8))
+pipeline	Install dependencies	2026-05-08T09:10:50.8354104Z   Downloading fsspec-2026.4.0-py3-none-any.whl.metadata (10 kB)
+pipeline	Install dependencies	2026-05-08T09:10:50.8887527Z Collecting pyparsing<4.0.0,>=3.1.0 (from pyiceberg>=0.10.0->storage3==2.30.0->supabase>=2.0->-r requirements.txt (line 8))
+pipeline	Install dependencies	2026-05-08T09:10:50.8923652Z   Downloading pyparsing-3.3.2-py3-none-any.whl.metadata (5.8 kB)
+pipeline	Install dependencies	2026-05-08T09:10:50.9588357Z Collecting pyroaring<2.0.0,>=1.0.0 (from pyiceberg>=0.10.0->storage3==2.30.0->supabase>=2.0->-r requirements.txt (line 8))
+pipeline	Install dependencies	2026-05-08T09:10:50.9630953Z   Downloading pyroaring-1.1.0-cp310-cp310-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl.metadata (11 kB)
+pipeline	Install dependencies	2026-05-08T09:10:50.9803077Z Collecting cachetools<7.0,>=5.5 (from pyiceberg>=0.10.0->storage3==2.30.0->supabase>=2.0->-r requirements.txt (line 8))
+pipeline	Install dependencies	2026-05-08T09:10:50.9842063Z   Downloading cachetools-6.2.6-py3-none-any.whl.metadata (5.6 kB)
+pipeline	Install dependencies	2026-05-08T09:10:51.0054803Z Collecting markdown-it-py>=2.2.0 (from rich<15.0.0,>=10.11.0->pyiceberg>=0.10.0->storage3==2.30.0->supabase>=2.0->-r requirements.txt (line 8))
+pipeline	Install dependencies	2026-05-08T09:10:51.0093943Z   Downloading markdown_it_py-4.2.0-py3-none-any.whl.metadata (7.4 kB)
+pipeline	Install dependencies	2026-05-08T09:10:51.0323771Z Collecting mdurl~=0.1 (from markdown-it-py>=2.2.0->rich<15.0.0,>=10.11.0->pyiceberg>=0.10.0->storage3==2.30.0->supabase>=2.0->-r requirements.txt (line 8))
+pipeline	Install dependencies	2026-05-08T09:10:51.0372699Z   Downloading mdurl-0.1.2-py3-none-any.whl.metadata (1.6 kB)
+pipeline	Install dependencies	2026-05-08T09:10:51.0686065Z Collecting six>=1.5 (from python-dateutil>=2.8.2->pandas>=2.1->-r requirements.txt (line 18))
+pipeline	Install dependencies	2026-05-08T09:10:51.0727989Z   Downloading six-1.17.0-py2.py3-none-any.whl.metadata (1.7 kB)
+pipeline	Install dependencies	2026-05-08T09:10:51.3803411Z Collecting multidict>=4.0 (from yarl>=1.22.0->supabase>=2.0->-r requirements.txt (line 8))
+pipeline	Install dependencies	2026-05-08T09:10:51.3844394Z   Downloading multidict-6.7.1-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (5.3 kB)
+pipeline	Install dependencies	2026-05-08T09:10:51.4451116Z Collecting propcache>=0.2.1 (from yarl>=1.22.0->supabase>=2.0->-r requirements.txt (line 8))
+pipeline	Install dependencies	2026-05-08T09:10:51.4493476Z   Downloading propcache-0.4.1-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (13 kB)
+pipeline	Install dependencies	2026-05-08T09:10:51.4684154Z Downloading sqlalchemy-2.0.49-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (3.2 MB)
+pipeline	Install dependencies	2026-05-08T09:10:51.4877254Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 3.2/3.2 MB 216.8 MB/s  0:00:00
+pipeline	Install dependencies	2026-05-08T09:10:51.4913349Z Downloading psycopg2_binary-2.9.12-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (4.3 MB)
+pipeline	Install dependencies	2026-05-08T09:10:51.5108305Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 4.3/4.3 MB 267.8 MB/s  0:00:00
+pipeline	Install dependencies	2026-05-08T09:10:51.5134714Z Downloading supabase-2.30.0-py3-none-any.whl (16 kB)
+pipeline	Install dependencies	2026-05-08T09:10:51.5190288Z Downloading postgrest-2.30.0-py3-none-any.whl (23 kB)
+pipeline	Install dependencies	2026-05-08T09:10:51.5246614Z Downloading realtime-2.30.0-py3-none-any.whl (22 kB)
+pipeline	Install dependencies	2026-05-08T09:10:51.5302376Z Downloading storage3-2.30.0-py3-none-any.whl (28 kB)
+pipeline	Install dependencies	2026-05-08T09:10:51.5363415Z Downloading supabase_auth-2.30.0-py3-none-any.whl (48 kB)
+pipeline	Install dependencies	2026-05-08T09:10:51.5420414Z Downloading supabase_functions-2.30.0-py3-none-any.whl (8.8 kB)
+pipeline	Install dependencies	2026-05-08T09:10:51.5475274Z Downloading pydantic-2.13.4-py3-none-any.whl (472 kB)
+pipeline	Install dependencies	2026-05-08T09:10:51.5546173Z Downloading pydantic_core-2.46.4-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (2.1 MB)
+pipeline	Install dependencies	2026-05-08T09:10:51.5648194Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 2.1/2.1 MB 245.2 MB/s  0:00:00
+pipeline	Install dependencies	2026-05-08T09:10:51.5683449Z Downloading httpx-0.28.1-py3-none-any.whl (73 kB)
+pipeline	Install dependencies	2026-05-08T09:10:51.5740178Z Downloading httpcore-1.0.9-py3-none-any.whl (78 kB)
+pipeline	Install dependencies	2026-05-08T09:10:51.5799447Z Downloading h2-4.3.0-py3-none-any.whl (61 kB)
+pipeline	Install dependencies	2026-05-08T09:10:51.5854521Z Downloading hpack-4.1.0-py3-none-any.whl (34 kB)
+pipeline	Install dependencies	2026-05-08T09:10:51.5909272Z Downloading hyperframe-6.1.0-py3-none-any.whl (13 kB)
+pipeline	Install dependencies	2026-05-08T09:10:51.5968752Z Downloading websockets-15.0.1-cp310-cp310-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl (181 kB)
+pipeline	Install dependencies	2026-05-08T09:10:51.6034047Z Downloading selenium-4.43.0-py3-none-any.whl (9.6 MB)
+pipeline	Install dependencies	2026-05-08T09:10:51.6505085Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 9.6/9.6 MB 219.6 MB/s  0:00:00
+pipeline	Install dependencies	2026-05-08T09:10:51.6541271Z Downloading trio-0.33.0-py3-none-any.whl (510 kB)
+pipeline	Install dependencies	2026-05-08T09:10:51.6609921Z Downloading trio_websocket-0.12.2-py3-none-any.whl (21 kB)
+pipeline	Install dependencies	2026-05-08T09:10:51.6668454Z Downloading typing_extensions-4.15.0-py3-none-any.whl (44 kB)
+pipeline	Install dependencies	2026-05-08T09:10:51.6723108Z Downloading urllib3-2.7.0-py3-none-any.whl (131 kB)
+pipeline	Install dependencies	2026-05-08T09:10:51.6780204Z Downloading PySocks-1.7.1-py3-none-any.whl (16 kB)
+pipeline	Install dependencies	2026-05-08T09:10:51.6834662Z Downloading websocket_client-1.9.0-py3-none-any.whl (82 kB)
+pipeline	Install dependencies	2026-05-08T09:10:51.6893719Z Downloading beautifulsoup4-4.14.3-py3-none-any.whl (107 kB)
+pipeline	Install dependencies	2026-05-08T09:10:51.6953727Z Downloading lxml-6.1.0-cp310-cp310-manylinux_2_26_x86_64.manylinux_2_28_x86_64.whl (5.3 MB)
+pipeline	Install dependencies	2026-05-08T09:10:51.7138486Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 5.3/5.3 MB 323.5 MB/s  0:00:00
+pipeline	Install dependencies	2026-05-08T09:10:51.7177692Z Downloading requests-2.33.1-py3-none-any.whl (64 kB)
+pipeline	Install dependencies	2026-05-08T09:10:51.7240753Z Downloading charset_normalizer-3.4.7-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (216 kB)
+pipeline	Install dependencies	2026-05-08T09:10:51.7304086Z Downloading idna-3.13-py3-none-any.whl (68 kB)
+pipeline	Install dependencies	2026-05-08T09:10:51.7363514Z Downloading pandas-2.3.3-cp310-cp310-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl (12.8 MB)
+pipeline	Install dependencies	2026-05-08T09:10:51.7837201Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 12.8/12.8 MB 285.0 MB/s  0:00:00
+pipeline	Install dependencies	2026-05-08T09:10:51.7880157Z Downloading pyarrow-24.0.0-cp310-cp310-manylinux_2_28_x86_64.whl (48.8 MB)
+pipeline	Install dependencies	2026-05-08T09:10:51.9575833Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 48.8/48.8 MB 292.7 MB/s  0:00:00
+pipeline	Install dependencies	2026-05-08T09:10:51.9621179Z Downloading numpy-2.2.6-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (16.8 MB)
+pipeline	Install dependencies	2026-05-08T09:10:52.0225297Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 16.8/16.8 MB 298.2 MB/s  0:00:00
+pipeline	Install dependencies	2026-05-08T09:10:52.0257023Z Downloading lightgbm-4.6.0-py3-none-manylinux_2_28_x86_64.whl (3.6 MB)
+pipeline	Install dependencies	2026-05-08T09:10:52.0418964Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 3.6/3.6 MB 287.2 MB/s  0:00:00
+pipeline	Install dependencies	2026-05-08T09:10:52.0459129Z Downloading xgboost-3.2.0-py3-none-manylinux_2_28_x86_64.whl (131.7 MB)
+pipeline	Install dependencies	2026-05-08T09:10:52.7602773Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 131.7/131.7 MB 185.0 MB/s  0:00:00
+pipeline	Install dependencies	2026-05-08T09:10:52.7643928Z Downloading scikit_learn-1.7.2-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (9.7 MB)
+pipeline	Install dependencies	2026-05-08T09:10:52.8141042Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 9.7/9.7 MB 201.6 MB/s  0:00:00
+pipeline	Install dependencies	2026-05-08T09:10:52.8191229Z Downloading shap-0.49.1-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (1.0 MB)
+pipeline	Install dependencies	2026-05-08T09:10:52.8256815Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.0/1.0 MB 197.8 MB/s  0:00:00
+pipeline	Install dependencies	2026-05-08T09:10:52.8294212Z Downloading slicer-0.0.8-py3-none-any.whl (15 kB)
+pipeline	Install dependencies	2026-05-08T09:10:52.8352585Z Downloading fastapi-0.136.1-py3-none-any.whl (117 kB)
+pipeline	Install dependencies	2026-05-08T09:10:52.8412744Z Downloading uvicorn-0.46.0-py3-none-any.whl (70 kB)
+pipeline	Install dependencies	2026-05-08T09:10:52.8469018Z Downloading gunicorn-26.0.0-py3-none-any.whl (212 kB)
+pipeline	Install dependencies	2026-05-08T09:10:52.8531589Z Downloading google_genai-2.0.0-py3-none-any.whl (791 kB)
+pipeline	Install dependencies	2026-05-08T09:10:52.8602644Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 791.9/791.9 kB 129.8 MB/s  0:00:00
+pipeline	Install dependencies	2026-05-08T09:10:52.8641562Z Downloading anyio-4.13.0-py3-none-any.whl (114 kB)
+pipeline	Install dependencies	2026-05-08T09:10:52.8698761Z Downloading distro-1.9.0-py3-none-any.whl (20 kB)
+pipeline	Install dependencies	2026-05-08T09:10:52.8754889Z Downloading google_auth-2.52.0-py3-none-any.whl (245 kB)
+pipeline	Install dependencies	2026-05-08T09:10:52.8813903Z Downloading tenacity-9.1.4-py3-none-any.whl (28 kB)
+pipeline	Install dependencies	2026-05-08T09:10:52.8868642Z Downloading langchain-1.2.17-py3-none-any.whl (113 kB)
+pipeline	Install dependencies	2026-05-08T09:10:52.8927230Z Downloading langchain_core-1.3.3-py3-none-any.whl (543 kB)
+pipeline	Install dependencies	2026-05-08T09:10:52.8978542Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 543.9/543.9 kB 110.1 MB/s  0:00:00
+pipeline	Install dependencies	2026-05-08T09:10:52.9015712Z Downloading jsonpatch-1.33-py2.py3-none-any.whl (12 kB)
+pipeline	Install dependencies	2026-05-08T09:10:52.9068251Z Downloading langgraph-1.1.10-py3-none-any.whl (173 kB)
+pipeline	Install dependencies	2026-05-08T09:10:52.9125598Z Downloading langgraph_checkpoint-4.0.3-py3-none-any.whl (51 kB)
+pipeline	Install dependencies	2026-05-08T09:10:52.9181566Z Downloading langgraph_prebuilt-1.0.13-py3-none-any.whl (37 kB)
+pipeline	Install dependencies	2026-05-08T09:10:52.9241869Z Downloading langgraph_sdk-0.3.14-py3-none-any.whl (97 kB)
+pipeline	Install dependencies	2026-05-08T09:10:52.9306566Z Downloading langsmith-0.8.3-py3-none-any.whl (399 kB)
+pipeline	Install dependencies	2026-05-08T09:10:52.9386420Z Downloading pyyaml-6.0.3-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (770 kB)
+pipeline	Install dependencies	2026-05-08T09:10:52.9446823Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 770.3/770.3 kB 160.3 MB/s  0:00:00
+pipeline	Install dependencies	2026-05-08T09:10:52.9486727Z Downloading uuid_utils-0.14.1-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (345 kB)
+pipeline	Install dependencies	2026-05-08T09:10:52.9569150Z Downloading pulp-3.3.1-py3-none-any.whl (16.4 MB)
+pipeline	Install dependencies	2026-05-08T09:10:53.0137052Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 16.4/16.4 MB 305.5 MB/s  0:00:00
+pipeline	Install dependencies	2026-05-08T09:10:53.0177252Z Downloading python_dotenv-1.2.2-py3-none-any.whl (22 kB)
+pipeline	Install dependencies	2026-05-08T09:10:53.0236603Z Downloading tqdm-4.67.3-py3-none-any.whl (78 kB)
+pipeline	Install dependencies	2026-05-08T09:10:53.0296724Z Downloading pytest-9.0.3-py3-none-any.whl (375 kB)
+pipeline	Install dependencies	2026-05-08T09:10:53.0376921Z Downloading pluggy-1.6.0-py3-none-any.whl (20 kB)
+pipeline	Install dependencies	2026-05-08T09:10:53.0440093Z Downloading pytest_asyncio-1.3.0-py3-none-any.whl (15 kB)
+pipeline	Install dependencies	2026-05-08T09:10:53.0623323Z Downloading backports_asyncio_runner-1.2.0-py3-none-any.whl (12 kB)
+pipeline	Install dependencies	2026-05-08T09:10:53.0684071Z Downloading annotated_doc-0.0.4-py3-none-any.whl (5.3 kB)
+pipeline	Install dependencies	2026-05-08T09:10:53.0740391Z Downloading annotated_types-0.7.0-py3-none-any.whl (13 kB)
+pipeline	Install dependencies	2026-05-08T09:10:53.0795882Z Downloading attrs-26.1.0-py3-none-any.whl (67 kB)
+pipeline	Install dependencies	2026-05-08T09:10:53.0858275Z Downloading certifi-2026.4.22-py3-none-any.whl (135 kB)
+pipeline	Install dependencies	2026-05-08T09:10:53.0916285Z Downloading click-8.3.3-py3-none-any.whl (110 kB)
+pipeline	Install dependencies	2026-05-08T09:10:53.0980453Z Downloading cryptography-48.0.0-cp39-abi3-manylinux_2_34_x86_64.whl (4.7 MB)
+pipeline	Install dependencies	2026-05-08T09:10:53.1168736Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 4.7/4.7 MB 310.3 MB/s  0:00:00
+pipeline	Install dependencies	2026-05-08T09:10:53.1204099Z Downloading cffi-2.0.0-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (216 kB)
+pipeline	Install dependencies	2026-05-08T09:10:53.1262835Z Downloading deprecation-2.1.0-py2.py3-none-any.whl (11 kB)
+pipeline	Install dependencies	2026-05-08T09:10:53.1342446Z Downloading exceptiongroup-1.3.1-py3-none-any.whl (16 kB)
+pipeline	Install dependencies	2026-05-08T09:10:53.1405614Z Downloading greenlet-3.5.0-cp310-cp310-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl (613 kB)
+pipeline	Install dependencies	2026-05-08T09:10:53.1459079Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 613.4/613.4 kB 125.8 MB/s  0:00:00
+pipeline	Install dependencies	2026-05-08T09:10:53.1494595Z Downloading h11-0.16.0-py3-none-any.whl (37 kB)
+pipeline	Install dependencies	2026-05-08T09:10:53.1548977Z Downloading iniconfig-2.3.0-py3-none-any.whl (7.5 kB)
+pipeline	Install dependencies	2026-05-08T09:10:53.1607550Z Downloading joblib-1.5.3-py3-none-any.whl (309 kB)
+pipeline	Install dependencies	2026-05-08T09:10:53.1668026Z Downloading jsonpointer-3.1.1-py3-none-any.whl (7.7 kB)
+pipeline	Install dependencies	2026-05-08T09:10:53.1721170Z Downloading langchain_protocol-0.0.15-py3-none-any.whl (7.0 kB)
+pipeline	Install dependencies	2026-05-08T09:10:53.1788720Z Downloading numba-0.65.1-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (3.7 MB)
+pipeline	Install dependencies	2026-05-08T09:10:53.1941108Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 3.7/3.7 MB 288.8 MB/s  0:00:00
+pipeline	Install dependencies	2026-05-08T09:10:53.1989334Z Downloading llvmlite-0.47.0-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (56.3 MB)
+pipeline	Install dependencies	2026-05-08T09:10:53.3811468Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 56.3/56.3 MB 313.0 MB/s  0:00:00
+pipeline	Install dependencies	2026-05-08T09:10:53.3854417Z Downloading orjson-3.11.9-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (134 kB)
+pipeline	Install dependencies	2026-05-08T09:10:53.3936276Z Downloading ormsgpack-1.12.2-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (212 kB)
+pipeline	Install dependencies	2026-05-08T09:10:53.3998685Z Downloading outcome-1.3.0.post0-py2.py3-none-any.whl (10 kB)
+pipeline	Install dependencies	2026-05-08T09:10:53.4067167Z Downloading packaging-26.2-py3-none-any.whl (100 kB)
+pipeline	Install dependencies	2026-05-08T09:10:53.4125163Z Downloading pyasn1_modules-0.4.2-py3-none-any.whl (181 kB)
+pipeline	Install dependencies	2026-05-08T09:10:53.4185235Z Downloading pyasn1-0.6.3-py3-none-any.whl (83 kB)
+pipeline	Install dependencies	2026-05-08T09:10:53.4245041Z Downloading pygments-2.20.0-py3-none-any.whl (1.2 MB)
+pipeline	Install dependencies	2026-05-08T09:10:53.4330467Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.2/1.2 MB 213.8 MB/s  0:00:00
+pipeline	Install dependencies	2026-05-08T09:10:53.4377570Z Downloading pyiceberg-0.11.1-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (705 kB)
+pipeline	Install dependencies	2026-05-08T09:10:53.4441200Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 705.6/705.6 kB 148.7 MB/s  0:00:00
+pipeline	Install dependencies	2026-05-08T09:10:53.4478880Z Downloading cachetools-6.2.6-py3-none-any.whl (11 kB)
+pipeline	Install dependencies	2026-05-08T09:10:53.4533990Z Downloading mmh3-5.2.1-cp310-cp310-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl (101 kB)
+pipeline	Install dependencies	2026-05-08T09:10:53.4590866Z Downloading pyparsing-3.3.2-py3-none-any.whl (122 kB)
+pipeline	Install dependencies	2026-05-08T09:10:53.4671375Z Downloading pyroaring-1.1.0-cp310-cp310-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl (2.2 MB)
+pipeline	Install dependencies	2026-05-08T09:10:53.4769869Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 2.2/2.2 MB 263.0 MB/s  0:00:00
+pipeline	Install dependencies	2026-05-08T09:10:53.4806673Z Downloading rich-14.3.4-py3-none-any.whl (310 kB)
+pipeline	Install dependencies	2026-05-08T09:10:53.4866272Z Downloading strictyaml-1.7.3-py3-none-any.whl (123 kB)
+pipeline	Install dependencies	2026-05-08T09:10:53.4922567Z Downloading zstandard-0.25.0-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (5.6 MB)
+pipeline	Install dependencies	2026-05-08T09:10:53.5158794Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 5.6/5.6 MB 260.0 MB/s  0:00:00
+pipeline	Install dependencies	2026-05-08T09:10:53.5197209Z Downloading fsspec-2026.4.0-py3-none-any.whl (203 kB)
+pipeline	Install dependencies	2026-05-08T09:10:53.5285884Z Downloading markdown_it_py-4.2.0-py3-none-any.whl (91 kB)
+pipeline	Install dependencies	2026-05-08T09:10:53.5342955Z Downloading mdurl-0.1.2-py3-none-any.whl (10.0 kB)
+pipeline	Install dependencies	2026-05-08T09:10:53.5402243Z Downloading pyjwt-2.12.1-py3-none-any.whl (29 kB)
+pipeline	Install dependencies	2026-05-08T09:10:53.5455121Z Downloading python_dateutil-2.9.0.post0-py2.py3-none-any.whl (229 kB)
+pipeline	Install dependencies	2026-05-08T09:10:53.5518135Z Downloading pytz-2026.2-py2.py3-none-any.whl (510 kB)
+pipeline	Install dependencies	2026-05-08T09:10:53.5576770Z Downloading requests_toolbelt-1.0.0-py2.py3-none-any.whl (54 kB)
+pipeline	Install dependencies	2026-05-08T09:10:53.5635017Z Downloading scipy-1.15.3-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (37.7 MB)
+pipeline	Install dependencies	2026-05-08T09:10:53.6911034Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 37.7/37.7 MB 303.4 MB/s  0:00:00
+pipeline	Install dependencies	2026-05-08T09:10:53.6938037Z Downloading six-1.17.0-py2.py3-none-any.whl (11 kB)
+pipeline	Install dependencies	2026-05-08T09:10:53.6992397Z Downloading sniffio-1.3.1-py3-none-any.whl (10 kB)
+pipeline	Install dependencies	2026-05-08T09:10:53.7046144Z Downloading soupsieve-2.8.3-py3-none-any.whl (37 kB)
+pipeline	Install dependencies	2026-05-08T09:10:53.7100445Z Downloading starlette-1.0.0-py3-none-any.whl (72 kB)
+pipeline	Install dependencies	2026-05-08T09:10:53.7153916Z Downloading StrEnum-0.4.15-py3-none-any.whl (8.9 kB)
+pipeline	Install dependencies	2026-05-08T09:10:53.7208005Z Downloading threadpoolctl-3.6.0-py3-none-any.whl (18 kB)
+pipeline	Install dependencies	2026-05-08T09:10:53.7265152Z Downloading tomli-2.4.1-py3-none-any.whl (14 kB)
+pipeline	Install dependencies	2026-05-08T09:10:53.7321051Z Downloading typing_inspection-0.4.2-py3-none-any.whl (14 kB)
+pipeline	Install dependencies	2026-05-08T09:10:53.7378183Z Downloading tzdata-2026.2-py2.py3-none-any.whl (349 kB)
+pipeline	Install dependencies	2026-05-08T09:10:53.7475908Z Downloading wsproto-1.3.2-py3-none-any.whl (24 kB)
+pipeline	Install dependencies	2026-05-08T09:10:53.7532598Z Downloading xxhash-3.7.0-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (193 kB)
+pipeline	Install dependencies	2026-05-08T09:10:53.7592570Z Downloading yarl-1.23.0-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (102 kB)
+pipeline	Install dependencies	2026-05-08T09:10:53.7650909Z Downloading multidict-6.7.1-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (243 kB)
+pipeline	Install dependencies	2026-05-08T09:10:53.7715745Z Downloading propcache-0.4.1-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (196 kB)
+pipeline	Install dependencies	2026-05-08T09:10:53.7774534Z Downloading cloudpickle-3.1.2-py3-none-any.whl (22 kB)
+pipeline	Install dependencies	2026-05-08T09:10:53.7833513Z Downloading nvidia_nccl_cu12-2.30.4-py3-none-manylinux_2_18_x86_64.whl (300.2 MB)
+pipeline	Install dependencies	2026-05-08T09:10:58.6749183Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 300.2/300.2 MB 54.6 MB/s  0:00:04
+pipeline	Install dependencies	2026-05-08T09:10:58.6789844Z Downloading pycparser-3.0-py3-none-any.whl (48 kB)
+pipeline	Install dependencies	2026-05-08T09:10:58.6855055Z Downloading sortedcontainers-2.4.0-py2.py3-none-any.whl (29 kB)
+pipeline	Install dependencies	2026-05-08T09:10:59.3045630Z Building wheels for collected packages: undetected-chromedriver
+pipeline	Install dependencies	2026-05-08T09:10:59.3055145Z   Building wheel for undetected-chromedriver (pyproject.toml): started
+pipeline	Install dependencies	2026-05-08T09:10:59.5209747Z   Building wheel for undetected-chromedriver (pyproject.toml): finished with status 'done'
+pipeline	Install dependencies	2026-05-08T09:10:59.5216814Z   Created wheel for undetected-chromedriver: filename=undetected_chromedriver-3.5.5-py3-none-any.whl size=47129 sha256=a0af0ffed4a58c9781da83d4679211ab672b9496f01460b9cb2865d2dd04e915
+pipeline	Install dependencies	2026-05-08T09:10:59.5219438Z   Stored in directory: /home/runner/.cache/pip/wheels/cf/a1/db/e1275b6f7259aacd6b045f8bfcb1fcbc93827a3916ba55d5b7
+pipeline	Install dependencies	2026-05-08T09:10:59.5250504Z Successfully built undetected-chromedriver
+pipeline	Install dependencies	2026-05-08T09:10:59.9401718Z Installing collected packages: strenum, sortedcontainers, pytz, pyroaring, zstandard, xxhash, websockets, websocket-client, uuid-utils, urllib3, tzdata, typing-extensions, tqdm, tomli, threadpoolctl, tenacity, soupsieve, sniffio, slicer, six, pyyaml, python-dotenv, pysocks, pyparsing, pygments, pycparser, pyasn1, pyarrow, pulp, psycopg2-binary, propcache, pluggy, packaging, ormsgpack, orjson, nvidia-nccl-cu12, numpy, mmh3, mdurl, lxml, llvmlite, jsonpointer, joblib, iniconfig, idna, hyperframe, hpack, h11, greenlet, fsspec, distro, cloudpickle, click, charset_normalizer, certifi, cachetools, backports-asyncio-runner, attrs, annotated-types, annotated-doc, wsproto, uvicorn, typing-inspection, sqlalchemy, scipy, requests, python-dateutil, pyjwt, pydantic-core, pyasn1-modules, outcome, numba, multidict, markdown-it-py, langchain-protocol, jsonpatch, httpcore, h2, gunicorn, exceptiongroup, deprecation, cffi, beautifulsoup4, yarl, xgboost, trio, strictyaml, scikit-learn, rich, requests-toolbelt, pytest, pydantic, pandas, lightgbm, cryptography, anyio, trio-websocket, starlette, shap, realtime, pytest-asyncio, pyiceberg, httpx, google-auth, selenium, langsmith, langgraph-sdk, fastapi, undetected-chromedriver, supabase-functions, supabase-auth, storage3, postgrest, langchain-core, google-genai, supabase, langgraph-checkpoint, langgraph-prebuilt, langgraph, langchain
+pipeline	Install dependencies	2026-05-08T09:11:28.8315643Z 
+pipeline	Install dependencies	2026-05-08T09:11:28.8477628Z Successfully installed annotated-doc-0.0.4 annotated-types-0.7.0 anyio-4.13.0 attrs-26.1.0 backports-asyncio-runner-1.2.0 beautifulsoup4-4.14.3 cachetools-6.2.6 certifi-2026.4.22 cffi-2.0.0 charset_normalizer-3.4.7 click-8.3.3 cloudpickle-3.1.2 cryptography-48.0.0 deprecation-2.1.0 distro-1.9.0 exceptiongroup-1.3.1 fastapi-0.136.1 fsspec-2026.4.0 google-auth-2.52.0 google-genai-2.0.0 greenlet-3.5.0 gunicorn-26.0.0 h11-0.16.0 h2-4.3.0 hpack-4.1.0 httpcore-1.0.9 httpx-0.28.1 hyperframe-6.1.0 idna-3.13 iniconfig-2.3.0 joblib-1.5.3 jsonpatch-1.33 jsonpointer-3.1.1 langchain-1.2.17 langchain-core-1.3.3 langchain-protocol-0.0.15 langgraph-1.1.10 langgraph-checkpoint-4.0.3 langgraph-prebuilt-1.0.13 langgraph-sdk-0.3.14 langsmith-0.8.3 lightgbm-4.6.0 llvmlite-0.47.0 lxml-6.1.0 markdown-it-py-4.2.0 mdurl-0.1.2 mmh3-5.2.1 multidict-6.7.1 numba-0.65.1 numpy-2.2.6 nvidia-nccl-cu12-2.30.4 orjson-3.11.9 ormsgpack-1.12.2 outcome-1.3.0.post0 packaging-26.2 pandas-2.3.3 pluggy-1.6.0 postgrest-2.30.0 propcache-0.4.1 psycopg2-binary-2.9.12 pulp-3.3.1 pyarrow-24.0.0 pyasn1-0.6.3 pyasn1-modules-0.4.2 pycparser-3.0 pydantic-2.13.4 pydantic-core-2.46.4 pygments-2.20.0 pyiceberg-0.11.1 pyjwt-2.12.1 pyparsing-3.3.2 pyroaring-1.1.0 pysocks-1.7.1 pytest-9.0.3 pytest-asyncio-1.3.0 python-dateutil-2.9.0.post0 python-dotenv-1.2.2 pytz-2026.2 pyyaml-6.0.3 realtime-2.30.0 requests-2.33.1 requests-toolbelt-1.0.0 rich-14.3.4 scikit-learn-1.7.2 scipy-1.15.3 selenium-4.43.0 shap-0.49.1 six-1.17.0 slicer-0.0.8 sniffio-1.3.1 sortedcontainers-2.4.0 soupsieve-2.8.3 sqlalchemy-2.0.49 starlette-1.0.0 storage3-2.30.0 strenum-0.4.15 strictyaml-1.7.3 supabase-2.30.0 supabase-auth-2.30.0 supabase-functions-2.30.0 tenacity-9.1.4 threadpoolctl-3.6.0 tomli-2.4.1 tqdm-4.67.3 trio-0.33.0 trio-websocket-0.12.2 typing-extensions-4.15.0 typing-inspection-0.4.2 tzdata-2026.2 undetected-chromedriver-3.5.5 urllib3-2.7.0 uuid-utils-0.14.1 uvicorn-0.46.0 websocket-client-1.9.0 websockets-15.0.1 wsproto-1.3.2 xgboost-3.2.0 xxhash-3.7.0 yarl-1.23.0 zstandard-0.25.0
+pipeline	Determine race date	﻿2026-05-08T09:11:29.3049786Z ##[group]Run if [ -n "" ]; then
+pipeline	Determine race date	2026-05-08T09:11:29.3050111Z [36;1mif [ -n "" ]; then[0m
+pipeline	Determine race date	2026-05-08T09:11:29.3050366Z [36;1m  echo "date=" >> $GITHUB_OUTPUT[0m
+pipeline	Determine race date	2026-05-08T09:11:29.3050625Z [36;1melse[0m
+pipeline	Determine race date	2026-05-08T09:11:29.3050831Z [36;1m  # Default: today in JST (UTC+9)[0m
+pipeline	Determine race date	2026-05-08T09:11:29.3051194Z [36;1m  echo "date=$(TZ=Asia/Tokyo date +%Y-%m-%d)" >> $GITHUB_OUTPUT[0m
+pipeline	Determine race date	2026-05-08T09:11:29.3051536Z [36;1mfi[0m
+pipeline	Determine race date	2026-05-08T09:11:29.3051837Z [36;1mecho "Race date: $(cat $GITHUB_OUTPUT | grep date | cut -d= -f2)"[0m
+pipeline	Determine race date	2026-05-08T09:11:29.3074128Z shell: /usr/bin/bash -e {0}
+pipeline	Determine race date	2026-05-08T09:11:29.3074380Z env:
+pipeline	Determine race date	2026-05-08T09:11:29.3075280Z   DATABASE_URL: ***
+pipeline	Determine race date	2026-05-08T09:11:29.3075498Z   GEMINI_API_KEY: 
+pipeline	Determine race date	2026-05-08T09:11:29.3075693Z   PYTHON_VERSION: 3.10
+pipeline	Determine race date	2026-05-08T09:11:29.3075914Z   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+pipeline	Determine race date	2026-05-08T09:11:29.3076249Z   pythonLocation: /opt/hostedtoolcache/Python/3.10.20/x64
+pipeline	Determine race date	2026-05-08T09:11:29.3076662Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.10.20/x64/lib/pkgconfig
+pipeline	Determine race date	2026-05-08T09:11:29.3077112Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.10.20/x64
+pipeline	Determine race date	2026-05-08T09:11:29.3077965Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.10.20/x64
+pipeline	Determine race date	2026-05-08T09:11:29.3078358Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.10.20/x64
+pipeline	Determine race date	2026-05-08T09:11:29.3078724Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.10.20/x64/lib
+pipeline	Determine race date	2026-05-08T09:11:29.3079037Z ##[endgroup]
+pipeline	Determine race date	2026-05-08T09:11:29.3170299Z Race date: 2026-05-08
+pipeline	Check if race day	﻿2026-05-08T09:11:29.3218777Z ##[group]Run DATE="2026-05-08"
+pipeline	Check if race day	2026-05-08T09:11:29.3219122Z [36;1mDATE="2026-05-08"[0m
+pipeline	Check if race day	2026-05-08T09:11:29.3219448Z [36;1mDOW=$(date -d "$DATE" +%u 2>/dev/null || gdate -d "$DATE" +%u)[0m
+pipeline	Check if race day	2026-05-08T09:11:29.3219853Z [36;1m# JRA races are typically Sat(6) and Sun(7)[0m
+pipeline	Check if race day	2026-05-08T09:11:29.3220195Z [36;1mif [ "$DOW" = "6" ] || [ "$DOW" = "7" ] || [ -n "" ]; then[0m
+pipeline	Check if race day	2026-05-08T09:11:29.3220531Z [36;1m  echo "is_race_day=true" >> $GITHUB_OUTPUT[0m
+pipeline	Check if race day	2026-05-08T09:11:29.3220804Z [36;1melse[0m
+pipeline	Check if race day	2026-05-08T09:11:29.3221028Z [36;1m  echo "is_race_day=false" >> $GITHUB_OUTPUT[0m
+pipeline	Check if race day	2026-05-08T09:11:29.3221409Z [36;1m  echo "⏭️ Not a race day ($DATE is weekday $DOW), skipping"[0m
+pipeline	Check if race day	2026-05-08T09:11:29.3221739Z [36;1mfi[0m
+pipeline	Check if race day	2026-05-08T09:11:29.3242878Z shell: /usr/bin/bash -e {0}
+pipeline	Check if race day	2026-05-08T09:11:29.3243126Z env:
+pipeline	Check if race day	2026-05-08T09:11:29.3243842Z   DATABASE_URL: ***
+pipeline	Check if race day	2026-05-08T09:11:29.3244046Z   GEMINI_API_KEY: 
+pipeline	Check if race day	2026-05-08T09:11:29.3244248Z   PYTHON_VERSION: 3.10
+pipeline	Check if race day	2026-05-08T09:11:29.3244491Z   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+pipeline	Check if race day	2026-05-08T09:11:29.3244862Z   pythonLocation: /opt/hostedtoolcache/Python/3.10.20/x64
+pipeline	Check if race day	2026-05-08T09:11:29.3245278Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.10.20/x64/lib/pkgconfig
+pipeline	Check if race day	2026-05-08T09:11:29.3245678Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.10.20/x64
+pipeline	Check if race day	2026-05-08T09:11:29.3246046Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.10.20/x64
+pipeline	Check if race day	2026-05-08T09:11:29.3246408Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.10.20/x64
+pipeline	Check if race day	2026-05-08T09:11:29.3246770Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.10.20/x64/lib
+pipeline	Check if race day	2026-05-08T09:11:29.3247077Z ##[endgroup]
+pipeline	Check if race day	2026-05-08T09:11:29.3330917Z ⏭️ Not a race day (2026-05-08 is weekday 5), skipping
+pipeline	Post Set up Python	﻿2026-05-08T09:11:29.3422903Z Post job cleanup.
+pipeline	Post Set up Python	2026-05-08T09:11:29.4725012Z (node:2208) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+pipeline	Post Set up Python	2026-05-08T09:11:29.4726482Z (Use `node --trace-deprecation ...` to show where the warning was created)
+pipeline	Post Set up Python	2026-05-08T09:11:29.4940435Z [command]/usr/bin/tar --posix -cf cache.tzst --exclude cache.tzst -P -C /home/runner/work/horsebet/horsebet --files-from manifest.txt --use-compress-program zstdmt
+pipeline	Post Set up Python	2026-05-08T09:11:31.4358706Z (node:2208) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+pipeline	Post Set up Python	2026-05-08T09:11:32.4259230Z Sent 0 of 699621476 (0.0%), 0.0 MBs/sec
+pipeline	Post Set up Python	2026-05-08T09:11:33.4218077Z Sent 565403748 of 699621476 (80.8%), 268.5 MBs/sec
+pipeline	Post Set up Python	2026-05-08T09:11:33.9940758Z Sent 699621476 of 699621476 (100.0%), 258.6 MBs/sec
+pipeline	Post Set up Python	2026-05-08T09:11:34.2352600Z Cache saved with the key: setup-python-Linux-x64-24.04-Ubuntu-python-3.10.20-pip-aed29ba5fedb2c4ca4a7bca80baada381dfaf2ca65bcca829aef0baf73f2a8df
+pipeline	Post Checkout	﻿2026-05-08T09:11:34.2528266Z Post job cleanup.
+pipeline	Post Checkout	2026-05-08T09:11:34.3527243Z [command]/usr/bin/git version
+pipeline	Post Checkout	2026-05-08T09:11:34.3570201Z git version 2.53.0
+pipeline	Post Checkout	2026-05-08T09:11:34.3618800Z Temporarily overriding HOME='/home/runner/work/_temp/58c04238-dfaf-4fa3-b57c-10c9df91708b' before making global git config changes
+pipeline	Post Checkout	2026-05-08T09:11:34.3620519Z Adding repository directory to the temporary git global config as a safe directory
+pipeline	Post Checkout	2026-05-08T09:11:34.3622777Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/horsebet/horsebet
+pipeline	Post Checkout	2026-05-08T09:11:34.3665948Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+pipeline	Post Checkout	2026-05-08T09:11:34.3706491Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+pipeline	Post Checkout	2026-05-08T09:11:34.3951368Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+pipeline	Post Checkout	2026-05-08T09:11:34.3976181Z http.https://github.com/.extraheader
+pipeline	Post Checkout	2026-05-08T09:11:34.3988515Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader
+pipeline	Post Checkout	2026-05-08T09:11:34.4026431Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+pipeline	Post Checkout	2026-05-08T09:11:34.4277225Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+pipeline	Post Checkout	2026-05-08T09:11:34.4315775Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+pipeline	Complete job	﻿2026-05-08T09:11:34.4768968Z Cleaning up orphan processes
+pipeline	Complete job	2026-05-08T09:11:34.5016585Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-python@v5. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
