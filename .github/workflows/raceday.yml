@@ -94,7 +94,7 @@ jobs:
           fi
 
           echo "🏇 Running pipeline for $DATE $FLAGS"
-          python pipeline.py --date "$DATE" --version retrain_20260507_1645 --ev-threshold 0.25 $FLAGS
+          python pipeline.py --date "$DATE" --version retrain_20260507_1645 --ev-threshold 0.25 --force-predict $FLAGS
           python print_bets.py results/data.json > results/bets.txt
 
       - name: Upload predictions artifact
