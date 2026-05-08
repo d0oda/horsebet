@@ -2,7 +2,9 @@
 UmaEdge — Notification Dispatcher.
 
 Unified dispatcher that routes notifications to all configured backends
-(Telegram, LINE). Auto-detects which backends have tokens configured.
+(Telegram, LINE, WhatsApp). Auto-detects which backends have tokens configured.
+
+
 
 Usage:
     from notifications.dispatcher import notify_bet_placed, notify_reconciliation
@@ -32,6 +34,12 @@ def _get_backends() -> list:
     if line.is_configured:
         backends.append(line)
         log.debug("LINE backend active")
+
+    from notifications.whatsapp import WhatsAppNotifier
+    wa = WhatsAppNotifier()
+    if wa.is_configured:
+        backends.append(wa)
+        log.debug("WhatsApp backend active")
 
     return backends
 
@@ -129,12 +137,15 @@ def get_status() -> dict:
     """Get configuration status of all backends."""
     from notifications.telegram import TelegramNotifier
     from notifications.line import LineNotifier
+    from notifications.whatsapp import WhatsAppNotifier
 
     tg = TelegramNotifier()
     line = LineNotifier()
+    wa = WhatsAppNotifier()
 
     return {
         "telegram": {"configured": tg.is_configured},
         "line": {"configured": line.is_configured},
-        "any_configured": tg.is_configured or line.is_configured,
+        "whatsapp": {"configured": wa.is_configured},
+        "any_configured": tg.is_configured or line.is_configured or wa.is_configured,
     }

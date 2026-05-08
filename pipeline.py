@@ -35,6 +35,7 @@ from scraper.odds_watcher import fetch_win_odds
 from models.predict_final import predict_with_filters
 from models.paddock_scorer import score_race_paddock
 from results.build_data_json import build_data_json
+from notifications.dispatcher import notify_message
 
 logging.basicConfig(
     level=logging.INFO,
@@ -512,6 +513,161 @@ def step_frontend(predictions_path: str, date: str):
     log.info("━━━ Pipeline complete ━━━")
 
 
+def step_notify(predictions_path: str, date: str, version: str,
+                ev_threshold: float):
+    """
+    Step 6: Send WhatsApp/Telegram notification with value bet summary.
+
+    Sends a rich message containing all value bets with the information
+    needed to place bets at the track.
+    """
+    log.info("━━━ Step 6: Sending notifications ━━━")
+
+    # Load predictions
+    pred_file = Path(predictions_path)
+    if not pred_file.exists():
+        log.warning(f"Predictions file not found: {predictions_path}")
+        return
+
+    with open(pred_file) as f:
+        data = json.load(f)
+
+    predictions = data.get("predictions", [])
+    value_bets = [p for p in predictions
+                  if p.get("is_value_bet") or p.get("is_value")]
+
+    # Build race info lookup from DB
+    with get_session() as session:
+        races = session.execute(
+            text("""
+                SELECT r.id, r.race_number, r.course_id, r.distance, r.surface,
+                       r.post_time, r.race_name_jp
+                FROM horsebet.races r WHERE r.date = :d
+                ORDER BY r.course_id, r.race_number
+            """),
+            {"d": date},
+        ).fetchall()
+    race_map = {r.id: r for r in races}
+
+    COURSE_NAMES = {
+        1: 'Sapporo', 2: 'Hakodate', 3: 'Fukushima', 4: 'Niigata',
+        5: 'Tokyo', 6: 'Nakayama', 7: 'Chukyo', 8: 'Kyoto',
+        9: 'Hanshin', 10: 'Kokura',
+    }
+
+    # Header
+    dt = datetime.strptime(date, "%Y-%m-%d")
+    weekday_jp = ["月", "火", "水", "木", "金", "土", "日"][dt.weekday()]
+    header = (
+        f"🏇 *UmaEdge — {date} ({weekday_jp})*\n"
+        f"Model: {version} | EV ≥ {ev_threshold:.0%}\n"
+        f"Races: {len(races)} | Value bets: {len(value_bets)}\n"
+        f"{'─' * 28}"
+    )
+
+    if not value_bets:
+        msg = f"{header}\n\n❌ No value bets found today."
+        sent = notify_message(msg)
+        if sent:
+            log.info(f"✅ Notification sent ({sent} backend(s))")
+        else:
+            log.info("  No notification backends configured")
+        return
+
+    # Sort by race_id to group by race
+    value_bets.sort(key=lambda p: (p.get("race_id", 0), -p.get("ev", 0)))
+
+    # Look up post_position + draw from DB for each value bet entry
+    entry_ids = [b.get("entry_id") for b in value_bets if b.get("entry_id")]
+    entry_pp_map = {}
+    if entry_ids:
+        with get_session() as session:
+            rows = session.execute(
+                text("SELECT id, post_position, draw FROM horsebet.entries WHERE id = ANY(:ids)"),
+                {"ids": entry_ids},
+            ).fetchall()
+        entry_pp_map = {r.id: (r.post_position, r.draw) for r in rows}
+
+    # Build per-bet lines
+    bet_lines = []
+    current_race_id = None
+    for bet in value_bets:
+        race_id = bet.get("race_id")
+        race = race_map.get(race_id)
+
+        # Race header (once per race)
+        if race_id != current_race_id:
+            current_race_id = race_id
+            if race:
+                venue = COURSE_NAMES.get(race.course_id, "?")
+                post = race.post_time.strftime("%H:%M") if race.post_time else "--:--"
+                surface = (race.surface or "?").upper()
+                dist = race.distance or "?"
+                race_name = race.race_name_jp or ""
+                bet_lines.append(
+                    f"\n📍 *R{race.race_number} {venue}* {post}\n"
+                    f"   {surface} {dist}m {race_name}"
+                )
+            else:
+                bet_lines.append(f"\n📍 *Race {race_id}*")
+
+        # Horse line — look up post position from DB
+        horse = bet.get("horse_name", "?")
+        odds = bet.get("odds", 0)
+        prob = bet.get("combined_win_prob", bet.get("combined_prob", 0))
+        ev_pct = bet.get("ev", 0)
+        entry_id = bet.get("entry_id")
+        pp_info = entry_pp_map.get(entry_id, (None, None))
+        pp = pp_info[0] or "?"
+        draw = pp_info[1] or ""
+        draw_str = f" (枠{draw})" if draw else ""
+
+        bet_lines.append(
+            f"  🐴 #{pp}{draw_str} *{horse}*\n"
+            f"     Odds: {odds:.1f}x | EV: {ev_pct:+.0%}\n"
+            f"     Win%: {prob:.1%}\n"
+            f"     💴 ¥1,000"
+        )
+
+    # Footer
+    total_stake = len(value_bets) * 1000
+    footer = (
+        f"\n{'─' * 28}\n"
+        f"💰 {len(value_bets)} bets × ¥1,000 = ¥{total_stake:,}\n"
+        f"Good luck! 🍀"
+    )
+
+    # CallMeBot truncates around ~1000 chars; use 800 to be safe
+    MAX_LEN = 800
+
+    # Always send as chunked messages for reliability
+    msgs = [header]
+    chunk = ""
+    for line in bet_lines:
+        if len(chunk) + len(line) + 1 > MAX_LEN:
+            if chunk:
+                msgs.append(chunk)
+            chunk = line
+        else:
+            chunk += "\n" + line
+    if chunk:
+        msgs.append(chunk)
+    msgs.append(footer)
+
+    sent = 0
+    for i, msg in enumerate(msgs):
+        if i > 0:
+            time.sleep(2)  # rate-limit between sends
+        result = notify_message(msg)
+        if result:
+            sent += 1
+
+    if sent:
+        log.info(f"✅ Notifications sent ({sent} message(s))")
+    else:
+        log.info("  No notification backends configured")
+
+
 def step_results(date: str, race_ids: list[str]):
     """
     Step 5: Scrape results for finished races.
@@ -623,6 +779,7 @@ Examples:
     parser.add_argument("--skip-odds", action="store_true", help="Skip odds fetching")
     parser.add_argument("--skip-predict", action="store_true", help="Skip prediction (reuse existing)")
     parser.add_argument("--skip-paddock", action="store_true", help="Skip paddock NLP scoring")
+    parser.add_argument("--skip-notify", action="store_true", help="Skip batch notification (use race_watcher.py instead)")
     parser.add_argument("--force-predict", action="store_true", help="Force prediction for all races")
     args = parser.parse_args()
 
@@ -682,6 +839,12 @@ Examples:
 
     # Step 5: Collect results for finished races
     step_results(args.date, race_ids)
+
+    # Step 6: Send notifications
+    if args.skip_notify:
+        log.info("━━━ Step 6: Notifications → SKIPPED ━━━")
+    else:
+        step_notify(pred_path, args.date, args.version, args.ev_threshold)
 
 
 if __name__ == "__main__":

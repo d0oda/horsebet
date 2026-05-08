@@ -1,34 +1,23 @@
 name: Race Day Pipeline
 
 on:
-  # Kokura races start as early as 09:45 JST (00:45 UTC)
-  # Run every 10 min from 23:30-08:30 UTC (08:30-17:30 JST) on Fri-Sun
-  # Two cron entries needed: one for late Friday/Saturday, one for early Sat/Sun
+  # Races run 09:45 – 16:30 JST = 00:45 – 07:30 UTC
   schedule:
-    - cron: '*/10 0-8 * * 0,6'    # Sat & Sun 00:00-08:59 UTC
-    - cron: '30,40,50 23 * * 5,6'    # Fri & Sat 23:30-23:59 UTC (Sat/Sun JST morning)
+    - cron: '*/10 0-8 * * 0,6'       # Sat & Sun 00:00-08:59 UTC
+    - cron: '30,40,50 23 * * 5,6'     # Fri & Sat 23:30-23:59 UTC
 
-  # Manual trigger with date override
   workflow_dispatch:
     inputs:
       race_date:
         description: 'Race date (YYYY-MM-DD). Leave blank for today (JST).'
         required: false
         type: string
-      skip_scrape:
-        description: 'Skip scraping (races already in DB)'
-        required: false
-        default: false
-        type: boolean
-      skip_odds:
-        description: 'Skip odds fetch'
-        required: false
-        default: false
-        type: boolean
 
 env:
   DATABASE_URL: ${{ secrets.DATABASE_URL }}
   GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+  WHATSAPP_PHONE: ${{ secrets.WHATSAPP_PHONE }}
+  WHATSAPP_API_KEY: ${{ secrets.WHATSAPP_API_KEY }}
   PYTHON_VERSION: '3.10'
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
@@ -61,7 +50,6 @@ jobs:
           if [ -n "${{ inputs.race_date }}" ]; then
             echo "date=${{ inputs.race_date }}" >> $GITHUB_OUTPUT
           else
-            # Default: today in JST (UTC+9)
             echo "date=$(TZ=Asia/Tokyo date +%Y-%m-%d)" >> $GITHUB_OUTPUT
           fi
           echo "Race date: $(cat $GITHUB_OUTPUT | grep date | cut -d= -f2)"
@@ -71,7 +59,6 @@ jobs:
         run: |
           DATE="${{ steps.date.outputs.date }}"
           DOW=$(date -d "$DATE" +%u 2>/dev/null || gdate -d "$DATE" +%u)
-          # JRA races are typically Sat(6) and Sun(7)
           if [ "$DOW" = "6" ] || [ "$DOW" = "7" ] || [ -n "${{ inputs.race_date }}" ]; then
             echo "is_race_day=true" >> $GITHUB_OUTPUT
           else
@@ -79,25 +66,35 @@ jobs:
             echo "⏭️ Not a race day ($DATE is weekday $DOW), skipping"
           fi
 
-      - name: Run pipeline
+      # ── Step 1: Scrape races (first run only) ──
+      - name: Scrape races
         if: steps.check.outputs.is_race_day == 'true'
         run: |
           DATE="${{ steps.date.outputs.date }}"
-          FLAGS=""
-          
-          if [ "${{ inputs.skip_scrape }}" = "true" ]; then
-            FLAGS="$FLAGS --skip-scrape"
-          fi
-          
-          if [ "${{ inputs.skip_odds }}" = "true" ]; then
-            FLAGS="$FLAGS --skip-odds"
+          RACE_COUNT=$(python -c "
+          from scraper.db import get_session
+          from sqlalchemy import text
+          with get_session() as s:
+              n = s.execute(text(\"SELECT COUNT(*) FROM horsebet.races WHERE date = '$DATE'\")).scalar()
+              print(n)
+          ")
+          if [ "$RACE_COUNT" -gt "0" ]; then
+            echo "✅ $RACE_COUNT races already in DB, skipping scrape"
+          else
+            echo "🔍 Scraping races for $DATE"
+            python pipeline.py --date "$DATE" --version retrain_20260507_1645 \
+              --skip-odds --skip-predict --skip-paddock --skip-notify
           fi
 
-          echo "🏇 Running pipeline for $DATE $FLAGS"
-          python pipeline.py --date "$DATE" --version retrain_20260507_1645 --ev-threshold 0.25 $FLAGS
-          python print_bets.py results/data.json > results/bets.txt
+      # ── Step 2: Race Watcher (fresh odds → predict → notify) ──
+      - name: Race watcher
+        if: steps.check.outputs.is_race_day == 'true'
+        run: |
+          DATE="${{ steps.date.outputs.date }}"
+          python race_watcher.py --date "$DATE" --once --lead-time 5
 
-      - name: Upload predictions artifact
+      # ── Step 3: Upload + deploy ──
+      - name: Upload artifacts
         if: steps.check.outputs.is_race_day == 'true'
         uses: actions/upload-artifact@v4
         with:
@@ -106,9 +103,11 @@ jobs:
             results/predictions_*.json
             results/data.json
             results/bets.txt
+            results/watcher_state_*.json
           retention-days: 30
+          overwrite: true
 
-      - name: Deploy results to GitHub Pages
+      - name: Deploy to GitHub Pages
         if: steps.check.outputs.is_race_day == 'true'
         uses: peaceiris/actions-gh-pages@v4
         with:
