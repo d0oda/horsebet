@@ -95,6 +95,7 @@ jobs:
 
           echo "🏇 Running pipeline for $DATE $FLAGS"
           python pipeline.py --date "$DATE" --version retrain_20260507_1645 --ev-threshold 0.25 $FLAGS
+          python print_bets.py results/data.json > results/bets.txt
 
       - name: Upload predictions artifact
         if: steps.check.outputs.is_race_day == 'true'
@@ -104,6 +105,7 @@ jobs:
           path: |
             results/predictions_*.json
             results/data.json
+            results/bets.txt
           retention-days: 30
 
       - name: Deploy results to GitHub Pages
