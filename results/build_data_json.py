@@ -205,7 +205,7 @@ def build_data_json(predictions_paths: list, output: str = None):
                 f.write(f"      Odds: {bet['odds']:.1f}x | EV: +{bet['ev']:.1f}%\n")
                 f.write(f"      Win Prob: {bet['prob_combined']:.1f}%\n")
                 if bet['finish_pos'] is not None:
-                    res_str = '🏆 WINNER' if bet['is_winner'] else f'Finished {bet['finish_pos']}'
+                    res_str = '🏆 WINNER' if bet['is_winner'] else f"Finished {bet['finish_pos']}"
                     f.write(f"      Result: {res_str}\n")
                 f.write("\n")
 
