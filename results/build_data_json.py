@@ -194,19 +194,23 @@ def build_data_json(predictions_paths: list, output: str = None):
             f.write(f"ROI: {data['summary']['roi']}%\n")
         f.write("=" * 40 + "\n\n")
 
-        if not all_value_bets:
-            f.write("No value bets found.\n")
+        # Sort races by venue and race number
+        sorted_races = sorted(all_races, key=lambda x: (x['venue'], x['race_number']))
+        if not sorted_races:
+            f.write("No predictions found.\n")
         else:
-            # Sort bets by venue and race number
-            sorted_bets = sorted(all_value_bets, key=lambda x: (x['venue'], x['race_number']))
-            for bet in sorted_bets:
-                f.write(f"📍 {bet['venue']} R{bet['race_number']} - {bet['race_name']}\n")
-                f.write(f"   🐴 #{bet['post_position']} {bet['horse_name']}\n")
-                f.write(f"      Odds: {bet['odds']:.1f}x | EV: +{bet['ev']:.1f}%\n")
-                f.write(f"      Win Prob: {bet['prob_combined']:.1f}%\n")
-                if bet['finish_pos'] is not None:
-                    res_str = '🏆 WINNER' if bet['is_winner'] else f"Finished {bet['finish_pos']}"
-                    f.write(f"      Result: {res_str}\n")
+            for race in sorted_races:
+                f.write(f"📍 {race['venue']} R{race['race_number']} - {race['race_name']}\n")
+                # Sort entries by EV descending
+                sorted_entries = sorted(race['entries'], key=lambda x: x['ev'], reverse=True)
+                for e in sorted_entries:
+                    ev_sign = "+" if e['ev'] > 0 else ""
+                    f.write(f"   🐴 #{e['post_position']} {e['horse_name']}\n")
+                    f.write(f"      Odds: {e['odds']:.1f}x | EV: {ev_sign}{e['ev']:.1f}%\n")
+                    f.write(f"      Win Prob: {e['prob_combined']:.1f}%\n")
+                    if e.get('finish_pos') is not None:
+                        res_str = '🏆 WINNER' if e['is_winner'] else f"Finished {e['finish_pos']}"
+                        f.write(f"      Result: {res_str}\n")
                 f.write("\n")
 
     summary_file = os.environ.get("GITHUB_STEP_SUMMARY")
