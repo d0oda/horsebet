@@ -8,6 +8,7 @@ Usage:
 import argparse
 import json
 import sys
+import os
 from pathlib import Path
 
 # Add project root to path
@@ -173,11 +174,51 @@ def build_data_json(predictions_paths: list, output: str = None):
         json.dump(data, f, indent=2, ensure_ascii=False)
 
     races_with = sum(1 for r in data['races'] if r['has_bet'])
-    print(f"✅ {out_path}: {len(all_races)} races, {global_total_bets} bets "
-          f"({races_with} races w/ bet, {len(all_races) - races_with} skipped)")
+    summary_text = f"✅ {out_path}: {len(all_races)} races, {global_total_bets} bets " \
+                   f"({races_with} races w/ bet, {len(all_races) - races_with} skipped)\n"
     if global_total_winners:
-        print(f"   Winners: {global_total_winners}/{global_total_bets} ({data['summary']['strike_rate']}%)")
-        print(f"   ROI: {data['summary']['roi']}%")
+        summary_text += f"   Winners: {global_total_winners}/{global_total_bets} ({data['summary']['strike_rate']}%)\n"
+        summary_text += f"   ROI: {data['summary']['roi']}%\n"
+        
+    print(summary_text.strip())
+
+    # Write human-readable bets.txt
+    bets_txt_path = 'results/bets.txt'
+    with open(bets_txt_path, 'w') as f:
+        f.write(f"🏇 UmaEdge Value Bets ({display_date})\n")
+        f.write("=" * 40 + "\n")
+        f.write(f"Model: {model_name}\n")
+        f.write(f"Total Bets: {global_total_bets}\n")
+        if global_total_winners:
+            f.write(f"Winners: {global_total_winners}/{global_total_bets} ({data['summary']['strike_rate']}%)\n")
+            f.write(f"ROI: {data['summary']['roi']}%\n")
+        f.write("=" * 40 + "\n\n")
+
+        if not all_value_bets:
+            f.write("No value bets found.\n")
+        else:
+            # Sort bets by venue and race number
+            sorted_bets = sorted(all_value_bets, key=lambda x: (x['venue'], x['race_number']))
+            for bet in sorted_bets:
+                f.write(f"📍 {bet['venue']} R{bet['race_number']} - {bet['race_name']}\n")
+                f.write(f"   🐴 #{bet['post_position']} {bet['horse_name']}\n")
+                f.write(f"      Odds: {bet['odds']:.1f}x | EV: +{bet['ev']:.1f}%\n")
+                f.write(f"      Win Prob: {bet['prob_combined']:.1f}%\n")
+                if bet['finish_pos'] is not None:
+                    res_str = '🏆 WINNER' if bet['is_winner'] else f"Finished {bet['finish_pos']}"
+                    f.write(f"      Result: {res_str}\n")
+                f.write("\n")
+
+    summary_file = os.environ.get("GITHUB_STEP_SUMMARY")
+    if summary_file:
+        with open(summary_file, "a") as f:
+            f.write(f"### 📊 Pipeline Results ({display_date})\n")
+            f.write(f"- **Races:** {len(all_races)} (Bets in {races_with})\n")
+            f.write(f"- **Total Bets:** {global_total_bets}\n")
+            if global_total_winners:
+                f.write(f"- **Winners:** {global_total_winners} ({data['summary']['strike_rate']}%)\n")
+                f.write(f"- **ROI:** {data['summary']['roi']}%\n")
+            f.write("\n")
 
 
 if __name__ == '__main__':

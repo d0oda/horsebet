@@ -1,44 +1,33 @@
-============================================================
-🏆 BETTING SLIP FOR: 2026-05-09
-📈 Strategy: max 1 bet/race, EV > threshold
-============================================================
+🏇 UmaEdge Value Bets (2026-05-09)
+========================================
+Model: retrain_20260507_1645
+Total Bets: 5
+========================================
 
-🏇 Race 4 @ Niigata (05-09)
-   ► Bet: #3 キングサーガ
-      Odds: 6.7x | Win Prob: 20.2% | EV: +35.2%
+📍 Niigata (05-09) R3 - 3歳未勝利
+   🐴 #5 スナークオーロラ
+      Odds: 21.9x | EV: +39.4%
+      Win Prob: 6.4%
+      Result: Finished 11
 
-🏇 Race 5 @ Niigata (05-09)
-   ► Bet: #10 ソードスレイプニル
-      Odds: 20.0x | Win Prob: 9.5% | EV: +89.2%
+📍 Niigata (05-09) R4 - 4歳以上障害OP
+   🐴 #3 キングサーガ
+      Odds: 7.5x | EV: +53.8%
+      Win Prob: 20.5%
+      Result: Finished 11
 
-🏇 Race 10 @ Niigata (05-09)
-   ► Bet: #8 ゴーゴータカシ
-      Odds: 11.5x | Win Prob: 11.6% | EV: +32.9%
+📍 Niigata (05-09) R10 - 粟島特別
+   🐴 #7 サトノラポール
+      Odds: 7.3x | EV: +27.9%
+      Win Prob: 17.5%
 
-🏇 Race 2 @ Tokyo (05-09)
-   ► Bet: #2 グスク
-      Odds: 9.8x | Win Prob: 13.2% | EV: +28.9%
+📍 Niigata (05-09) R11 - 駿風S
+   🐴 #8 ジュンヴァンケット
+      Odds: 10.7x | EV: +51.5%
+      Win Prob: 14.2%
 
-🏇 Race 5 @ Tokyo (05-09)
-   ► Bet: #17 ミッキーキャロット
-      Odds: 27.2x | Win Prob: 5.6% | EV: +52.6%
+📍 Tokyo (05-09) R11 - エプソムC
+   🐴 #11 トロヴァトーレ
+      Odds: 3.8x | EV: +29.6%
+      Win Prob: 34.1%
 
-🏇 Race 12 @ Tokyo (05-09)
-   ► Bet: #3 モーニングマジック
-      Odds: 2.5x | Win Prob: 51.4% | EV: +28.5%
-
-🏇 Race 1 @ Kyoto (05-09)
-   ► Bet: #10 アーガイルショア
-      Odds: 10.6x | Win Prob: 13.7% | EV: +45.0%
-
-🏇 Race 7 @ Kyoto (05-09)
-   ► Bet: #5 ステイクオール
-      Odds: 3.1x | Win Prob: 41.8% | EV: +29.7%
-
-🏇 Race 12 @ Kyoto (05-09)
-   ► Bet: #7 ニホンピロデヴィン
-      Odds: 2.8x | Win Prob: 47.3% | EV: +32.6%
-
-============================================================
-💰 Total Recommended Bets: 9
-============================================================
