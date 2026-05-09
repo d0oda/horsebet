@@ -2,9 +2,9 @@ name: Race Day Pipeline
 
 on:
   # Races run 09:45 – 16:30 JST = 00:45 – 07:30 UTC
+  # We start the pipeline at 09:00 JST (00:00 UTC) so it scrapes the races early.
   schedule:
-    - cron: '30,40,50 0 * * 0,6'      # Sat & Sun 00:30-00:50 UTC = 09:30-09:50 JST
-    - cron: '*/10 1-7 * * 0,6'        # Sat & Sun 01:00-07:50 UTC = 10:00-16:50 JST
+    - cron: '*/10 0-8 * * 0,5,6'      # Fri, Sat & Sun 00:00-08:50 UTC = 09:00-17:50 JST
 
   workflow_dispatch:
     inputs:
@@ -59,7 +59,7 @@ jobs:
         run: |
           DATE="${{ steps.date.outputs.date }}"
           DOW=$(date -d "$DATE" +%u 2>/dev/null || gdate -d "$DATE" +%u)
-          if [ "$DOW" = "6" ] || [ "$DOW" = "7" ] || [ -n "${{ inputs.race_date }}" ]; then
+          if [ "$DOW" = "5" ] || [ "$DOW" = "6" ] || [ "$DOW" = "7" ] || [ -n "${{ inputs.race_date }}" ]; then
             echo "is_race_day=true" >> $GITHUB_OUTPUT
           else
             echo "is_race_day=false" >> $GITHUB_OUTPUT
