@@ -87,6 +87,13 @@ jobs:
           fi
 
       # ── Step 2: Race Watcher (fresh odds → predict → notify) ──
+      - name: Restore watcher state
+        if: steps.check.outputs.is_race_day == 'true'
+        run: |
+          DATE="${{ steps.date.outputs.date }}"
+          git fetch origin gh-pages || true
+          git checkout origin/gh-pages -- results/watcher_state_$DATE.json 2>/dev/null || echo "No previous state found"
+
       - name: Race watcher
         if: steps.check.outputs.is_race_day == 'true'
         run: |
