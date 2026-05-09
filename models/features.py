@@ -204,10 +204,11 @@ class FeatureBuilder:
             log.info(f"Loaded {len(df)} entries across {df['race_id'].nunique()} races")
         return df
 
-    def _load_horse_history(self) -> pd.DataFrame:
+    def _load_horse_history(self, horse_ids=None, jockey_ids=None, trainer_ids=None) -> pd.DataFrame:
         """Load all historical results per horse for rolling calculations."""
-        query = """
+        base_query = """
             SELECT
+                e.id AS entry_id,
                 e.horse_id,
                 e.jockey_id,
                 r.date,
@@ -233,14 +234,31 @@ class FeatureBuilder:
             JOIN horses h ON h.id = e.horse_id
             LEFT JOIN results res ON res.entry_id = e.id
             WHERE res.finish_pos IS NOT NULL
-            ORDER BY e.horse_id, r.date
         """
+        
         with get_session() as session:
-            result = session.execute(text(query))
-            rows = result.fetchall()
-            columns = result.keys()
+            if horse_ids is not None and jockey_ids is not None and trainer_ids is not None:
+                h_ids = tuple(int(x) for x in horse_ids if pd.notna(x)) or (-1,)
+                j_ids = tuple(int(x) for x in jockey_ids if pd.notna(x)) or (-1,)
+                t_ids = tuple(int(x) for x in trainer_ids if pd.notna(x)) or (-1,)
+                
+                h_str = "(" + ",".join(str(x) for x in h_ids) + ")"
+                j_str = "(" + ",".join(str(x) for x in j_ids) + ")"
+                t_str = "(" + ",".join(str(x) for x in t_ids) + ")"
+                
+                dfs = []
+                for clause in [f"e.horse_id IN {h_str}", f"e.jockey_id IN {j_str}", f"h.trainer_id IN {t_str}"]:
+                    query = base_query + f" AND {clause}"
+                    result = session.execute(text(query))
+                    df = pd.DataFrame(result.fetchall(), columns=result.keys())
+                    dfs.append(df)
+                    
+                df = pd.concat(dfs).drop_duplicates(subset=["entry_id"])
+            else:
+                query = base_query + " ORDER BY e.horse_id, r.date"
+                result = session.execute(text(query))
+                df = pd.DataFrame(result.fetchall(), columns=result.keys())
 
-        df = pd.DataFrame(rows, columns=columns)
         if "date" in df.columns:
             df["date"] = df["date"].astype(str)
         return df
@@ -1782,7 +1800,13 @@ class FeatureBuilder:
 
         if not hasattr(self, '_horse_groups'):
             log.info("Loading horse/jockey history for rolling features...")
-            history_df = self._load_horse_history()
+            if race_id is not None or race_ids is not None:
+                h_ids = race_df["horse_id"].dropna().unique().tolist()
+                j_ids = race_df["jockey_id"].dropna().unique().tolist()
+                t_ids = race_df["trainer_id"].dropna().unique().tolist()
+                history_df = self._load_horse_history(horse_ids=h_ids, jockey_ids=j_ids, trainer_ids=t_ids)
+            else:
+                history_df = self._load_horse_history()
             history_df = history_df.sort_values("date", ascending=True)
 
             # Pre-index history by entity for O(1) lookups (major speedup)

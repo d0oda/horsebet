@@ -9,7 +9,7 @@
   "summary": {
     "total_races": 36,
     "total_entries": 495,
-    "value_bets": 2
+    "value_bets": 8
   },
   "predictions": [
     {
@@ -278,7 +278,7 @@
       "odds": 5.6,
       "market_prob": 0.1786,
       "ev": 0.2956,
-      "is_value_bet": false,
+      "is_value_bet": true,
       "kelly_fraction": 0,
       "recommended_stake": 1000
     },
@@ -593,7 +593,7 @@
       "odds": 8.2,
       "market_prob": 0.122,
       "ev": 0.2728,
-      "is_value_bet": false,
+      "is_value_bet": true,
       "kelly_fraction": 0,
       "recommended_stake": 1000
     },
@@ -758,7 +758,7 @@
       "odds": 9.8,
       "market_prob": 0.102,
       "ev": 0.2986,
-      "is_value_bet": false,
+      "is_value_bet": true,
       "kelly_fraction": 0,
       "recommended_stake": 1000
     },
@@ -3820,7 +3820,8 @@
       "ev": -0.0612,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14446,
@@ -3835,22 +3836,8 @@
       "ev": 0.1146,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
-    },
-    {
-      "race_id": 14447,
-      "entry_id": 204223,
-      "horse_name": "カリーニョ",
-      "model_win_prob": 0.6507,
-      "pace_win_prob": 0.6507,
-      "combined_win_prob": 0.6161,
-      "pace_place_prob": 1.0,
-      "odds": 1.6,
-      "market_prob": 0.625,
-      "ev": -0.0143,
-      "is_value": false,
-      "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14448,
@@ -3865,7 +3852,8 @@
       "ev": 0.1318,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14462,
@@ -3880,7 +3868,8 @@
       "ev": 0.0622,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14463,
@@ -3895,7 +3884,8 @@
       "ev": 0.2258,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14470,
@@ -3910,7 +3900,8 @@
       "ev": -0.1437,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14458,
@@ -3925,7 +3916,8 @@
       "ev": 0.1167,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14461,
@@ -3940,7 +3932,8 @@
       "ev": -0.1,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14458,
@@ -3955,7 +3948,8 @@
       "ev": -0.0753,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14473,
@@ -3970,7 +3964,8 @@
       "ev": -0.1124,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14450,
@@ -3985,7 +3980,8 @@
       "ev": 0.2965,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": true
     },
     {
       "race_id": 14459,
@@ -4000,7 +3996,8 @@
       "ev": -0.007,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14451,
@@ -4015,7 +4012,8 @@
       "ev": 0.0424,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14471,
@@ -4030,7 +4028,8 @@
       "ev": 0.0301,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14460,
@@ -4045,22 +4044,8 @@
       "ev": 0.1233,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
-    },
-    {
-      "race_id": 14447,
-      "entry_id": 204219,
-      "horse_name": "ウィッシュツリー",
-      "model_win_prob": 0.299,
-      "pace_win_prob": 0.299,
-      "combined_win_prob": 0.2831,
-      "pace_place_prob": 1.0,
-      "odds": 2.7,
-      "market_prob": 0.3704,
-      "ev": -0.2357,
-      "is_value": false,
-      "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14472,
@@ -4075,7 +4060,8 @@
       "ev": 0.1895,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14449,
@@ -4090,7 +4076,8 @@
       "ev": -0.153,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14470,
@@ -4105,7 +4092,8 @@
       "ev": 0.1182,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14460,
@@ -4120,7 +4108,8 @@
       "ev": -0.1261,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14460,
@@ -4135,7 +4124,8 @@
       "ev": -0.2957,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14461,
@@ -4150,7 +4140,8 @@
       "ev": -0.1158,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14474,
@@ -4165,7 +4156,8 @@
       "ev": -0.1867,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14449,
@@ -4180,7 +4172,8 @@
       "ev": -0.1981,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14472,
@@ -4195,7 +4188,8 @@
       "ev": -0.233,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14473,
@@ -4210,7 +4204,8 @@
       "ev": -0.1947,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14471,
@@ -4225,7 +4220,8 @@
       "ev": -0.2373,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14461,
@@ -4240,7 +4236,8 @@
       "ev": -0.205,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14473,
@@ -4255,7 +4252,8 @@
       "ev": 0.2794,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": true
     },
     {
       "race_id": 14472,
@@ -4270,7 +4268,8 @@
       "ev": -0.1801,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14450,
@@ -4285,7 +4284,8 @@
       "ev": -0.1581,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14451,
@@ -4300,7 +4300,8 @@
       "ev": -0.0302,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14474,
@@ -4315,7 +4316,8 @@
       "ev": 0.6476,
       "is_value": true,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": true
     },
     {
       "race_id": 14474,
@@ -4330,7 +4332,8 @@
       "ev": -0.0308,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14462,
@@ -4345,7 +4348,8 @@
       "ev": -0.3018,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14459,
@@ -4360,7 +4364,8 @@
       "ev": -0.2673,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14450,
@@ -4375,7 +4380,8 @@
       "ev": -0.2403,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14463,
@@ -4390,7 +4396,8 @@
       "ev": -0.3791,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14475,
@@ -4405,7 +4412,8 @@
       "ev": -0.0916,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14448,
@@ -4420,7 +4428,8 @@
       "ev": -0.1305,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14449,
@@ -4435,7 +4444,8 @@
       "ev": -0.0991,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14451,
@@ -4450,7 +4460,8 @@
       "ev": -0.0961,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14472,
@@ -4465,7 +4476,8 @@
       "ev": 0.0163,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14471,
@@ -4480,7 +4492,8 @@
       "ev": 0.1584,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14446,
@@ -4495,7 +4508,8 @@
       "ev": -0.3518,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14451,
@@ -4510,7 +4524,8 @@
       "ev": -0.199,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14474,
@@ -4525,7 +4540,8 @@
       "ev": 0.1551,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14459,
@@ -4540,7 +4556,8 @@
       "ev": 0.0921,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14459,
@@ -4555,7 +4572,8 @@
       "ev": -0.2683,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14475,
@@ -4570,7 +4588,8 @@
       "ev": -0.0437,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14448,
@@ -4585,7 +4604,8 @@
       "ev": -0.2643,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14461,
@@ -4600,7 +4620,8 @@
       "ev": -0.1276,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14461,
@@ -4615,7 +4636,8 @@
       "ev": -0.4117,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14470,
@@ -4630,7 +4652,8 @@
       "ev": -0.2287,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14458,
@@ -4645,7 +4668,8 @@
       "ev": -0.3943,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14463,
@@ -4660,7 +4684,8 @@
       "ev": -0.0745,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14473,
@@ -4675,7 +4700,8 @@
       "ev": -0.3678,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14471,
@@ -4690,7 +4716,8 @@
       "ev": -0.1631,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14474,
@@ -4705,7 +4732,8 @@
       "ev": -0.3695,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14449,
@@ -4720,7 +4748,8 @@
       "ev": -0.0993,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14449,
@@ -4735,7 +4764,8 @@
       "ev": 0.0387,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14449,
@@ -4750,7 +4780,8 @@
       "ev": -0.1841,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14458,
@@ -4765,7 +4796,8 @@
       "ev": -0.4242,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14474,
@@ -4780,7 +4812,8 @@
       "ev": -0.4283,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14460,
@@ -4795,7 +4828,8 @@
       "ev": -0.0723,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14459,
@@ -4810,7 +4844,8 @@
       "ev": -0.1098,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14471,
@@ -4825,7 +4860,8 @@
       "ev": -0.2508,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14462,
@@ -4840,22 +4876,8 @@
       "ev": -0.3063,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
-    },
-    {
-      "race_id": 14447,
-      "entry_id": 204225,
-      "horse_name": "ショウナンマクベス",
-      "model_win_prob": 0.0665,
-      "pace_win_prob": 0.0665,
-      "combined_win_prob": 0.0629,
-      "pace_place_prob": 0.997,
-      "odds": 7.2,
-      "market_prob": 0.1389,
-      "ev": -0.547,
-      "is_value": false,
-      "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14462,
@@ -4870,7 +4892,8 @@
       "ev": -0.0747,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14450,
@@ -4885,7 +4908,8 @@
       "ev": -0.1941,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14463,
@@ -4900,7 +4924,8 @@
       "ev": -0.2888,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14473,
@@ -4915,7 +4940,8 @@
       "ev": -0.1424,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14448,
@@ -4930,7 +4956,8 @@
       "ev": -0.5608,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14451,
@@ -4945,7 +4972,8 @@
       "ev": -0.3339,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14474,
@@ -4960,7 +4988,8 @@
       "ev": -0.498,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14474,
@@ -4975,7 +5004,8 @@
       "ev": -0.1488,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14459,
@@ -4990,7 +5020,8 @@
       "ev": -0.447,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14470,
@@ -5005,7 +5036,8 @@
       "ev": -0.2465,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14450,
@@ -5020,7 +5052,8 @@
       "ev": -0.4457,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14450,
@@ -5035,7 +5068,8 @@
       "ev": -0.2507,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14460,
@@ -5050,7 +5084,8 @@
       "ev": -0.3866,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14449,
@@ -5065,7 +5100,8 @@
       "ev": -0.0889,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14472,
@@ -5080,7 +5116,8 @@
       "ev": -0.4026,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14462,
@@ -5095,7 +5132,8 @@
       "ev": -0.3517,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14471,
@@ -5110,7 +5148,8 @@
       "ev": -0.4117,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14471,
@@ -5125,7 +5164,8 @@
       "ev": -0.398,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14451,
@@ -5140,7 +5180,8 @@
       "ev": -0.2248,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14446,
@@ -5155,7 +5196,8 @@
       "ev": -0.3345,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14463,
@@ -5170,7 +5212,8 @@
       "ev": -0.3663,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14463,
@@ -5185,7 +5228,8 @@
       "ev": -0.4957,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14463,
@@ -5200,7 +5244,8 @@
       "ev": -0.5894,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14450,
@@ -5215,7 +5260,8 @@
       "ev": -0.4408,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14473,
@@ -5230,7 +5276,8 @@
       "ev": -0.2845,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14475,
@@ -5245,7 +5292,8 @@
       "ev": -0.5291,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14475,
@@ -5260,7 +5308,8 @@
       "ev": -0.3199,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14448,
@@ -5275,7 +5324,8 @@
       "ev": -0.3588,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14460,
@@ -5290,7 +5340,8 @@
       "ev": -0.4976,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14460,
@@ -5305,7 +5356,8 @@
       "ev": -0.2305,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14462,
@@ -5320,7 +5372,8 @@
       "ev": -0.4231,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14472,
@@ -5335,7 +5388,8 @@
       "ev": -0.0641,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14472,
@@ -5350,7 +5404,8 @@
       "ev": -0.4334,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14471,
@@ -5365,7 +5420,8 @@
       "ev": -0.4293,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14470,
@@ -5380,7 +5436,8 @@
       "ev": -0.3963,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14470,
@@ -5395,7 +5452,8 @@
       "ev": -0.456,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14474,
@@ -5410,7 +5468,8 @@
       "ev": -0.5029,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14473,
@@ -5425,7 +5484,8 @@
       "ev": -0.4163,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14446,
@@ -5440,7 +5500,8 @@
       "ev": -0.5696,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14448,
@@ -5455,7 +5516,8 @@
       "ev": -0.5936,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14459,
@@ -5470,7 +5532,8 @@
       "ev": -0.0979,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14470,
@@ -5485,7 +5548,8 @@
       "ev": -0.5358,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14450,
@@ -5500,7 +5564,8 @@
       "ev": -0.4534,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14449,
@@ -5515,7 +5580,8 @@
       "ev": -0.2206,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14471,
@@ -5530,7 +5596,8 @@
       "ev": -0.6061,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14471,
@@ -5545,7 +5612,8 @@
       "ev": -0.1595,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14449,
@@ -5560,7 +5628,8 @@
       "ev": -0.3715,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14449,
@@ -5575,7 +5644,8 @@
       "ev": -0.5102,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14446,
@@ -5590,7 +5660,8 @@
       "ev": -0.3774,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14472,
@@ -5605,7 +5676,8 @@
       "ev": -0.6313,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14472,
@@ -5620,7 +5692,8 @@
       "ev": -0.3654,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14459,
@@ -5635,7 +5708,8 @@
       "ev": -0.4826,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14451,
@@ -5650,7 +5724,8 @@
       "ev": -0.5599,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14451,
@@ -5665,7 +5740,8 @@
       "ev": -0.4006,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14451,
@@ -5680,7 +5756,8 @@
       "ev": -0.4527,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14451,
@@ -5695,7 +5772,8 @@
       "ev": -0.5454,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14446,
@@ -5710,7 +5788,8 @@
       "ev": -0.6413,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14446,
@@ -5725,7 +5804,8 @@
       "ev": -0.0818,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14459,
@@ -5740,7 +5820,8 @@
       "ev": -0.3101,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14450,
@@ -5755,7 +5836,8 @@
       "ev": -0.4311,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14461,
@@ -5770,7 +5852,8 @@
       "ev": -0.5801,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14462,
@@ -5785,7 +5868,8 @@
       "ev": -0.5806,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14448,
@@ -5800,7 +5884,8 @@
       "ev": -0.5239,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14449,
@@ -5815,7 +5900,8 @@
       "ev": -0.5733,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14472,
@@ -5830,7 +5916,8 @@
       "ev": -0.3484,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14448,
@@ -5845,7 +5932,8 @@
       "ev": -0.6182,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14446,
@@ -5860,7 +5948,8 @@
       "ev": -0.5252,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14446,
@@ -5875,7 +5964,8 @@
       "ev": -0.3598,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14459,
@@ -5890,7 +5980,8 @@
       "ev": -0.4396,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14458,
@@ -5905,7 +5996,8 @@
       "ev": -0.6039,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14460,
@@ -5920,7 +6012,8 @@
       "ev": -0.6529,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14470,
@@ -5935,7 +6028,8 @@
       "ev": -0.279,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14450,
@@ -5950,22 +6044,8 @@
       "ev": -0.5746,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
-    },
-    {
-      "race_id": 14447,
-      "entry_id": 204220,
-      "horse_name": "エーデル",
-      "model_win_prob": 0.0189,
-      "pace_win_prob": 0.0189,
-      "combined_win_prob": 0.0179,
-      "pace_place_prob": 0.0015,
-      "odds": 27.5,
-      "market_prob": 0.0364,
-      "ev": -0.5082,
-      "is_value": false,
-      "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14463,
@@ -5980,7 +6060,8 @@
       "ev": -0.4791,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14463,
@@ -5995,7 +6076,8 @@
       "ev": -0.3851,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14472,
@@ -6010,7 +6092,8 @@
       "ev": -0.5829,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14472,
@@ -6025,7 +6108,8 @@
       "ev": -0.4725,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14451,
@@ -6040,7 +6124,8 @@
       "ev": -0.5131,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14474,
@@ -6055,7 +6140,8 @@
       "ev": -0.119,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14446,
@@ -6070,7 +6156,8 @@
       "ev": -0.639,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14446,
@@ -6085,7 +6172,8 @@
       "ev": -0.5491,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14446,
@@ -6100,7 +6188,8 @@
       "ev": -0.5225,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14475,
@@ -6115,7 +6204,8 @@
       "ev": -0.5505,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14462,
@@ -6130,7 +6220,8 @@
       "ev": -0.5114,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14459,
@@ -6145,7 +6236,8 @@
       "ev": -0.3376,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14473,
@@ -6160,7 +6252,8 @@
       "ev": -0.6806,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14460,
@@ -6175,7 +6268,8 @@
       "ev": -0.6138,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14475,
@@ -6190,7 +6284,8 @@
       "ev": -0.4889,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14449,
@@ -6205,7 +6300,8 @@
       "ev": -0.3391,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14462,
@@ -6220,22 +6316,8 @@
       "ev": -0.6507,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
-    },
-    {
-      "race_id": 14447,
-      "entry_id": 204222,
-      "horse_name": "ミッドセンチュリー",
-      "model_win_prob": 0.0146,
-      "pace_win_prob": 0.0146,
-      "combined_win_prob": 0.0139,
-      "pace_place_prob": NaN,
-      "odds": 21.3,
-      "market_prob": 0.0469,
-      "ev": -0.705,
-      "is_value": false,
-      "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14463,
@@ -6250,7 +6332,8 @@
       "ev": -0.6075,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14458,
@@ -6265,7 +6348,8 @@
       "ev": -0.5943,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14458,
@@ -6280,7 +6364,8 @@
       "ev": -0.7166,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14448,
@@ -6295,7 +6380,8 @@
       "ev": -0.5013,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14460,
@@ -6310,7 +6396,8 @@
       "ev": -0.4578,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14451,
@@ -6325,7 +6412,8 @@
       "ev": -0.4579,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14451,
@@ -6340,7 +6428,8 @@
       "ev": -0.5437,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14451,
@@ -6355,7 +6444,8 @@
       "ev": -0.396,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14474,
@@ -6370,7 +6460,8 @@
       "ev": -0.568,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14458,
@@ -6385,7 +6476,8 @@
       "ev": -0.6768,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14458,
@@ -6400,7 +6492,8 @@
       "ev": -0.5806,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14459,
@@ -6415,7 +6508,8 @@
       "ev": -0.4667,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14450,
@@ -6430,7 +6524,8 @@
       "ev": -0.3306,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14450,
@@ -6445,7 +6540,8 @@
       "ev": -0.573,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14471,
@@ -6460,7 +6556,8 @@
       "ev": -0.5813,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14460,
@@ -6475,7 +6572,8 @@
       "ev": -0.577,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14473,
@@ -6490,7 +6588,8 @@
       "ev": -0.7065,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14459,
@@ -6505,7 +6604,8 @@
       "ev": -0.6608,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14459,
@@ -6520,7 +6620,8 @@
       "ev": -0.3815,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14475,
@@ -6535,7 +6636,8 @@
       "ev": -0.7924,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14450,
@@ -6550,7 +6652,8 @@
       "ev": -0.6857,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14450,
@@ -6565,7 +6668,8 @@
       "ev": -0.5037,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14463,
@@ -6580,7 +6684,8 @@
       "ev": -0.7111,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14472,
@@ -6595,7 +6700,8 @@
       "ev": -0.569,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14471,
@@ -6610,7 +6716,8 @@
       "ev": -0.5262,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14471,
@@ -6625,7 +6732,8 @@
       "ev": -0.4987,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14461,
@@ -6640,7 +6748,8 @@
       "ev": -0.716,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14471,
@@ -6655,7 +6764,8 @@
       "ev": -0.4987,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14451,
@@ -6670,7 +6780,8 @@
       "ev": -0.6823,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14474,
@@ -6685,7 +6796,8 @@
       "ev": -0.3518,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14474,
@@ -6700,7 +6812,8 @@
       "ev": -0.693,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14459,
@@ -6715,7 +6828,8 @@
       "ev": -0.6324,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14450,
@@ -6730,7 +6844,8 @@
       "ev": -0.5526,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14473,
@@ -6745,7 +6860,8 @@
       "ev": -0.7365,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14475,
@@ -6760,7 +6876,8 @@
       "ev": -0.7766,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14475,
@@ -6775,7 +6892,8 @@
       "ev": -0.8356,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14448,
@@ -6790,7 +6908,8 @@
       "ev": -0.7702,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14475,
@@ -6805,7 +6924,8 @@
       "ev": -0.762,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14461,
@@ -6820,7 +6940,8 @@
       "ev": -0.6515,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14462,
@@ -6835,7 +6956,8 @@
       "ev": -0.723,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14463,
@@ -6850,7 +6972,8 @@
       "ev": -0.7947,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14463,
@@ -6865,7 +6988,8 @@
       "ev": -0.7499,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14473,
@@ -6880,7 +7004,8 @@
       "ev": -0.6973,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14473,
@@ -6895,7 +7020,8 @@
       "ev": -0.6315,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14473,
@@ -6910,7 +7036,8 @@
       "ev": -0.69,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14448,
@@ -6925,7 +7052,8 @@
       "ev": -0.7231,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14471,
@@ -6940,7 +7068,8 @@
       "ev": -0.5923,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14450,
@@ -6955,7 +7084,8 @@
       "ev": -0.6117,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14450,
@@ -6970,7 +7100,8 @@
       "ev": -0.8096,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14470,
@@ -6985,7 +7116,8 @@
       "ev": -0.6851,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14474,
@@ -7000,7 +7132,8 @@
       "ev": -0.82,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14474,
@@ -7015,7 +7148,8 @@
       "ev": -0.6218,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14459,
@@ -7030,7 +7164,8 @@
       "ev": -0.6397,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14470,
@@ -7045,7 +7180,8 @@
       "ev": -0.5808,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14462,
@@ -7060,22 +7196,8 @@
       "ev": -0.6837,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
-    },
-    {
-      "race_id": 14447,
-      "entry_id": 204218,
-      "horse_name": "ホークマン",
-      "model_win_prob": 0.0036,
-      "pace_win_prob": 0.0036,
-      "combined_win_prob": 0.0034,
-      "pace_place_prob": NaN,
-      "odds": 34.8,
-      "market_prob": 0.0287,
-      "ev": -0.8817,
-      "is_value": false,
-      "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14446,
@@ -7090,7 +7212,8 @@
       "ev": -0.8309,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14451,
@@ -7105,7 +7228,8 @@
       "ev": -0.7444,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14470,
@@ -7120,7 +7244,8 @@
       "ev": -0.7192,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14462,
@@ -7135,7 +7260,8 @@
       "ev": -0.8147,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14458,
@@ -7150,7 +7276,8 @@
       "ev": -0.8451,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14458,
@@ -7165,7 +7292,8 @@
       "ev": -0.8366,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14448,
@@ -7180,7 +7308,8 @@
       "ev": -0.703,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14470,
@@ -7195,7 +7324,8 @@
       "ev": -0.7381,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14470,
@@ -7210,7 +7340,8 @@
       "ev": -0.823,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14470,
@@ -7225,7 +7356,8 @@
       "ev": -0.8566,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14470,
@@ -7240,7 +7372,8 @@
       "ev": -0.7871,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14474,
@@ -7255,7 +7388,8 @@
       "ev": -0.8593,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14446,
@@ -7270,7 +7404,8 @@
       "ev": -0.8526,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14462,
@@ -7285,7 +7420,8 @@
       "ev": -0.8564,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14462,
@@ -7300,7 +7436,8 @@
       "ev": -0.8428,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14462,
@@ -7315,37 +7452,8 @@
       "ev": -0.81,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
-    },
-    {
-      "race_id": 14447,
-      "entry_id": 204224,
-      "horse_name": "チャイボーグ",
-      "model_win_prob": 0.0015,
-      "pace_win_prob": 0.0015,
-      "combined_win_prob": 0.0014,
-      "pace_place_prob": 0.0015,
-      "odds": 59.1,
-      "market_prob": 0.0169,
-      "ev": -0.9176,
-      "is_value": false,
-      "kelly_fraction": 0,
-      "recommended_stake": 1000
-    },
-    {
-      "race_id": 14447,
-      "entry_id": 204221,
-      "horse_name": "コスタデラルス",
-      "model_win_prob": 0.0015,
-      "pace_win_prob": 0.0015,
-      "combined_win_prob": 0.0014,
-      "pace_place_prob": NaN,
-      "odds": 97.3,
-      "market_prob": 0.0103,
-      "ev": -0.8643,
-      "is_value": false,
-      "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14475,
@@ -7360,7 +7468,8 @@
       "ev": -0.9093,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14449,
@@ -7375,7 +7484,8 @@
       "ev": -0.9764,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14449,
@@ -7390,7 +7500,8 @@
       "ev": -0.9689,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14449,
@@ -7405,7 +7516,8 @@
       "ev": -0.9819,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14462,
@@ -7420,7 +7532,8 @@
       "ev": -1.0,
       "is_value": false,
       "kelly_fraction": 0,
-      "recommended_stake": 1000
+      "recommended_stake": 1000,
+      "is_value_bet": false
     },
     {
       "race_id": 14472,
@@ -7433,6 +7546,127 @@
       "odds": 155.6,
       "market_prob": 0.0064,
       "ev": -1.0,
+      "is_value": false,
+      "kelly_fraction": 0,
+      "recommended_stake": 1000,
+      "is_value_bet": false
+    },
+    {
+      "race_id": 14447,
+      "entry_id": 204223,
+      "horse_name": "カリーニョ",
+      "model_win_prob": 0.6106,
+      "pace_win_prob": 0.6106,
+      "combined_win_prob": 0.5786,
+      "pace_place_prob": 1.0,
+      "odds": 1.6,
+      "market_prob": 0.625,
+      "ev": -0.0742,
+      "is_value": false,
+      "kelly_fraction": 0,
+      "recommended_stake": 1000
+    },
+    {
+      "race_id": 14447,
+      "entry_id": 204219,
+      "horse_name": "ウィッシュツリー",
+      "model_win_prob": 0.3324,
+      "pace_win_prob": 0.3324,
+      "combined_win_prob": 0.315,
+      "pace_place_prob": 1.0,
+      "odds": 2.7,
+      "market_prob": 0.3704,
+      "ev": -0.1496,
+      "is_value": false,
+      "kelly_fraction": 0,
+      "recommended_stake": 1000
+    },
+    {
+      "race_id": 14447,
+      "entry_id": 204225,
+      "horse_name": "ショウナンマクベス",
+      "model_win_prob": 0.0743,
+      "pace_win_prob": 0.0743,
+      "combined_win_prob": 0.0704,
+      "pace_place_prob": 0.997,
+      "odds": 7.2,
+      "market_prob": 0.1389,
+      "ev": -0.4932,
+      "is_value": false,
+      "kelly_fraction": 0,
+      "recommended_stake": 1000
+    },
+    {
+      "race_id": 14447,
+      "entry_id": 204222,
+      "horse_name": "ミッドセンチュリー",
+      "model_win_prob": 0.0168,
+      "pace_win_prob": 0.0168,
+      "combined_win_prob": 0.016,
+      "pace_place_prob": NaN,
+      "odds": 21.3,
+      "market_prob": 0.0469,
+      "ev": -0.6599,
+      "is_value": false,
+      "kelly_fraction": 0,
+      "recommended_stake": 1000
+    },
+    {
+      "race_id": 14447,
+      "entry_id": 204220,
+      "horse_name": "エーデル",
+      "model_win_prob": 0.0146,
+      "pace_win_prob": 0.0146,
+      "combined_win_prob": 0.0139,
+      "pace_place_prob": 0.0015,
+      "odds": 27.5,
+      "market_prob": 0.0364,
+      "ev": -0.6188,
+      "is_value": false,
+      "kelly_fraction": 0,
+      "recommended_stake": 1000
+    },
+    {
+      "race_id": 14447,
+      "entry_id": 204218,
+      "horse_name": "ホークマン",
+      "model_win_prob": 0.0036,
+      "pace_win_prob": 0.0036,
+      "combined_win_prob": 0.0034,
+      "pace_place_prob": NaN,
+      "odds": 34.8,
+      "market_prob": 0.0287,
+      "ev": -0.8816,
+      "is_value": false,
+      "kelly_fraction": 0,
+      "recommended_stake": 1000
+    },
+    {
+      "race_id": 14447,
+      "entry_id": 204221,
+      "horse_name": "コスタデラルス",
+      "model_win_prob": 0.0015,
+      "pace_win_prob": 0.0015,
+      "combined_win_prob": 0.0014,
+      "pace_place_prob": NaN,
+      "odds": 97.3,
+      "market_prob": 0.0103,
+      "ev": -0.8622,
+      "is_value": false,
+      "kelly_fraction": 0,
+      "recommended_stake": 1000
+    },
+    {
+      "race_id": 14447,
+      "entry_id": 204224,
+      "horse_name": "チャイボーグ",
+      "model_win_prob": 0.0015,
+      "pace_win_prob": 0.0015,
+      "combined_win_prob": 0.0014,
+      "pace_place_prob": 0.0015,
+      "odds": 59.1,
+      "market_prob": 0.0169,
+      "ev": -0.9175,
       "is_value": false,
       "kelly_fraction": 0,
       "recommended_stake": 1000
