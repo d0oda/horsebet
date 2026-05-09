@@ -22,6 +22,7 @@ import json
 import logging
 import time as time_module
 from datetime import datetime, timezone, timedelta
+import os
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -199,7 +200,7 @@ def check_result(race: dict) -> dict | None:
                     )
                     if entry.finish_pos == 1:
                         winner = {
-                            "horse_name": entry.horse_name,
+                            "horse_name": entry.horse.name_jp if entry.horse else "?",
                             "post_position": entry.post_position,
                             "odds": entry.odds_win or 0,
                             "time_secs": entry.time_secs,
@@ -273,6 +274,15 @@ def notify_race(race, prev_race, is_first_at_venue):
     msg = format_pre_race_message(race, top3, prev_result, prev_race, is_first_at_venue)
     notify_message(msg)
     log.info(f"   ✅ Sent: {venue} R{rn} — Top EV: {top3[0]['horse_name']} ({top3[0]['ev']:+.1f}%)")
+    
+    summary_file = os.environ.get("GITHUB_STEP_SUMMARY")
+    if summary_file:
+        with open(summary_file, "a") as f:
+            f.write(f"\n#### 📨 Sent Notification for {venue} R{rn}\n")
+            f.write("```text\n")
+            f.write(msg + "\n")
+            f.write("```\n")
+            
     return prev_result
 
 
@@ -346,6 +356,28 @@ def run_once(date: str, lead_time_min: int):
     state["venue_last_race"] = venue_last_race_ids
     save_state(date, state)
     log.info(f"   State saved ({len(notified_ids)}/{len(races)} notified)")
+
+    # Write GitHub Step Summary if running in Actions
+    summary_file = os.environ.get("GITHUB_STEP_SUMMARY")
+    if summary_file:
+        with open(summary_file, "a") as f:
+            f.write(f"### 🏇 Race Watcher Summary ({date})\n")
+            if ready:
+                f.write(f"✅ **Notified {len(ready)} races:**\n")
+                for r in ready:
+                    f.write(f"- {r['venue']} R{r['race_number']} ({r['post_time']})\n")
+            else:
+                f.write("💤 **No races notified this run.**\n")
+                
+            if len(notified_ids) < len(races):
+                nxt = None
+                remaining = [r for r in races if r["id"] not in notified_ids]
+                if remaining:
+                    nxt = remaining[0]
+                    wait_min = (nxt["post_dt"] - timedelta(minutes=lead_time_min) - now).total_seconds() / 60
+                    f.write(f"⏳ **Next race in {wait_min:.0f} min:** {nxt['venue']} R{nxt['race_number']} ({nxt['post_time']})\n")
+            else:
+                f.write("🏁 **All races complete.**\n")
 
 
 def run_continuous(date: str, lead_time_min: int, test_mode: bool):

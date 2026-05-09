@@ -152,7 +152,12 @@ def step_odds(date: str, race_ids: list[str]) -> list[int]:
         log.info(f"  No upcoming races (past: {skipped_past}, future: {skipped_future})")
         return []
 
-    log.info(f"  Targeting {len(upcoming_ids)} races "
+    # Sort upcoming_ids chronologically and take only the next 3 races
+    from datetime import time as dt_time
+    upcoming_ids.sort(key=lambda nk_id: nk_to_info.get(nk_id).post_time if nk_to_info.get(nk_id) and nk_to_info.get(nk_id).post_time else dt_time.max)
+    upcoming_ids = upcoming_ids[:3]
+
+    log.info(f"  Targeting next {len(upcoming_ids)} races chronologically "
              f"(past: {skipped_past}, future: {skipped_future}, no_time: {no_time})")
 
     updated_db_ids = []
@@ -772,7 +777,7 @@ Examples:
     )
     parser.add_argument("--date", required=True, help="Race date (YYYY-MM-DD)")
     parser.add_argument("--version", default="retrain_20260507_1645", help="Model version (default: retrain_20260507_1645)")
-    parser.add_argument("--ev-threshold", type=float, default=0.30, help="Min EV for value bet (default: 30%)")
+    parser.add_argument("--ev-threshold", type=float, default=0.30, help="Min EV for value bet (default: 30%%)")
     parser.add_argument("--max-odds", type=float, default=30.0, help="Max odds filter (default: 30)")
     parser.add_argument("--min-odds", type=float, default=2.0, help="Min odds filter (default: 2.0)")
     parser.add_argument("--skip-scrape", action="store_true", help="Skip race scraping (already in DB)")

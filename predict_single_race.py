@@ -91,4 +91,5 @@ def run(race_netkeiba_id):
     print(df.to_string())
 
 if __name__ == "__main__":
-    run("202605020501")
+    race_id = sys.argv[1] if len(sys.argv) > 1 else "202605020501"
+    run(race_id)

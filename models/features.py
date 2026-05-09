@@ -226,7 +226,6 @@ class FeatureBuilder:
                 res.last_3f_secs,
                 res.corner_positions,
                 res.margin,
-                res.first_3f_secs,
                 r.field_size,
                 h.trainer_id
             FROM entries e

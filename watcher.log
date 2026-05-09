@@ -1,0 +1,89 @@
+10:04:58 [INFO] 🏇 UmaEdge Race Watcher — 2026-05-09
+10:04:58 [INFO] ━━━ Refreshing odds + predictions ━━━
+10:05:05 [INFO] ━━━ Step 2: Smart odds fetch (JST: 10:05) ━━━
+10:05:06 [INFO]   Targeting 34 races (past: 2, future: 0, no_time: 0)
+10:05:06 [INFO] Got 10 odds from API for 202604010302
+10:05:10 [INFO]   [1/34] R2 (10:20): 10 horses updated
+10:05:11 [INFO] Got 15 odds from API for 202604010303
+10:05:16 [INFO]   [2/34] R3 (10:50): 15 horses updated
+10:05:17 [INFO] Got 11 odds from API for 202604010304
+10:05:20 [INFO]   [3/34] R4 (11:20): 11 horses updated
+10:05:21 [INFO] Got 16 odds from API for 202604010305
+10:05:27 [INFO]   [4/34] R5 (12:10): 16 horses updated
+10:05:28 [INFO] Got 16 odds from API for 202604010306
+10:05:34 [INFO]   [5/34] R6 (12:40): 16 horses updated
+10:05:35 [INFO] Got 15 odds from API for 202604010307
+10:05:40 [INFO]   [6/34] R7 (13:10): 15 horses updated
+10:05:41 [INFO] Got 15 odds from API for 202604010308
+10:05:47 [INFO]   [7/34] R8 (13:40): 15 horses updated
+10:05:48 [INFO] Got 14 odds from API for 202604010309
+10:05:53 [INFO]   [8/34] R9 (14:10): 14 horses updated
+10:05:54 [INFO] Got 13 odds from API for 202604010310
+10:05:59 [INFO]   [9/34] R10 (14:45): 13 horses updated
+10:05:59 [INFO] Got 16 odds from API for 202604010311
+10:06:06 [INFO]   [10/34] R11 (15:20): 16 horses updated
+10:06:07 [INFO] Got 12 odds from API for 202604010312
+10:06:11 [INFO]   [11/34] R12 (16:00): 12 horses updated
+10:06:12 [INFO] Got 16 odds from API for 202605020501
+10:06:18 [INFO]   [12/34] R1 (10:05): 16 horses updated
+10:06:19 [INFO] Got 11 odds from API for 202605020502
+10:06:23 [INFO]   [13/34] R2 (10:40): 11 horses updated
+10:06:24 [INFO] Got 16 odds from API for 202605020503
+10:06:31 [INFO]   [14/34] R3 (11:10): 16 horses updated
+10:06:31 [INFO] Got 12 odds from API for 202605020504
+10:06:36 [INFO]   [15/34] R4 (11:40): 12 horses updated
+10:06:37 [INFO] Got 18 odds from API for 202605020505
+10:06:43 [INFO]   [16/34] R5 (12:30): 18 horses updated
+10:06:44 [INFO] Got 12 odds from API for 202605020506
+10:06:49 [INFO]   [17/34] R6 (13:00): 12 horses updated
+10:06:49 [INFO] Got 14 odds from API for 202605020507
+10:06:54 [INFO]   [18/34] R7 (13:30): 14 horses updated
+10:06:54 [INFO] Got 8 odds from API for 202605020508
+10:06:57 [INFO]   [19/34] R8 (14:00): 8 horses updated
+10:06:58 [INFO] Got 12 odds from API for 202605020509
+10:07:03 [INFO]   [20/34] R9 (14:30): 12 horses updated
+10:07:03 [INFO] Got 15 odds from API for 202605020510
+10:07:09 [INFO]   [21/34] R10 (15:05): 15 horses updated
+10:07:10 [INFO] Got 17 odds from API for 202605020511
+10:07:15 [INFO]   [22/34] R11 (15:45): 17 horses updated
+10:07:16 [INFO] Got 16 odds from API for 202605020512
+10:07:22 [INFO]   [23/34] R12 (16:30): 16 horses updated
+10:07:23 [INFO] Got 15 odds from API for 202608030502
+10:07:28 [INFO]   [24/34] R2 (10:30): 15 horses updated
+10:07:29 [INFO] Got 17 odds from API for 202608030503
+10:07:35 [INFO]   [25/34] R3 (11:00): 17 horses updated
+10:07:35 [INFO] Got 15 odds from API for 202608030504
+10:07:41 [INFO]   [26/34] R4 (11:30): 15 horses updated
+10:07:42 [INFO] Got 8 odds from API for 202608030505
+10:07:45 [INFO]   [27/34] R5 (12:20): 8 horses updated
+10:07:46 [INFO] Got 16 odds from API for 202608030506
+10:07:52 [INFO]   [28/34] R6 (12:50): 16 horses updated
+10:07:53 [INFO] Got 11 odds from API for 202608030507
+10:07:56 [INFO]   [29/34] R7 (13:20): 11 horses updated
+10:07:57 [INFO] Got 16 odds from API for 202608030508
+10:08:03 [INFO]   [30/34] R8 (13:50): 16 horses updated
+10:08:04 [INFO] Got 11 odds from API for 202608030509
+10:08:08 [INFO]   [31/34] R9 (14:20): 11 horses updated
+10:08:09 [INFO] Got 8 odds from API for 202608030510
+10:08:12 [INFO]   [32/34] R10 (14:55): 8 horses updated
+10:08:13 [INFO] Got 16 odds from API for 202608030511
+10:08:19 [INFO]   [33/34] R11 (15:30): 16 horses updated
+10:08:20 [INFO] Got 13 odds from API for 202608030512
+10:08:24 [INFO]   [34/34] R12 (16:10): 13 horses updated
+10:08:25 [INFO] ✅ Updated odds for 34 races
+10:08:26 [INFO] ━━━ Step 3: Predicting all 36 races (retrain_20260507_1645) ━━━
+10:08:27 [INFO] Building features for all 36 races (bulk)...
+10:08:27 [INFO] Loading race data...
+10:08:30 [INFO] Loaded 495 entries across 36 races
+10:08:30 [INFO] Loading horse/jockey history for rolling features...
+10:09:04 [INFO] Pre-indexing history for fast lookups...
+10:09:05 [INFO] Indexed: 36649 horses, 820 jockeys, 780 trainers, 10 courses
+10:09:05 [INFO] Building features for 495 entries...
+10:09:09 [INFO] Speed baselines: 373 (course, dist, going) combos
+10:09:41 [INFO] ✅ Built 495 feature vectors with 272 columns in 74.1s (7 entries/s)
+10:09:41 [INFO] Running model inference (Standard Ensemble)...
+10:09:41 [INFO] 📐 Loaded calibrator
+10:09:41 [INFO] 📦 Loaded model version: retrain_20260507_1645 (odds_free=False)
+/Users/ryfei.wang/Documents/horsebet/pipeline.py:331: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+  X = features_df[feature_cols].fillna(0).values
+10:09:41 [INFO] Applied calibrator to predictions
