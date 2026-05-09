@@ -1,7 +1,7 @@
 🏇 UmaEdge Value Bets (2026-05-09)
 ========================================
 Model: retrain_20260507_1645
-Total Bets: 6
+Total Bets: 8
 ========================================
 
 📍 Kyoto (05-09) R1 - 3歳未勝利
@@ -202,59 +202,59 @@ Total Bets: 6
 
 📍 Kyoto (05-09) R4 - 3歳未勝利
    🐴 #9 ジャジャミン
-      Odds: 9.0x | EV: +15.8%
-      Win Prob: 12.9%
+      Odds: 9.0x | EV: +13.2%
+      Win Prob: 12.6%
       Result: Finished 14
+   🐴 #10 カトマンズゴールド
+      Odds: 5.1x | EV: -9.2%
+      Win Prob: 17.8%
+      Result: Finished 4
    🐴 #7 ビシェノ
-      Odds: 26.4x | EV: -8.4%
-      Win Prob: 3.5%
+      Odds: 26.4x | EV: -10.5%
+      Win Prob: 3.4%
       Result: Finished 5
    🐴 #1 テクノピーチ
-      Odds: 69.7x | EV: -9.9%
+      Odds: 69.7x | EV: -12.0%
       Win Prob: 1.3%
       Result: Finished 7
    🐴 #6 ティタノマキア
-      Odds: 4.6x | EV: -16.2%
-      Win Prob: 18.2%
+      Odds: 4.6x | EV: -18.1%
+      Win Prob: 17.8%
       Result: Finished 2
    🐴 #8 マジカルアメジスト
-      Odds: 5.3x | EV: -17.0%
-      Win Prob: 15.7%
+      Odds: 5.3x | EV: -18.9%
+      Win Prob: 15.3%
       Result: 🏆 WINNER
-   🐴 #10 カトマンズゴールド
-      Odds: 5.1x | EV: -20.1%
-      Win Prob: 15.7%
-      Result: Finished 4
    🐴 #14 ルクスキャンディ
-      Odds: 11.3x | EV: -25.8%
-      Win Prob: 6.6%
+      Odds: 11.3x | EV: -27.5%
+      Win Prob: 6.4%
       Result: Finished 8
    🐴 #2 パンチャマハブータ
-      Odds: 6.5x | EV: -30.0%
-      Win Prob: 10.8%
+      Odds: 6.5x | EV: -31.6%
+      Win Prob: 10.5%
       Result: Finished 9
    🐴 #13 プレスバーン
-      Odds: 4.6x | EV: -35.5%
-      Win Prob: 14.0%
+      Odds: 4.6x | EV: -38.0%
+      Win Prob: 13.5%
       Result: Finished 3
    🐴 #4 ヒメヒオウギ
-      Odds: 63.9x | EV: -43.8%
+      Odds: 63.9x | EV: -45.0%
       Win Prob: 0.9%
       Result: Finished 6
    🐴 #11 ヴェルサイユローズ
-      Odds: 176.9x | EV: -43.9%
+      Odds: 176.9x | EV: -45.1%
       Win Prob: 0.3%
       Result: Finished 15
    🐴 #3 ブライトココナッツ
-      Odds: 315.7x | EV: -58.9%
+      Odds: 315.7x | EV: -59.9%
       Win Prob: 0.1%
       Result: Finished 10
    🐴 #12 バトルセレーネ
-      Odds: 181.0x | EV: -76.1%
+      Odds: 181.0x | EV: -77.0%
       Win Prob: 0.1%
       Result: Finished 12
    🐴 #5 アリアベルデ
-      Odds: 356.9x | EV: -96.0%
+      Odds: 356.9x | EV: -96.1%
       Win Prob: 0.0%
       Result: Finished 11
    🐴 #15 エアリアルグレース
@@ -409,88 +409,104 @@ Total Bets: 6
       Result: Finished 9
 
 📍 Kyoto (05-09) R8 - 4歳以上1勝クラス
-   🐴 #4 ヒミノエトワール
-      Odds: 3.6x | EV: +3.5%
-      Win Prob: 28.7%
    🐴 #15 ルクスコスモス
-      Odds: 5.7x | EV: 0.0%
-      Win Prob: 17.5%
+      Odds: 4.8x | EV: +29.0%
+      Win Prob: 26.9%
+      Result: Finished 8
+   🐴 #4 ヒミノエトワール
+      Odds: 3.2x | EV: -14.0%
+      Win Prob: 26.9%
+      Result: Finished 7
    🐴 #1 ララバッカナール
-      Odds: 2.3x | EV: -19.6%
-      Win Prob: 34.9%
-   🐴 #11 イフリーティア
-      Odds: 33.2x | EV: -38.2%
-      Win Prob: 1.9%
-   🐴 #10 ベランジェール
-      Odds: 21.5x | EV: -40.1%
-      Win Prob: 2.8%
+      Odds: 2.3x | EV: -27.3%
+      Win Prob: 31.6%
+      Result: Finished 2
    🐴 #6 ショウナンラウール
-      Odds: 16.9x | EV: -43.0%
-      Win Prob: 3.4%
-   🐴 #12 インピッシュ
-      Odds: 72.9x | EV: -45.4%
-      Win Prob: 0.8%
-   🐴 #5 ローマンレイク
-      Odds: 72.8x | EV: -45.5%
-      Win Prob: 0.8%
-   🐴 #9 デュアルロール
-      Odds: 161.1x | EV: -47.9%
-      Win Prob: 0.3%
+      Odds: 19.2x | EV: -41.4%
+      Win Prob: 3.0%
+      Result: Finished 6
+   🐴 #11 イフリーティア
+      Odds: 39.0x | EV: -42.9%
+      Win Prob: 1.5%
+      Result: Finished 13
+   🐴 #10 ベランジェール
+      Odds: 29.6x | EV: -44.1%
+      Win Prob: 1.9%
+      Result: Finished 15
    🐴 #13 ワンダーイロネ
-      Odds: 11.5x | EV: -50.1%
-      Win Prob: 4.3%
+      Odds: 11.2x | EV: -56.0%
+      Win Prob: 3.9%
+      Result: Finished 10
    🐴 #16 バダジェフスカ
-      Odds: 36.5x | EV: -51.5%
-      Win Prob: 1.3%
-   🐴 #8 レイム
-      Odds: 24.0x | EV: -61.2%
-      Win Prob: 1.6%
-   🐴 #2 ラウルベア
-      Odds: 89.6x | EV: -64.4%
+      Odds: 43.8x | EV: -56.7%
+      Win Prob: 1.0%
+      Result: Finished 12
+   🐴 #5 ローマンレイク
+      Odds: 119.7x | EV: -57.0%
       Win Prob: 0.4%
+      Result: 🏆 WINNER
    🐴 #3 リンゲルブルーメ
-      Odds: 47.1x | EV: -64.7%
-      Win Prob: 0.8%
-   🐴 #14 グディンナ
-      Odds: 75.6x | EV: -75.5%
-      Win Prob: 0.3%
-   🐴 #7 ペガサスノース
-      Odds: 123.6x | EV: -79.9%
+      Odds: 58.8x | EV: -60.2%
+      Win Prob: 0.7%
+      Result: Finished 14
+   🐴 #2 ラウルベア
+      Odds: 161.0x | EV: -62.0%
       Win Prob: 0.2%
+      Result: Finished 16
+   🐴 #8 レイム
+      Odds: 23.3x | EV: -65.9%
+      Win Prob: 1.5%
+      Result: Finished 4
+   🐴 #9 デュアルロール
+      Odds: 225.1x | EV: -66.8%
+      Win Prob: 0.1%
+      Result: Finished 9
+   🐴 #14 グディンナ
+      Odds: 117.5x | EV: -72.3%
+      Win Prob: 0.2%
+      Result: Finished 3
+   🐴 #12 インピッシュ
+      Odds: 143.0x | EV: -78.6%
+      Win Prob: 0.1%
+      Result: Finished 5
+   🐴 #7 ペガサスノース
+      Odds: 184.9x | EV: -97.7%
+      Win Prob: 0.0%
+      Result: Finished 11
 
 📍 Kyoto (05-09) R9 - 久御山特別
    🐴 #3 スナークピカソ
-      Odds: 10.9x | EV: +11.3%
-      Win Prob: 10.2%
-   🐴 #7 ウォータークラーク
-      Odds: 3.7x | EV: -0.4%
-      Win Prob: 26.9%
+      Odds: 10.9x | EV: +15.6%
+      Win Prob: 10.6%
    🐴 #8 ダガーリング
-      Odds: 4.1x | EV: -6.4%
-      Win Prob: 22.8%
+      Odds: 4.1x | EV: -2.8%
+      Win Prob: 23.7%
+   🐴 #7 ウォータークラーク
+      Odds: 3.7x | EV: -10.8%
+      Win Prob: 24.1%
    🐴 #6 ダイヤモンドハンズ
-      Odds: 3.4x | EV: -26.1%
-      Win Prob: 21.8%
+      Odds: 3.4x | EV: -23.2%
+      Win Prob: 22.6%
    🐴 #9 リリーブライト
-      Odds: 43.9x | EV: -33.5%
-      Win Prob: 1.5%
+      Odds: 43.9x | EV: -31.0%
+      Win Prob: 1.6%
    🐴 #1 ユメハハテシナク
-      Odds: 11.7x | EV: -42.4%
-      Win Prob: 4.9%
+      Odds: 11.7x | EV: -40.2%
+      Win Prob: 5.1%
    🐴 #5 ツーエムクロノス
-      Odds: 20.0x | EV: -44.7%
-      Win Prob: 2.8%
+      Odds: 20.0x | EV: -42.6%
+      Win Prob: 2.9%
    🐴 #11 マルカオペラ
-      Odds: 11.1x | EV: -45.4%
-      Win Prob: 4.9%
+      Odds: 11.1x | EV: -43.2%
+      Win Prob: 5.1%
    🐴 #2 ステラスプレンダー
-      Odds: 28.6x | EV: -56.7%
-      Win Prob: 1.5%
+      Odds: 28.6x | EV: -55.0%
+      Win Prob: 1.6%
    🐴 #10 クスクス
-      Odds: 18.5x | EV: -63.8%
-      Win Prob: 1.9%
+      Odds: 18.5x | EV: -62.5%
+      Win Prob: 2.0%
    🐴 #4 プチプラージュ
-      Odds: 47.4x | EV: -66.8%
+      Odds: 47.4x | EV: -65.5%
       Win Prob: 0.7%
 
 📍 Kyoto (05-09) R10 - 鴨川特別
@@ -521,49 +537,49 @@ Total Bets: 6
 
 📍 Kyoto (05-09) R11 - 京都新聞杯
    🐴 #15 ベレシート
-      Odds: 1.9x | EV: +2.1%
-      Win Prob: 53.7%
+      Odds: 1.9x | EV: +2.9%
+      Win Prob: 54.2%
    🐴 #16 アクセス
-      Odds: 15.0x | EV: -1.8%
-      Win Prob: 6.5%
+      Odds: 15.0x | EV: -1.0%
+      Win Prob: 6.6%
    🐴 #2 エムズビギン
-      Odds: 4.2x | EV: -27.0%
-      Win Prob: 17.4%
-   🐴 #1 アーレムアレス
-      Odds: 10.8x | EV: -29.3%
-      Win Prob: 6.5%
+      Odds: 4.2x | EV: -26.4%
+      Win Prob: 17.5%
    🐴 #8 バドリナート
-      Odds: 15.1x | EV: -29.3%
+      Odds: 15.1x | EV: -28.6%
       Win Prob: 4.7%
-   🐴 #5 コンジェスタス
-      Odds: 13.8x | EV: -46.6%
-      Win Prob: 3.9%
+   🐴 #1 アーレムアレス
+      Odds: 10.8x | EV: -28.7%
+      Win Prob: 6.6%
    🐴 #10 サヴォアフェール
-      Odds: 17.6x | EV: -56.3%
+      Odds: 17.6x | EV: -55.9%
       Win Prob: 2.5%
    🐴 #9 カフジエメンタール
-      Odds: 29.7x | EV: -57.2%
-      Win Prob: 1.4%
+      Odds: 29.7x | EV: -56.8%
+      Win Prob: 1.5%
+   🐴 #5 コンジェスタス
+      Odds: 13.8x | EV: -58.2%
+      Win Prob: 3.0%
    🐴 #3 メイショウテンク
-      Odds: 99.8x | EV: -64.7%
+      Odds: 99.8x | EV: -64.4%
       Win Prob: 0.4%
    🐴 #12 キンググローリー
-      Odds: 23.8x | EV: -65.7%
-      Win Prob: 1.4%
+      Odds: 23.8x | EV: -65.4%
+      Win Prob: 1.5%
    🐴 #13 ニホンピロロジャー
-      Odds: 104.7x | EV: -69.8%
+      Odds: 104.7x | EV: -69.6%
       Win Prob: 0.3%
    🐴 #6 ラディアントスター
-      Odds: 40.6x | EV: -72.9%
+      Odds: 40.6x | EV: -72.7%
       Win Prob: 0.7%
    🐴 #14 ステラスペース
-      Odds: 136.7x | EV: -79.9%
+      Odds: 136.7x | EV: -79.7%
       Win Prob: 0.1%
    🐴 #7 カムアップローゼス
-      Odds: 62.8x | EV: -81.9%
+      Odds: 62.8x | EV: -81.7%
       Win Prob: 0.3%
    🐴 #4 ティラーノ
-      Odds: 114.3x | EV: -83.4%
+      Odds: 114.3x | EV: -83.3%
       Win Prob: 0.1%
    🐴 #11 ブリガンティン
       Odds: 160.1x | EV: -98.0%
@@ -1056,87 +1072,87 @@ Total Bets: 6
 
 📍 Niigata (05-09) R9 - ゆきつばき賞
    🐴 #11 トップアタック
-      Odds: 25.6x | EV: +18.0%
-      Win Prob: 4.6%
+      Odds: 19.4x | EV: +34.0%
+      Win Prob: 6.9%
    🐴 #1 ホウオウヘッセン
-      Odds: 4.5x | EV: +11.0%
-      Win Prob: 24.7%
+      Odds: 6.0x | EV: +20.2%
+      Win Prob: 20.0%
    🐴 #9 フィオラーノ
-      Odds: 8.6x | EV: -0.4%
-      Win Prob: 11.6%
-   🐴 #14 コパノトーマス
-      Odds: 4.7x | EV: -12.4%
-      Win Prob: 18.6%
-   🐴 #8 マナボニート
-      Odds: 3.9x | EV: -24.8%
-      Win Prob: 19.3%
-   🐴 #10 クラディスティーナ
-      Odds: 28.8x | EV: -36.1%
-      Win Prob: 2.2%
-   🐴 #5 ミスターバッドガイ
-      Odds: 21.0x | EV: -37.8%
-      Win Prob: 3.0%
-   🐴 #12 デンプシー
-      Odds: 12.7x | EV: -41.5%
-      Win Prob: 4.6%
-   🐴 #4 ツルノマイハシ
-      Odds: 15.5x | EV: -44.5%
-      Win Prob: 3.6%
+      Odds: 6.0x | EV: +3.1%
+      Win Prob: 17.2%
    🐴 #3 セイウンアインス
-      Odds: 23.8x | EV: -47.2%
-      Win Prob: 2.2%
-   🐴 #6 ニシノセイドウ
-      Odds: 30.1x | EV: -48.3%
-      Win Prob: 1.7%
-   🐴 #2 マーシャルアン
-      Odds: 53.1x | EV: -57.8%
-      Win Prob: 0.8%
+      Odds: 49.8x | EV: -11.1%
+      Win Prob: 1.8%
+   🐴 #14 コパノトーマス
+      Odds: 6.6x | EV: -18.0%
+      Win Prob: 12.4%
+   🐴 #8 マナボニート
+      Odds: 3.3x | EV: -33.9%
+      Win Prob: 20.0%
    🐴 #13 ウィングブルー
-      Odds: 12.2x | EV: -61.8%
+      Odds: 7.7x | EV: -39.6%
+      Win Prob: 7.8%
+   🐴 #12 デンプシー
+      Odds: 10.3x | EV: -40.2%
+      Win Prob: 5.8%
+   🐴 #4 ツルノマイハシ
+      Odds: 17.7x | EV: -45.5%
       Win Prob: 3.1%
+   🐴 #5 ミスターバッドガイ
+      Odds: 23.4x | EV: -46.1%
+      Win Prob: 2.3%
+   🐴 #10 クラディスティーナ
+      Odds: 38.3x | EV: -53.4%
+      Win Prob: 1.2%
+   🐴 #2 マーシャルアン
+      Odds: 69.2x | EV: -60.6%
+      Win Prob: 0.6%
+   🐴 #6 ニシノセイドウ
+      Odds: 39.2x | EV: -67.6%
+      Win Prob: 0.8%
    🐴 #7 シュテルン
-      Odds: 155.6x | EV: -100.0%
+      Odds: 184.6x | EV: -100.0%
       Win Prob: 0.0%
 
 📍 Niigata (05-09) R10 - 粟島特別
    🐴 #7 サトノラポール
-      Odds: 7.3x | EV: +7.7%
-      Win Prob: 14.8%
+      Odds: 7.3x | EV: +12.6%
+      Win Prob: 15.4%
    🐴 #3 スピンザブラッド
-      Odds: 16.9x | EV: +1.0%
-      Win Prob: 6.0%
+      Odds: 16.9x | EV: -2.2%
+      Win Prob: 5.8%
    🐴 #2 ドーギッド
-      Odds: 14.5x | EV: -3.2%
-      Win Prob: 6.7%
-   🐴 #8 ゴーゴータカシ
-      Odds: 2.5x | EV: -14.6%
-      Win Prob: 34.2%
+      Odds: 14.5x | EV: -6.2%
+      Win Prob: 6.5%
    🐴 #5 トゥルーサクセサー
-      Odds: 4.1x | EV: -18.7%
-      Win Prob: 19.8%
+      Odds: 4.1x | EV: -7.2%
+      Win Prob: 22.6%
+   🐴 #8 ゴーゴータカシ
+      Odds: 2.5x | EV: -21.2%
+      Win Prob: 31.5%
    🐴 #10 シャインフリーリー
-      Odds: 51.4x | EV: -32.4%
+      Odds: 51.4x | EV: -34.5%
       Win Prob: 1.3%
    🐴 #6 スピアッジャローザ
-      Odds: 7.2x | EV: -35.5%
-      Win Prob: 9.0%
+      Odds: 7.2x | EV: -36.2%
+      Win Prob: 8.9%
    🐴 #1 ジャグアール
-      Odds: 16.7x | EV: -41.0%
-      Win Prob: 3.5%
+      Odds: 16.7x | EV: -42.9%
+      Win Prob: 3.4%
    🐴 #13 ワールドキッス
-      Odds: 33.1x | EV: -56.5%
+      Odds: 33.1x | EV: -57.9%
       Win Prob: 1.3%
    🐴 #11 ピティロディア
-      Odds: 61.1x | EV: -62.8%
+      Odds: 61.1x | EV: -64.0%
       Win Prob: 0.6%
    🐴 #4 メイショウタクボク
-      Odds: 21.3x | EV: -67.7%
+      Odds: 21.3x | EV: -68.8%
       Win Prob: 1.5%
    🐴 #12 デビューフライト
-      Odds: 50.2x | EV: -69.4%
+      Odds: 50.2x | EV: -70.2%
       Win Prob: 0.6%
    🐴 #9 テンドリームガール
-      Odds: 37.2x | EV: -73.4%
+      Odds: 37.2x | EV: -74.2%
       Win Prob: 0.7%
 
 📍 Niigata (05-09) R11 - 駿風S
@@ -1191,38 +1207,38 @@ Total Bets: 6
 
 📍 Niigata (05-09) R12 - 4歳以上1勝クラス
    🐴 #12 マテンロウミラクル
-      Odds: 7.4x | EV: +3.1%
+      Odds: 7.4x | EV: +2.9%
       Win Prob: 13.9%
    🐴 #8 カレンラップスター
-      Odds: 9.0x | EV: -6.9%
+      Odds: 9.0x | EV: -7.1%
       Win Prob: 10.3%
    🐴 #11 ハイクオリティ
-      Odds: 1.5x | EV: -8.6%
-      Win Prob: 60.9%
+      Odds: 1.5x | EV: -8.8%
+      Win Prob: 60.8%
    🐴 #6 ブラックジジ
-      Odds: 16.4x | EV: -33.8%
+      Odds: 16.4x | EV: -33.9%
       Win Prob: 4.0%
    🐴 #4 キュードス
-      Odds: 27.3x | EV: -41.6%
-      Win Prob: 2.1%
+      Odds: 27.3x | EV: -38.3%
+      Win Prob: 2.3%
    🐴 #9 ナムラジミー
-      Odds: 34.8x | EV: -50.2%
+      Odds: 34.8x | EV: -50.3%
       Win Prob: 1.4%
    🐴 #2 トーアケルキラ
-      Odds: 11.3x | EV: -54.4%
+      Odds: 11.3x | EV: -54.5%
       Win Prob: 4.0%
    🐴 #7 キタノブレイク
-      Odds: 23.9x | EV: -75.6%
+      Odds: 23.9x | EV: -75.7%
       Win Prob: 1.0%
    🐴 #1 チュウワダイオウ
-      Odds: 32.2x | EV: -78.2%
+      Odds: 32.2x | EV: -78.3%
       Win Prob: 0.7%
+   🐴 #3 タルタロス
+      Odds: 23.7x | EV: -80.2%
+      Win Prob: 0.8%
    🐴 #10 リリーアロー
       Odds: 34.3x | EV: -80.3%
       Win Prob: 0.6%
-   🐴 #3 タルタロス
-      Odds: 23.7x | EV: -81.8%
-      Win Prob: 0.8%
    🐴 #5 ロストボール
       Odds: 70.6x | EV: -91.2%
       Win Prob: 0.1%
@@ -1468,19 +1484,19 @@ Total Bets: 6
       Win Prob: 11.8%
       Result: Finished 2
    🐴 #9 グランマエストロ
-      Odds: 2.9x | EV: -27.4%
+      Odds: 2.9x | EV: -27.5%
       Win Prob: 25.0%
       Result: Finished 4
    🐴 #17 ミッキーキャロット
-      Odds: 164.3x | EV: -35.8%
+      Odds: 164.3x | EV: -35.9%
       Win Prob: 0.4%
       Result: Finished 10
    🐴 #13 カズノダイジョウ
-      Odds: 9.2x | EV: -48.8%
+      Odds: 9.2x | EV: -48.9%
       Win Prob: 5.6%
       Result: 🏆 WINNER
    🐴 #7 ブロークンハート
-      Odds: 28.5x | EV: -54.9%
+      Odds: 28.5x | EV: -55.0%
       Win Prob: 1.6%
       Result: Finished 5
    🐴 #4 ベルバード
@@ -1491,14 +1507,14 @@ Total Bets: 6
       Odds: 107.5x | EV: -67.7%
       Win Prob: 0.3%
       Result: Finished 13
+   🐴 #12 ツイスティドシルク
+      Odds: 127.4x | EV: -69.0%
+      Win Prob: 0.2%
+      Result: Finished 15
    🐴 #10 リオクリスハーレー
       Odds: 117.2x | EV: -71.3%
       Win Prob: 0.2%
       Result: Finished 7
-   🐴 #12 ツイスティドシルク
-      Odds: 127.4x | EV: -74.9%
-      Win Prob: 0.2%
-      Result: Finished 15
    🐴 #18 エルミー
       Odds: 110.1x | EV: -78.3%
       Win Prob: 0.2%
@@ -1664,81 +1680,81 @@ Total Bets: 6
 
 📍 Tokyo (05-09) R9 - 分倍河原S
    🐴 #7 アンパドゥ
-      Odds: 1.9x | EV: +5.3%
-      Win Prob: 55.4%
+      Odds: 1.9x | EV: +4.9%
+      Win Prob: 55.2%
    🐴 #2 チャンネルトンネル
-      Odds: 6.5x | EV: -22.0%
-      Win Prob: 12.0%
+      Odds: 6.5x | EV: -19.7%
+      Win Prob: 12.3%
    🐴 #8 アウフヘーベン
-      Odds: 7.4x | EV: -23.8%
-      Win Prob: 10.3%
+      Odds: 7.4x | EV: -24.1%
+      Win Prob: 10.2%
    🐴 #12 コルレオニス
-      Odds: 12.1x | EV: -33.8%
+      Odds: 12.1x | EV: -34.1%
       Win Prob: 5.5%
    🐴 #10 コスモサガルマータ
-      Odds: 19.4x | EV: -35.1%
+      Odds: 19.4x | EV: -35.4%
       Win Prob: 3.3%
    🐴 #11 ガルダイア
-      Odds: 16.7x | EV: -44.1%
+      Odds: 16.7x | EV: -44.4%
       Win Prob: 3.3%
    🐴 #3 マテンロウブラボー
-      Odds: 7.6x | EV: -57.0%
-      Win Prob: 5.7%
+      Odds: 7.6x | EV: -57.2%
+      Win Prob: 5.6%
    🐴 #5 パワーホール
-      Odds: 19.1x | EV: -59.0%
+      Odds: 19.1x | EV: -59.1%
       Win Prob: 2.1%
    🐴 #4 ホウオウムサシ
-      Odds: 44.9x | EV: -65.4%
+      Odds: 44.9x | EV: -65.5%
       Win Prob: 0.8%
    🐴 #9 グラニット
-      Odds: 34.5x | EV: -70.9%
+      Odds: 34.5x | EV: -71.0%
       Win Prob: 0.8%
    🐴 #1 ミカッテヨンデイイ
-      Odds: 49.2x | EV: -71.6%
+      Odds: 49.2x | EV: -71.7%
       Win Prob: 0.6%
    🐴 #6 ショーモン
-      Odds: 140.5x | EV: -82.1%
+      Odds: 140.5x | EV: -82.2%
       Win Prob: 0.1%
 
 📍 Tokyo (05-09) R10 - 青竜S
    🐴 #12 チュウワカーネギー
-      Odds: 7.4x | EV: +23.7%
-      Win Prob: 16.7%
+      Odds: 7.4x | EV: +9.6%
+      Win Prob: 14.8%
    🐴 #4 エコロシード
-      Odds: 12.8x | EV: +1.0%
-      Win Prob: 7.9%
+      Odds: 12.8x | EV: +3.3%
+      Win Prob: 8.1%
    🐴 #2 マクリール
-      Odds: 3.3x | EV: -17.6%
-      Win Prob: 24.9%
+      Odds: 3.3x | EV: -15.8%
+      Win Prob: 25.5%
    🐴 #13 アルデトップガン
-      Odds: 10.4x | EV: -20.7%
-      Win Prob: 7.6%
+      Odds: 10.4x | EV: -18.9%
+      Win Prob: 7.8%
    🐴 #8 アトミックブレス
-      Odds: 45.0x | EV: -21.8%
-      Win Prob: 1.7%
+      Odds: 45.0x | EV: -20.1%
+      Win Prob: 1.8%
    🐴 #3 ポッドデスペア
-      Odds: 23.9x | EV: -24.2%
+      Odds: 23.9x | EV: -22.5%
       Win Prob: 3.2%
    🐴 #7 テイエムキハク
-      Odds: 11.1x | EV: -25.4%
-      Win Prob: 6.7%
+      Odds: 11.1x | EV: -23.7%
+      Win Prob: 6.9%
    🐴 #10 ドンエレクトス
-      Odds: 4.0x | EV: -25.9%
-      Win Prob: 18.5%
+      Odds: 4.0x | EV: -24.2%
+      Win Prob: 19.0%
    🐴 #5 マイネルミストラル
-      Odds: 19.0x | EV: -31.2%
-      Win Prob: 3.6%
+      Odds: 19.0x | EV: -29.6%
+      Win Prob: 3.7%
    🐴 #14 メイショウバルク
-      Odds: 20.4x | EV: -38.9%
-      Win Prob: 3.0%
+      Odds: 20.4x | EV: -37.5%
+      Win Prob: 3.1%
    🐴 #11 ケブランリ
-      Odds: 18.5x | EV: -44.6%
-      Win Prob: 3.0%
+      Odds: 18.5x | EV: -43.3%
+      Win Prob: 3.1%
    🐴 #1 サンライズケヴィン
-      Odds: 15.9x | EV: -52.4%
-      Win Prob: 3.0%
+      Odds: 15.9x | EV: -51.3%
+      Win Prob: 3.1%
    🐴 #9 アンヘリータス
-      Odds: 203.7x | EV: -97.0%
+      Odds: 203.7x | EV: -96.9%
       Win Prob: 0.0%
    🐴 #6 エスシーレイジュ
       Odds: 154.7x | EV: -97.7%
