@@ -98,6 +98,28 @@ def fetch_win_odds(race_id: str) -> list[dict]:
         if attempt < 2:
             time.sleep(2 * (attempt + 1))
 
+    # Fallback to scraping shutuba page if API fails
+    log.warning(f"Falling back to shutuba page HTML parsing for {race_id} due to API failure/rate limit")
+    try:
+        from scraper.netkeiba import _fetch, parse_shutuba_page
+        shutuba_url = f"https://race.netkeiba.com/race/shutuba.html?race_id={race_id}"
+        soup = _fetch(shutuba_url, retries=2)
+        if soup:
+            race_data = parse_shutuba_page(soup, race_id)
+            if race_data and race_data.entries:
+                odds_list = []
+                for entry in race_data.entries:
+                    if entry.odds_win is not None and entry.post_position:
+                        odds_list.append({
+                            "combination": str(entry.post_position),
+                            "odds_value": entry.odds_win,
+                        })
+                if odds_list:
+                    log.info(f"Got {len(odds_list)} odds from shutuba HTML fallback for {race_id}")
+                    return odds_list
+    except Exception as e:
+        log.warning(f"Shutuba HTML fallback exception for {race_id}: {e}")
+
     return []
 
 
