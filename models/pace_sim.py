@@ -207,12 +207,10 @@ class PaceSimulator:
             speed = max(0, (38.0 - last_3f) / 5.0)
             signals.append(("speed", speed, 1.5))
 
-        # Market odds (lower = market thinks better)
-        odds = entry.get("odds_win")
-        if odds is not None and not np.isnan(odds) and odds > 0:
-            market_signal = 1.0 / odds  # implied probability
-            signals.append(("market", market_signal * 5.0, 2.0))
-
+        # Removing market odds from base ability to prevent data leakage
+        # The ML model will handle odds natively. The pace simulator should
+        # be purely physical/form based.
+        
         if not signals:
             return 0.5  # no data → average
 

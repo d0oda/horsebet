@@ -63,19 +63,22 @@ MODELS_DIR.mkdir(exist_ok=True)
 # ---------------------------------------------------------------------------
 
 def prepare_data(
-    df: pd.DataFrame,
-    target: str = "target_win",
-    val_date: Optional[str] = None,
-    exclude_features: Optional[list[str]] = None,
+    df: pd.DataFrame, 
+    target: str = "target_win", 
+    val_date: str = None,
+    test_date: str = None,
+    exclude_features: list = None
 ) -> tuple:
     """
     Split feature dataframe into train/val sets.
-    Uses time-based split: train on everything before val_date.
+    Uses time-based split: train on everything before val_date, validate on val_date to test_date.
+    The test_date onwards is completely quarantined from this function to prevent early-stopping leakage.
 
     Args:
         df: Feature dataframe.
         target: Target column name.
         val_date: Validation cutoff date (YYYY-MM-DD).
+        test_date: Test cutoff date (YYYY-MM-DD). Data >= test_date is excluded.
         exclude_features: Optional list of feature names to drop
             (e.g. ODDS_FEATURES for odds-free model).
 
@@ -101,12 +104,7 @@ def prepare_data(
 
     log.info(f"Using {len(feature_cols)} features")
 
-    # Fill remaining NaN with column median
-    for col in feature_cols:
-        median_val = df[col].median()
-        df[col] = df[col].fillna(median_val if not np.isnan(median_val) else 0)
-
-    # Split
+    # --- Split first ---
     if val_date is None:
         # Default: last 20% of races by date
         unique_races = df["race_id"].unique()
@@ -117,7 +115,11 @@ def prepare_data(
         # Time-based split
         if "date" in df.columns:
             train_mask = df["date"] < val_date
-            val_mask = df["date"] >= val_date
+            if test_date:
+                val_mask = (df["date"] >= val_date) & (df["date"] < test_date)
+                log.info(f"Quarantining data >= {test_date} for pure out-of-sample testing.")
+            else:
+                val_mask = df["date"] >= val_date
             train_races = set(df[train_mask]["race_id"].unique())
             val_races = set(df[val_mask]["race_id"].unique())
         else:
@@ -126,8 +128,12 @@ def prepare_data(
             train_races = set(unique_races[:split_idx])
             val_races = set(unique_races[split_idx:])
 
-    train_df = df[df["race_id"].isin(train_races)]
-    val_df = df[df["race_id"].isin(val_races)]
+    train_df = df[df["race_id"].isin(train_races)].copy()
+    val_df = df[df["race_id"].isin(val_races)].copy()
+
+    # --- Removed manual NaN imputation ---
+    # LightGBM and XGBoost natively handle NaN values perfectly by finding the optimal
+    # split direction. Imputing with medians destroys this capability and risks train/serve skew.
 
     X_train = train_df[feature_cols].values
     y_train = train_df[target].values
@@ -477,9 +483,10 @@ def load_model(version: str = "latest"):
     xgb = _get_xgb()
 
     if version == "latest":
-        versions = sorted(MODELS_DIR.iterdir())
+        versions = [d for d in MODELS_DIR.iterdir() if d.is_dir() and d.name.startswith("202")]
         if not versions:
             raise FileNotFoundError("No saved models found")
+        versions = sorted(versions, key=lambda x: x.name)
         model_dir = versions[-1]
     else:
         model_dir = MODELS_DIR / version
@@ -519,8 +526,8 @@ def predict_race(race_features: pd.DataFrame, version: str = "latest") -> pd.Dat
     lgb_model, xgb_model, meta = load_model(version)
     feature_cols = meta["feature_cols"]
 
-    # Align features
-    X = race_features[feature_cols].fillna(0).values
+    # Align features (pass NaNs directly, models handle natively)
+    X = race_features[feature_cols].values
 
     lgb_probs = lgb_model.predict(X)
     xgb_probs = xgb_model.predict(xgb.DMatrix(X, feature_names=feature_cols))
@@ -540,6 +547,7 @@ def predict_race(race_features: pd.DataFrame, version: str = "latest") -> pd.Dat
 def main():
     parser = argparse.ArgumentParser(description="UmaEdge — Model Training")
     parser.add_argument("--val-date", type=str, help="Validation split date (YYYY-MM-DD)")
+    parser.add_argument("--test-date", type=str, help="Test quarantine split date (YYYY-MM-DD)")
     parser.add_argument("--predict", action="store_true", help="Predict mode (requires --race-id)")
     parser.add_argument("--race-id", type=int, help="Race ID for prediction")
     parser.add_argument(
@@ -581,8 +589,15 @@ def main():
     if odds_free:
         log.info("🚫 ODDS-FREE MODE — excluding all odds-derived features")
 
-    fb = FeatureBuilder()
-    df = fb.build_features_all()
+    cache_path = "data/features.parquet"
+    if os.path.exists(cache_path):
+        log.info(f"Loading cached features from {cache_path}")
+        import pandas as pd
+        df = pd.read_parquet(cache_path)
+    else:
+        log.info("No cache found. Building features from scratch...")
+        fb = FeatureBuilder()
+        df = fb.build_features_all()
 
     if df.empty:
         log.error("No training data — run the scraper first")
@@ -607,7 +622,7 @@ def main():
 
     # --- Final training ---
     X_train, y_train, X_val, y_val, feature_cols, race_ids_val = prepare_data(
-        df, target="target_win", val_date=args.val_date,
+        df, target="target_win", val_date=args.val_date, test_date=args.test_date,
         exclude_features=exclude,
     )
 

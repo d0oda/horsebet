@@ -51,6 +51,7 @@ class BacktestConfig:
     min_odds: float = 2.0           # Skip horses with odds below this
     use_kelly: bool = True           # Pure Kelly sizing (no flat-stake floor)
     min_kelly_fraction: float = 0.005  # Min Kelly fraction to place a bet
+    min_model_prob: float = 0.0     # Minimum model win probability to place a bet
 
 
 @dataclass
@@ -85,7 +86,8 @@ class BacktestResult:
     hit_rate: float = 0.0
     max_drawdown: int = 0
     max_drawdown_pct: float = 0.0
-    sharpe: float = 0.0
+    sharpe: float = 0.0          # Per-bet Sharpe (mean/std of per-bet returns)
+    daily_sharpe: float = 0.0   # Annualised daily Sharpe (industry standard)
     avg_ev: float = 0.0
     avg_odds: float = 0.0
     nan_odds_skipped: int = 0
@@ -149,6 +151,10 @@ class Backtester:
                     result.nan_odds_skipped += 1
                     continue
                 if not model_prob or model_prob <= 0:
+                    continue
+
+                # --- Minimum probability filter ---
+                if model_prob < self.config.min_model_prob:
                     continue
 
                 # --- Odds ceiling/floor filter ---
@@ -262,9 +268,9 @@ class Backtester:
         # Daily P&L
         result.daily_pnl = sorted(daily_pnl.items())
 
-        # Sharpe ratio — per-bet percentage returns (profit / stake)
-        # Un-annualized: mean(return) / std(return) across individual bets
-        # Requires minimum 10 bets for statistical meaning
+        # Per-bet Sharpe — mean(profit/stake) / std(profit/stake)
+        # NOTE: structurally depressed by binary payout variance (longshots).
+        # Use daily_sharpe for a more meaningful risk-adjusted metric.
         if result.bets and len(result.bets) >= 10:
             bet_returns = np.array([b.profit / b.stake for b in result.bets])
             if bet_returns.std() > 0:
@@ -273,6 +279,33 @@ class Backtester:
                 result.sharpe = 0
         else:
             result.sharpe = 0  # insufficient data
+
+        # Daily Sharpe — annualised, computed from daily P&L as % of initial bankroll
+        # This is the standard metric used by quant betting funds.
+        # Annualisation factor: JRA runs ~104 race days/year (2 per weekend).
+        JRA_RACE_DAYS_PER_YEAR = 104
+        
+        # FIX: Pad daily_pnl with zeros for all unique racing days in the dataset
+        # to prevent artificially inflating the mean daily return when bets are rare.
+        if predictions_df is not None and "date" in predictions_df.columns:
+            all_dates = predictions_df["date"].astype(str).unique()
+            for d in all_dates:
+                if d not in daily_pnl:
+                    daily_pnl[d] = 0.0
+
+        if daily_pnl and len(daily_pnl) >= 5:
+            daily_returns = np.array([
+                pnl / self.config.initial_bankroll
+                for _, pnl in daily_pnl.items()
+            ])
+            if daily_returns.std() > 0:
+                result.daily_sharpe = (
+                    daily_returns.mean() / daily_returns.std()
+                ) * np.sqrt(JRA_RACE_DAYS_PER_YEAR)
+            else:
+                result.daily_sharpe = 0
+        else:
+            result.daily_sharpe = 0  # insufficient days
 
         return result
 
@@ -319,7 +352,8 @@ class Backtester:
         print(f"  ROI:                {result.roi_pct:>7.1f}%")
         print("-" * 60)
         print(f"  Max drawdown:       ¥{result.max_drawdown:>10,} ({result.max_drawdown_pct:.1f}%)")
-        print(f"  Sharpe ratio:       {result.sharpe:>7.2f}")
+        print(f"  Sharpe (per-bet):   {result.sharpe:>7.2f}  ← depressed by binary variance")
+        print(f"  Sharpe (daily ann): {result.daily_sharpe:>7.2f}  ← annualised, industry standard")
         print("=" * 60)
 
         if result.bets:

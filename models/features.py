@@ -111,6 +111,9 @@ ODDS_FEATURES = [
     "odds_win", "log_odds", "popularity",
     "odds_win_z", "log_odds_z", "popularity_z",
     "is_longshot", "is_extreme_longshot",
+    "is_longshot_z", "is_extreme_longshot_z",
+    "odds_rank", "odds_ratio_to_fav", "odds_deviation",
+    "odds_rank_z", "odds_ratio_to_fav_z", "odds_deviation_z",
 ]
 
 
@@ -204,8 +207,8 @@ class FeatureBuilder:
             log.info(f"Loaded {len(df)} entries across {df['race_id'].nunique()} races")
         return df
 
-    def _load_horse_history(self, horse_ids=None, jockey_ids=None, trainer_ids=None) -> pd.DataFrame:
-        """Load all historical results per horse for rolling calculations."""
+    def _load_horse_history(self) -> pd.DataFrame:
+        """Load all historical results for rolling calculations."""
         base_query = """
             SELECT
                 e.id AS entry_id,
@@ -234,30 +237,12 @@ class FeatureBuilder:
             JOIN horses h ON h.id = e.horse_id
             LEFT JOIN results res ON res.entry_id = e.id
             WHERE res.finish_pos IS NOT NULL
+            ORDER BY e.horse_id, r.date
         """
         
         with get_session() as session:
-            if horse_ids is not None and jockey_ids is not None and trainer_ids is not None:
-                h_ids = tuple(int(x) for x in horse_ids if pd.notna(x)) or (-1,)
-                j_ids = tuple(int(x) for x in jockey_ids if pd.notna(x)) or (-1,)
-                t_ids = tuple(int(x) for x in trainer_ids if pd.notna(x)) or (-1,)
-                
-                h_str = "(" + ",".join(str(x) for x in h_ids) + ")"
-                j_str = "(" + ",".join(str(x) for x in j_ids) + ")"
-                t_str = "(" + ",".join(str(x) for x in t_ids) + ")"
-                
-                dfs = []
-                for clause in [f"e.horse_id IN {h_str}", f"e.jockey_id IN {j_str}", f"h.trainer_id IN {t_str}"]:
-                    query = base_query + f" AND {clause}"
-                    result = session.execute(text(query))
-                    df = pd.DataFrame(result.fetchall(), columns=result.keys())
-                    dfs.append(df)
-                    
-                df = pd.concat(dfs).drop_duplicates(subset=["entry_id"])
-            else:
-                query = base_query + " ORDER BY e.horse_id, r.date"
-                result = session.execute(text(query))
-                df = pd.DataFrame(result.fetchall(), columns=result.keys())
+            result = session.execute(text(base_query))
+            df = pd.DataFrame(result.fetchall(), columns=result.keys())
 
         if "date" in df.columns:
             df["date"] = df["date"].astype(str)
@@ -927,7 +912,9 @@ class FeatureBuilder:
 
             # Run simulation (use fewer iterations during feature building for speed)
             try:
-                sim = PaceSimulator(n_simulations=2000, seed=race_id % 10000)
+                # Run PaceSimulator with full depth (10000 iterations)
+                from models.pace_sim import PaceSimulator
+                sim = PaceSimulator(n_simulations=10000, seed=race_id % 10000)
                 pace_results = sim.simulate_race(sim_entries, distance=int(distance))
                 self._pace_cache[race_id] = pace_results
             except Exception as e:
@@ -1527,26 +1514,81 @@ class FeatureBuilder:
     # Feature Computation — Speed Figures (Sprint 8.1)
     # ------------------------------------------------------------------
 
-    def _load_speed_baselines(self, history_df: pd.DataFrame):
-        """Pre-compute median times per (course_id, distance, going) for speed figures."""
-        if hasattr(self, "_speed_baselines"):
+    def _build_speed_baseline_index(self):
+        """
+        Pre-build a point-in-time baseline index for speed figures.
+
+        For each (course_id, distance, going) combo, stores a sorted array of
+        (date, cumulative_median_time) pairs. A binary search then gives the
+        correct baseline for any target date in O(log n) — no repeated filtering.
+
+        Called once on first use; subsequent lookups are O(log n).
+        """
+        if hasattr(self, "_speed_baseline_index"):
             return
 
-        valid = history_df[
-            history_df["time_secs"].notna()
-            & history_df["time_secs"].gt(0)
-            & history_df["course_id"].notna()
-            & history_df["distance"].notna()
-            & history_df["going"].notna()
-        ].copy()
-
-        if valid.empty:
-            self._speed_baselines = {}
+        if not hasattr(self, "_course_groups"):
+            self._speed_baseline_index = {}
             return
 
-        grouped = valid.groupby(["course_id", "distance", "going"])["time_secs"]
-        self._speed_baselines = grouped.median().to_dict()
-        log.info(f"Speed baselines: {len(self._speed_baselines)} (course, dist, going) combos")
+        log.info("Pre-building point-in-time speed baseline index...")
+        index = {}  # (course_id, distance, going) -> (dates_array, medians_array)
+
+        for course_id, group in self._course_groups.items():
+            valid = group[
+                group["time_secs"].notna()
+                & group["time_secs"].gt(0)
+                & group["distance"].notna()
+                & group["going"].notna()
+            ].copy()
+            if valid.empty:
+                continue
+
+            # Group by (distance, going) within this course
+            for (dist, going), sub in valid.groupby(["distance", "going"]):
+                sub_sorted = sub.sort_values("date")
+                dates = sub_sorted["date"].values
+                times = sub_sorted["time_secs"].values
+
+                # Build cumulative median at each date boundary
+                # We store unique dates and the running median at each cutoff
+                unique_dates = sorted(set(dates))
+                cutoff_dates = []
+                cutoff_medians = []
+                for cutoff in unique_dates:
+                    prior_times = times[dates < cutoff]
+                    if len(prior_times) >= 5:
+                        cutoff_dates.append(cutoff)
+                        cutoff_medians.append(float(np.median(prior_times)))
+
+                if cutoff_dates:
+                    index[(course_id, dist, going)] = (
+                        np.array(cutoff_dates),
+                        np.array(cutoff_medians),
+                    )
+
+        self._speed_baseline_index = index
+        log.info(f"Speed baseline index built: {len(index)} (course, dist, going) combos")
+
+    def _get_speed_baseline_pit(
+        self, course_id, distance: int, going: str, race_date: str
+    ) -> float:
+        """
+        Point-in-time speed baseline: median race time at (course, distance, going)
+        using only races strictly before race_date. O(log n) per call.
+        """
+        self._build_speed_baseline_index()
+
+        entry = self._speed_baseline_index.get((course_id, distance, going))
+        if entry is None:
+            return None
+
+        dates_arr, medians_arr = entry
+        # Binary search: find rightmost date strictly < race_date
+        idx = np.searchsorted(dates_arr, race_date, side="left") - 1
+        if idx < 0:
+            return None
+        return float(medians_arr[idx])
 
     def _speed_figure_features(
         self, horse_id: int, race_date: str, distance: int,
@@ -1556,6 +1598,9 @@ class FeatureBuilder:
         Compute normalised speed figures from historical race times.
         Speed figure = (baseline_time - horse_time) / baseline_time * 1000
         Positive = faster than baseline. Higher = better.
+
+        Baselines are computed point-in-time (only data before race_date)
+        via _get_speed_baseline_pit to avoid look-ahead bias.
         """
         null_feats = {
             "speed_figure_last": np.nan,
@@ -1563,12 +1608,8 @@ class FeatureBuilder:
             "speed_figure_avg3": np.nan,
         }
 
-        self._load_speed_baselines(history_df)
-        if not self._speed_baselines:
-            return null_feats
-
-        # Get horse history
-        group = self._horse_groups.get(horse_id) if hasattr(self, '_horse_groups') else None
+        # Get horse history before race_date
+        group = self._horse_groups.get(horse_id) if hasattr(self, "_horse_groups") else None
         if group is not None:
             idx = group["date"].searchsorted(race_date, side="left")
             hist = group.iloc[:idx].iloc[::-1]
@@ -1581,15 +1622,17 @@ class FeatureBuilder:
         if hist.empty:
             return null_feats
 
-        # Compute speed figure for each past race
+        # Compute speed figure for each past race using point-in-time baseline
         figures = []
         for _, row in hist.iterrows():
             t = row.get("time_secs")
             d = row.get("distance")
             c = row.get("course_id")
             g = row.get("going")
-            if t and t > 0 and d and c and g:
-                baseline = self._speed_baselines.get((c, d, g))
+            row_date = str(row.get("date", ""))
+            if t and t > 0 and d and c and g and row_date:
+                # Use the baseline that was available at the time of THIS past race
+                baseline = self._get_speed_baseline_pit(c, d, g, row_date)
                 if baseline and baseline > 0:
                     fig = (baseline - t) / baseline * 1000
                     figures.append(fig)
@@ -1655,11 +1698,15 @@ class FeatureBuilder:
 
     def _field_quality_features(
         self, race_id: int, horse_career_win_pct: float,
-        race_df: pd.DataFrame, history_df: pd.DataFrame
+        race_df: pd.DataFrame, history_df: pd.DataFrame,
+        race_date: str = None,
     ) -> dict:
         """
         Rate the overall strength of this race's field.
         A horse's finish in a strong field is worth more than in a weak one.
+
+        race_date must be passed to ensure only prior race history is used
+        when computing each opponent's career win% (no look-ahead bias).
         """
         null_feats = {
             "field_avg_career_win_pct": np.nan,
@@ -1674,12 +1721,17 @@ class FeatureBuilder:
             race_entries = race_df[race_df["race_id"] == race_id]
             horse_ids = race_entries["horse_id"].unique()
 
-            # Compute career win pct for each horse from history
+            # Compute career win pct for each horse — strictly before race_date
             win_pcts = []
             for hid in horse_ids:
-                group = self._horse_groups.get(hid) if hasattr(self, '_horse_groups') else None
+                group = self._horse_groups.get(hid) if hasattr(self, "_horse_groups") else None
                 if group is not None and not group.empty:
-                    finishes = group["finish_pos"].dropna()
+                    if race_date:
+                        # Point-in-time: only races BEFORE this race
+                        idx = group["date"].searchsorted(race_date, side="left")
+                        finishes = group.iloc[:idx]["finish_pos"].dropna()
+                    else:
+                        finishes = group["finish_pos"].dropna()
                     if len(finishes) > 0:
                         win_pcts.append((finishes == 1).mean())
 
@@ -1799,14 +1851,8 @@ class FeatureBuilder:
             return pd.DataFrame()
 
         if not hasattr(self, '_horse_groups'):
-            log.info("Loading horse/jockey history for rolling features...")
-            if race_id is not None or race_ids is not None:
-                h_ids = race_df["horse_id"].dropna().unique().tolist()
-                j_ids = race_df["jockey_id"].dropna().unique().tolist()
-                t_ids = race_df["trainer_id"].dropna().unique().tolist()
-                history_df = self._load_horse_history(horse_ids=h_ids, jockey_ids=j_ids, trainer_ids=t_ids)
-            else:
-                history_df = self._load_horse_history()
+            log.info("Loading full history for rolling features...")
+            history_df = self._load_horse_history()
             history_df = history_df.sort_values("date", ascending=True)
 
             # Pre-index history by entity for O(1) lookups (major speedup)
@@ -1992,13 +2038,14 @@ class FeatureBuilder:
                 )
             )
 
-            # Field quality index
+            # Field quality index (point-in-time — pass race_date to avoid look-ahead)
             features.update(
                 self._field_quality_features(
                     race_id=row["race_id"],
                     horse_career_win_pct=features.get("career_win_pct", np.nan),
                     race_df=race_df,
                     history_df=history_df,
+                    race_date=str(row["date"]),
                 )
             )
 

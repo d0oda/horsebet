@@ -64,50 +64,56 @@ def run_walk_forward_backtest(n_folds=5, ev_threshold=0.10, use_cache=False, use
     all_out_of_sample_preds = []
 
     for fold_i in range(n_folds):
-        train_end_idx = (fold_i + 1) * chunk_size
-        val_start_idx = train_end_idx
-        val_end_idx = min(val_start_idx + chunk_size, total_dates)
+        test_start_idx = (fold_i + 1) * chunk_size
+        test_end_idx = min(test_start_idx + chunk_size, total_dates)
 
-        if val_start_idx >= total_dates:
+        if test_start_idx >= total_dates:
             break
 
-        train_cutoff = unique_dates[min(train_end_idx, total_dates - 1)]
-        val_dates = unique_dates[val_start_idx:val_end_idx]
-        
-        if not val_dates:
+        test_dates = unique_dates[test_start_idx:test_end_idx]
+        if not test_dates:
             break
+
+        # Use the last 50% of the previous chunk as the early-stopping validation set
+        val_start_idx = max(0, test_start_idx - int(chunk_size * 0.5))
+        val_dates = unique_dates[val_start_idx:test_start_idx]
+        train_cutoff = unique_dates[val_start_idx]
 
         train_df = df[df["date"] < train_cutoff].copy()
         val_df = df[df["date"].isin(val_dates)].copy()
+        test_df = df[df["date"].isin(test_dates)].copy()
 
         n_train_races = train_df["race_id"].nunique()
-        log.info(f"Fold {fold_i + 1}: train={n_train_races} races, val={val_df['race_id'].nunique()} races ({val_dates[0]}→{val_dates[-1]})")
+        log.info(f"Fold {fold_i + 1}: train={n_train_races} races, val={val_df['race_id'].nunique()} races, test={test_df['race_id'].nunique()} races ({test_dates[0]}→{test_dates[-1]})")
         
-        for col in feature_cols:
-            median_val = train_df[col].median()
-            fill_val = median_val if not np.isnan(median_val) else 0
-            train_df[col] = train_df[col].fillna(fill_val)
-            val_df[col] = val_df[col].fillna(fill_val)
+        # Removed manual NaN imputation here.
+        # Tree-based models natively support and optimize missing value splits.
 
         X_train = train_df[feature_cols].values
         y_train = train_df[target].values
         X_val = val_df[feature_cols].values
         y_val = val_df[target].values
+        X_test = test_df[feature_cols].values
 
-        if len(X_val) < 10 or len(X_train) < 50:
+        if len(X_val) < 10 or len(X_train) < 50 or len(X_test) == 0:
             continue
 
-        lgb_model, lgb_preds = train_lightgbm(X_train, y_train, X_val, y_val, feature_cols)
-        xgb_model, xgb_preds = train_xgboost(X_train, y_train, X_val, y_val, feature_cols)
+        lgb_model, _ = train_lightgbm(X_train, y_train, X_val, y_val, feature_cols)
+        xgb_model, _ = train_xgboost(X_train, y_train, X_val, y_val, feature_cols)
+        
+        # Predict purely out-of-sample on the quarantined test set
+        lgb_preds = lgb_model.predict(X_test)
+        import xgboost as xgb_lib
+        xgb_preds = xgb_model.predict(xgb_lib.DMatrix(X_test, feature_names=feature_cols))
         ensemble_preds = ensemble_predict(lgb_preds, xgb_preds)
 
         # Build prediction dataframe for backtest
-        pred_df = val_df[["race_id", "entry_id", "date", "horse_name", "finish_pos"]].copy()
+        pred_df = test_df[["race_id", "entry_id", "date", "horse_name", "finish_pos"]].copy()
         pred_df["win_prob"] = ensemble_preds
 
         # Ensure we have odds available
-        if "odds_win" in val_df.columns:
-            pred_df["odds_win"] = val_df["odds_win"].values
+        if "odds_win" in test_df.columns:
+            pred_df["odds_win"] = test_df["odds_win"].values
         else:
             from scraper.db import get_session
             from sqlalchemy import text
