@@ -149,7 +149,7 @@ class TestDispatcher:
         with patch.dict("os.environ", {
             "TELEGRAM_BOT_TOKEN": "test",
             "TELEGRAM_CHAT_ID": "123",
-        }):
+        }, clear=True):
             from notifications.dispatcher import notify_message
             result = notify_message("test")
             assert result >= 1

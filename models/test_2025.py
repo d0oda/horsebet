@@ -215,7 +215,7 @@ def run_2025_evaluation(
     # Generate predictions using the trained model
     import xgboost as xgb
 
-    X_2025 = val_df[feature_cols].fillna(0).values
+    X_2025 = val_df[feature_cols].values
     lgb_probs = lgb_model.predict(X_2025)
     xgb_probs = xgb_model.predict(xgb.DMatrix(X_2025, feature_names=feature_cols))
     val_df["win_prob"] = ensemble_predict(lgb_probs, xgb_probs)
@@ -399,7 +399,7 @@ def run_hybrid_evaluation(
 
     # Divergence-based filtering: only bet when fundamental diverges from market
     detector = DivergenceDetector(min_divergence=ev_threshold)
-    market_odds = pred_df["odds_win"].fillna(0).values
+    market_odds = pred_df["odds_win"].values
     signals = detector.detect(
         entry_ids=pred_df["entry_id"].values,
         fundamental_probs=pred_df["fund_prob"].values,

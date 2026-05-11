@@ -387,12 +387,8 @@ def walk_forward_cv(
             log.info(f"Fold {fold_i + 1}: Skipping (only {n_train_races} train races)")
             continue
 
-        # Fill NaN
-        for col in feature_cols:
-            median_val = train_df[col].median()
-            fill_val = median_val if not np.isnan(median_val) else 0
-            train_df[col] = train_df[col].fillna(fill_val)
-            val_df[col] = val_df[col].fillna(fill_val)
+        # Removed manual NaN imputation here.
+        # Tree-based models natively support and optimize missing value splits.
 
         X_train = train_df[feature_cols].values
         y_train = train_df[target].values
@@ -532,6 +528,14 @@ def predict_race(race_features: pd.DataFrame, version: str = "latest") -> pd.Dat
     lgb_probs = lgb_model.predict(X)
     xgb_probs = xgb_model.predict(xgb.DMatrix(X, feature_names=feature_cols))
     ensemble_probs = ensemble_predict(lgb_probs, xgb_probs)
+
+    calibrator = meta.get("calibrator")
+    if calibrator is not None:
+        cal_method = meta.get("calibration_method", "isotonic")
+        if cal_method == "platt":
+            ensemble_probs = calibrator.predict_proba(ensemble_probs.reshape(-1, 1))[:, 1]
+        elif cal_method == "isotonic":
+            ensemble_probs = calibrator.predict(ensemble_probs)
 
     result = race_features[["race_id", "entry_id"]].copy()
     result["win_prob"] = ensemble_probs

@@ -26,6 +26,7 @@ import sys
 import time
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
+import numpy as np
 
 from sqlalchemy import text
 
@@ -315,7 +316,7 @@ def step_predict(date: str, version: str, ev_threshold: float,
                 all_model_cols = set(hybrid.fund_feature_cols) | set(hybrid.mkt_feature_cols)
                 for col in all_model_cols:
                     if col not in features_df.columns:
-                        features_df[col] = 0
+                        features_df[col] = np.nan
 
                 preds = hybrid.predict(features_df)
                 combined_probs = preds["combined"]
@@ -331,16 +332,20 @@ def step_predict(date: str, version: str, ev_threshold: float,
 
                 for col in feature_cols:
                     if col not in features_df.columns:
-                        features_df[col] = 0
+                        features_df[col] = np.nan
 
-                X = features_df[feature_cols].fillna(0).values
+                X = features_df[feature_cols].values
                 lgb_probs = lgb_model.predict(X)
                 xgb_probs = xgb_model.predict(xgb.DMatrix(X, feature_names=feature_cols))
                 model_probs = ensemble_predict(lgb_probs, xgb_probs)
 
                 calibrator = meta.get("calibrator")
                 if calibrator is not None:
-                    model_probs = calibrator.predict(model_probs)
+                    cal_method = meta.get("calibration_method", "isotonic")
+                    if cal_method == "platt":
+                        model_probs = calibrator.predict_proba(model_probs.reshape(-1, 1))[:, 1]
+                    else:
+                        model_probs = calibrator.predict(model_probs)
                     log.info("Applied calibrator to predictions")
 
                 # Replicate the naive 0.6/0.4 blending for non-hybrid models to maintain previous behavior

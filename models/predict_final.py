@@ -80,8 +80,8 @@ def predict_with_filters(
         all_model_cols = set(hybrid.fund_feature_cols) | set(hybrid.mkt_feature_cols)
         for col in all_model_cols:
             if col not in features_df.columns:
-                log.debug(f"Adding missing column '{col}' as 0")
-                features_df[col] = 0
+                log.debug(f"Adding missing column '{col}' as NaN")
+                features_df[col] = np.nan
 
         # Get predictions with adaptive blending + longshot suppression
         preds = hybrid.predict(features_df)

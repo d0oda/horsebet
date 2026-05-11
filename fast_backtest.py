@@ -5,6 +5,7 @@ from models.features import FeatureBuilder
 from scraper.db import get_session
 from sqlalchemy import text
 import pandas as pd
+import numpy as np
 
 def run_fast(date_str, fb, version="retrain_20260507_1645", ev_threshold=0.2):
     with get_session() as session:
@@ -38,9 +39,9 @@ def run_fast(date_str, fb, version="retrain_20260507_1645", ev_threshold=0.2):
         feature_cols = meta["feature_cols"]
         for col in feature_cols:
             if col not in features_df.columns:
-                features_df[col] = 0
+                features_df[col] = np.nan
 
-        X = features_df[feature_cols].fillna(0).values
+        X = features_df[feature_cols].values
         lgb_probs = lgb_model.predict(X)
         import xgboost as xgb
         xgb_probs = xgb_model.predict(xgb.DMatrix(X, feature_names=feature_cols))

@@ -1,4 +1,5 @@
 import sys
+import numpy as np
 import pandas as pd
 from sqlalchemy import text
 from scraper.db import get_session
@@ -55,7 +56,7 @@ def run(race_netkeiba_id):
     all_model_cols = set(hybrid.fund_feature_cols) | set(hybrid.mkt_feature_cols)
     for col in all_model_cols:
         if col not in features_df.columns:
-            features_df[col] = 0
+            features_df[col] = np.nan
             
     preds = hybrid.predict(features_df)
     combined_probs = preds["combined"]

@@ -96,16 +96,17 @@ class TestSimulation:
         sim = PaceSimulator(n_simulations=1000, seed=42)
         results = sim.simulate_race(entries, distance=2000)
 
-        assert len(results) == 5
+        horse_results = {k: v for k, v in results.items() if k != "_race_level_"}
+        assert len(horse_results) == 5
         for hid in range(1, 6):
-            assert hid in results
+            assert hid in horse_results
 
     def test_win_probs_sum_to_one(self):
         entries = self._make_entries(8)
         sim = PaceSimulator(n_simulations=10000, seed=42)
         results = sim.simulate_race(entries, distance=2000)
 
-        total_win = sum(r["win_prob"] for r in results.values())
+        total_win = sum(r["win_prob"] for k, r in results.items() if k != "_race_level_")
         assert total_win == pytest.approx(1.0, abs=0.01)
 
     def test_place_probs_sum_to_three(self):
@@ -114,7 +115,7 @@ class TestSimulation:
         sim = PaceSimulator(n_simulations=10000, seed=42)
         results = sim.simulate_race(entries, distance=2000)
 
-        total_place = sum(r["place_prob"] for r in results.values())
+        total_place = sum(r["place_prob"] for k, r in results.items() if k != "_race_level_")
         assert total_place == pytest.approx(3.0, abs=0.05)
 
     def test_favourite_has_highest_win_prob(self):
@@ -124,7 +125,7 @@ class TestSimulation:
         results = sim.simulate_race(entries, distance=2000)
 
         # Horse 1 has the best stats
-        win_probs = [(hid, data["win_prob"]) for hid, data in results.items()]
+        win_probs = [(hid, data["win_prob"]) for hid, data in results.items() if hid != "_race_level_"]
         winner = max(win_probs, key=lambda x: x[1])
         assert winner[0] == 1, f"Expected horse 1 to be favourite, got horse {winner[0]}"
 
@@ -146,8 +147,9 @@ class TestSimulation:
         sim = PaceSimulator(n_simulations=100, seed=42)
         results = sim.simulate_race(entries, distance=2000)
 
-        for data in results.values():
-            assert data["style"] in [STYLE_FRONT, STYLE_STALK, STYLE_CLOSER, STYLE_DEEP]
+        for hid, data in results.items():
+            if hid != "_race_level_":
+                assert data["style"] in [STYLE_FRONT, STYLE_STALK, STYLE_CLOSER, STYLE_DEEP]
 
     def test_reproducible_with_seed(self):
         entries = self._make_entries(5)
@@ -158,6 +160,8 @@ class TestSimulation:
         r2 = sim2.simulate_race(entries, distance=2000)
 
         for hid in r1:
+            if hid == "_race_level_":
+                continue
             assert r1[hid]["win_prob"] == r2[hid]["win_prob"]
 
     def test_long_distance_favours_closers(self):
@@ -229,7 +233,9 @@ class TestCalibration:
             sim = PaceSimulator(n_simulations=n_sims, seed=i)
             results = sim.simulate_race(entries, distance=distance)
 
-            for data in results.values():
+            for hid, data in results.items():
+                if hid == "_race_level_":
+                    continue
                 style = data["style"]
                 style_runs[style] += 1
                 style_wins[style] += data["win_prob"]
@@ -276,7 +282,9 @@ class TestCalibration:
                     })
                 sim = PaceSimulator(n_simulations=2000, seed=i + distance)
                 results = sim.simulate_race(entries, distance=distance)
-                for data in results.values():
+                for hid, data in results.items():
+                    if hid == "_race_level_":
+                        continue
                     style_runs[data["style"]] += 1
                     style_wins[data["style"]] += data["win_prob"]
             if style_runs[STYLE_FRONT] > 0:

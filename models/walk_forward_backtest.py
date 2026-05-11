@@ -25,7 +25,7 @@ from models.backtest import Backtester, BacktestConfig
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("walk_forward_backtest")
 
-def run_walk_forward_backtest(n_folds=5, ev_threshold=0.10, use_cache=False, use_kelly=True, flat_stake=1000, initial_bankroll=100000, kelly_fraction=0.25):
+def run_walk_forward_backtest(n_folds=5, ev_threshold=0.10, use_cache=False, use_kelly=True, flat_stake=1000, initial_bankroll=100000, kelly_fraction=0.25, max_odds=30.0, min_odds=2.0):
     cache_path = "data/features.parquet"
     if use_cache and os.path.exists(cache_path):
         log.info(f"Loading cached features from {cache_path}...")
@@ -145,7 +145,9 @@ def run_walk_forward_backtest(n_folds=5, ev_threshold=0.10, use_cache=False, use
         use_kelly=use_kelly,
         flat_stake=flat_stake,
         initial_bankroll=initial_bankroll,
-        kelly_fraction=kelly_fraction
+        kelly_fraction=kelly_fraction,
+        max_odds=max_odds,
+        min_odds=min_odds,
     )
     bt = Backtester(config)
     result = bt.run(final_pred_df)
@@ -162,6 +164,8 @@ if __name__ == "__main__":
     parser.add_argument("--flat-stake", type=int, default=1000, help="Stake amount for flat bets (yen)")
     parser.add_argument("--initial-bankroll", type=int, default=100000, help="Starting bankroll (yen)")
     parser.add_argument("--kelly-fraction", type=float, default=0.25, help="Kelly criterion multiplier (e.g. 0.25 = quarter Kelly)")
+    parser.add_argument("--max-odds", type=float, default=30.0, help="Max odds to bet on")
+    parser.add_argument("--min-odds", type=float, default=2.0, help="Min odds to bet on")
     args = parser.parse_args()
     
     run_walk_forward_backtest(
@@ -171,5 +175,7 @@ if __name__ == "__main__":
         use_kelly=not args.flat_bet,
         flat_stake=args.flat_stake,
         initial_bankroll=args.initial_bankroll,
-        kelly_fraction=args.kelly_fraction
+        kelly_fraction=args.kelly_fraction,
+        max_odds=args.max_odds,
+        min_odds=args.min_odds,
     )

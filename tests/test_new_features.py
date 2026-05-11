@@ -80,7 +80,8 @@ class TestSpeedFigures:
         assert np.isnan(result["speed_figure_best"])
         assert np.isnan(result["speed_figure_avg3"])
 
-    def test_speed_figure_calculation(self, fb, history_df):
+    @patch.object(FeatureBuilder, "_get_speed_baseline_pit", return_value=120.0)
+    def test_speed_figure_calculation(self, mock_baseline, fb, history_df):
         """Speed figures should be (baseline - actual) / baseline * 1000."""
         fb._horse_groups = dict(list(history_df.groupby("horse_id")))
         result = fb._speed_figure_features(

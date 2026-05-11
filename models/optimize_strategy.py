@@ -32,7 +32,7 @@ def get_predictions_df(model_version: str = "latest") -> pd.DataFrame:
     feature_cols = meta["feature_cols"]
 
     import xgboost as xgb
-    X = features_df[feature_cols].fillna(0).values
+    X = features_df[feature_cols].values
     lgb_preds = lgb_model.predict(X)
     xgb_preds = xgb_model.predict(xgb.DMatrix(X, feature_names=feature_cols))
     

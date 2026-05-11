@@ -92,12 +92,12 @@ def predict_and_store(
             lgb_model, xgb_model, meta = load_model(model_version)
             feature_cols = meta["feature_cols"]
 
-            # Align features — use 0 for missing columns
+            # Align features — use NaN for missing columns (native tree handling)
             for col in feature_cols:
                 if col not in features_df.columns:
-                    features_df[col] = 0
+                    features_df[col] = np.nan
 
-            X = features_df[feature_cols].fillna(0).values
+            X = features_df[feature_cols].values
             lgb_probs = lgb_model.predict(X)
             xgb_probs = xgb_model.predict(xgb.DMatrix(X, feature_names=feature_cols))
             model_probs = ensemble_predict(lgb_probs, xgb_probs)

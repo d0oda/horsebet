@@ -426,7 +426,7 @@ def run_full_backtest(
 
     import xgboost as xgb
 
-    X = features_df[feature_cols].fillna(0).values
+    X = features_df[feature_cols].values
     lgb_preds = lgb_model.predict(X)
     xgb_preds = xgb_model.predict(xgb.DMatrix(X, feature_names=feature_cols))
     features_df["win_prob"] = 0.55 * lgb_preds + 0.45 * xgb_preds

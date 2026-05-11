@@ -302,7 +302,7 @@ class HybridEnsemble:
         import xgboost as xgb_lib
 
         # Fundamental predictions
-        X_fund = features_df[self.fund_feature_cols].fillna(0).values
+        X_fund = features_df[self.fund_feature_cols].values
         lgb_f = self.fund_lgb.predict(X_fund)
         xgb_f = self.fund_xgb.predict(
             xgb_lib.DMatrix(X_fund, feature_names=self.fund_feature_cols)
@@ -317,7 +317,7 @@ class HybridEnsemble:
                 fund_preds = self.fund_calibrator.predict(fund_preds)
 
         # Market predictions
-        X_mkt = features_df[self.mkt_feature_cols].fillna(0).values
+        X_mkt = features_df[self.mkt_feature_cols].values
         lgb_m = self.mkt_lgb.predict(X_mkt)
         xgb_m = self.mkt_xgb.predict(
             xgb_lib.DMatrix(X_mkt, feature_names=self.mkt_feature_cols)
@@ -335,7 +335,7 @@ class HybridEnsemble:
         # Shift weight toward market model for high-odds horses where
         # calibration is unreliable and the probability floor creates
         # phantom value.
-        odds = features_df["odds_win"].fillna(0).values
+        odds = features_df["odds_win"].values
         fund_weights = self._compute_adaptive_weights(odds)
 
         combined = fund_weights * fund_preds + (1 - fund_weights) * mkt_preds

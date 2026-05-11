@@ -74,16 +74,16 @@ class TestPrepareData:
         for col in feature_cols:
             assert df[col].dtype in [np.float64, np.float32, np.int64, float, int]
 
-    def test_nan_filled_with_median(self):
+    def test_nan_preserved(self):
         df = self._make_df(n_races=5)
         df.loc[0, "speed_z"] = np.nan
         df.loc[1, "speed_z"] = np.nan
 
         X_train, _, X_val, _, feature_cols, _ = prepare_data(df)
 
-        # No NaNs should remain
+        # NaNs should be preserved for native tree handling
         combined = np.concatenate([X_train, X_val])
-        assert not np.any(np.isnan(combined))
+        assert np.any(np.isnan(combined))
 
     def test_time_based_split(self):
         df = self._make_df(n_races=10)
