@@ -240,6 +240,148 @@ def train_xgboost(X_train, y_train, X_val, y_val, feature_cols) -> tuple:
 
 
 # ---------------------------------------------------------------------------
+# Learning-to-Rank Training
+# ---------------------------------------------------------------------------
+
+def _make_group_array(race_ids: np.ndarray) -> np.ndarray:
+    """Convert a race_id array into a group-count array for ranking.
+    
+    E.g., [1,1,1,2,2,3,3,3,3] -> [3,2,4]
+    Data must be pre-sorted by race_id.
+    """
+    _, counts = np.unique(race_ids, return_counts=True)
+    return counts
+
+
+def _finish_to_relevance(finish_pos: np.ndarray, max_rel: int = 5) -> np.ndarray:
+    """Convert finish position to relevance label for LambdaRank.
+    
+    1st -> 5 (highest relevance)
+    2nd -> 4
+    3rd -> 3
+    4th -> 2
+    5th -> 1
+    6th+ -> 0
+    
+    This gives the ranker a graded signal, not just binary win/lose.
+    """
+    rel = np.clip(max_rel + 1 - finish_pos, 0, max_rel)
+    return rel.astype(int)
+
+
+def train_lightgbm_ranker(X_train, y_train, X_val, y_val, feature_cols,
+                           train_groups, val_groups) -> tuple:
+    """Train a LightGBM LambdaRank model that ranks horses within each race."""
+    lgb = _get_lgb()
+
+    params = {
+        "objective": "lambdarank",
+        "metric": "ndcg",
+        "eval_at": [1, 3],  # NDCG@1 (winner) and NDCG@3 (top 3)
+        "boosting_type": "gbdt",
+        "num_leaves": 63,
+        "learning_rate": 0.05,
+        "feature_fraction": 0.8,
+        "bagging_fraction": 0.8,
+        "bagging_freq": 5,
+        "min_child_samples": 20,
+        "lambda_l1": 0.1,
+        "lambda_l2": 1.0,
+        "verbose": -1,
+        "seed": 42,
+        "label_gain": [0, 1, 2, 3, 4, 31],  # Exponential gain for 1st place
+    }
+
+    train_set = lgb.Dataset(X_train, label=y_train, group=train_groups,
+                             feature_name=feature_cols)
+    val_set = lgb.Dataset(X_val, label=y_val, group=val_groups,
+                           feature_name=feature_cols, reference=train_set)
+
+    model = lgb.train(
+        params,
+        train_set,
+        num_boost_round=1000,
+        valid_sets=[val_set],
+        callbacks=[lgb.early_stopping(50), lgb.log_evaluation(100)],
+    )
+
+    y_pred = model.predict(X_val)
+
+    # Feature importance
+    importance = dict(zip(feature_cols, model.feature_importance(importance_type="gain")))
+    top_features = sorted(importance.items(), key=lambda x: -x[1])[:15]
+    log.info("LightGBM Ranker — Top 15 features (gain):")
+    for name, gain in top_features:
+        log.info(f"  {name}: {gain:.0f}")
+
+    return model, y_pred
+
+
+def train_xgboost_ranker(X_train, y_train, X_val, y_val, feature_cols,
+                          train_groups, val_groups) -> tuple:
+    """Train an XGBoost LambdaMART model that ranks horses within each race."""
+    xgb = _get_xgb()
+
+    dtrain = xgb.DMatrix(X_train, label=y_train, feature_names=feature_cols)
+    dtrain.set_group(train_groups)
+    dval = xgb.DMatrix(X_val, label=y_val, feature_names=feature_cols)
+    dval.set_group(val_groups)
+
+    params = {
+        "objective": "rank:ndcg",
+        "eval_metric": "ndcg@1",
+        "max_depth": 6,
+        "learning_rate": 0.05,
+        "subsample": 0.8,
+        "colsample_bytree": 0.8,
+        "min_child_weight": 10,
+        "reg_alpha": 0.1,
+        "reg_lambda": 1.0,
+        "seed": 42,
+    }
+
+    model = xgb.train(
+        params,
+        dtrain,
+        num_boost_round=1000,
+        evals=[(dval, "val")],
+        early_stopping_rounds=50,
+        verbose_eval=100,
+    )
+
+    y_pred = model.predict(dval)
+
+    return model, y_pred
+
+
+def scores_to_probs(scores: np.ndarray, race_ids: np.ndarray) -> np.ndarray:
+    """Convert raw ranking scores to per-race probabilities via softmax.
+    
+    For each race, applies softmax(scores) so that probabilities sum to 1.0
+    within each race. This is the correct way to derive calibrated P(win)
+    from a ranking model.
+    
+    Args:
+        scores: Raw ranking scores from the model.
+        race_ids: Corresponding race IDs (same length as scores).
+    
+    Returns:
+        Array of probabilities (same length as scores), summing to 1.0 per race.
+    """
+    probs = np.zeros_like(scores, dtype=np.float64)
+    
+    for rid in np.unique(race_ids):
+        mask = race_ids == rid
+        race_scores = scores[mask]
+        # Numerical stability: subtract max before exp
+        shifted = race_scores - race_scores.max()
+        exp_scores = np.exp(shifted)
+        probs[mask] = exp_scores / exp_scores.sum()
+    
+    return probs
+
+
+# ---------------------------------------------------------------------------
 # Ensemble & Calibration
 # ---------------------------------------------------------------------------
 

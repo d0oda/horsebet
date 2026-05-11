@@ -24,6 +24,6 @@ echo "--- 1. Checking Database Health ---"
 python scripts/monitor_db_health.py
 
 echo "--- 2. Running Daily Prediction Pipeline ---"
-python pipeline.py --date "$TARGET_DATE"
+python pipeline.py --date "$TARGET_DATE" --ev-threshold 0.50
 
 echo "=== Pipeline Completed Successfully ==="

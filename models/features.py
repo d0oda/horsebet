@@ -114,6 +114,8 @@ ODDS_FEATURES = [
     "is_longshot_z", "is_extreme_longshot_z",
     "odds_rank", "odds_ratio_to_fav", "odds_deviation",
     "odds_rank_z", "odds_ratio_to_fav_z", "odds_deviation_z",
+    "odds_morning", "odds_drift", "steam_move", "late_money",
+    "odds_morning_z", "odds_drift_z", "steam_move_z", "late_money_z",
 ]
 
 
@@ -246,6 +248,19 @@ class FeatureBuilder:
 
         if "date" in df.columns:
             df["date"] = df["date"].astype(str)
+        return df
+
+    def _load_odds_snapshots(self) -> pd.DataFrame:
+        """Load all odds snapshots to compute movement features."""
+        query = """
+            SELECT race_id, captured_at, combination, odds_value
+            FROM odds_snapshots
+            WHERE bet_type = 'win' AND odds_value IS NOT NULL
+            ORDER BY race_id, combination, captured_at
+        """
+        with get_session() as session:
+            result = session.execute(text(query))
+            df = pd.DataFrame(result.fetchall(), columns=result.keys())
         return df
 
     # ------------------------------------------------------------------
@@ -835,6 +850,178 @@ class FeatureBuilder:
             dist = ritto_distances.get(course_id, 0.0)
             
         return {"training_center_distance": float(dist)}
+
+    # ------------------------------------------------------------------
+    # Race-Shape Composition Features (Cross-Sectional)
+    # ------------------------------------------------------------------
+
+    def _race_shape_features(
+        self, race_id: int, horse_id: int,
+        race_df: pd.DataFrame, history_df: pd.DataFrame,
+        horse_speed_last: float, horse_speed_best: float,
+        horse_class_rank: float, race_date: str,
+    ) -> dict:
+        """
+        Compute features describing this horse's position relative to the field.
+
+        Unlike individual features, these capture field composition effects:
+        - How many front-runners are there? (pace pressure)
+        - Is this horse the fastest in the field by speed figures?
+        - How does this horse's class compare to the field average?
+        - Is the expected pace scenario advantageous for this horse's style?
+
+        Uses the pace cache (from _get_pace_features) for running style info.
+        """
+        from models.pace_sim import STYLE_FRONT, STYLE_STALK, STYLE_CLOSER, STYLE_DEEP
+
+        null_feats = {
+            "shape_n_runners": np.nan,
+            "shape_n_front": np.nan,
+            "shape_n_stalkers": np.nan,
+            "shape_n_closers": np.nan,
+            "shape_front_ratio": np.nan,
+            "shape_closer_ratio": np.nan,
+            "shape_pace_pressure": np.nan,
+            "shape_style_advantage": np.nan,
+            "shape_speed_rank": np.nan,
+            "shape_speed_rank_pct": np.nan,
+            "shape_speed_vs_field_avg": np.nan,
+            "shape_speed_vs_field_best": np.nan,
+            "shape_class_vs_field_avg": np.nan,
+            "shape_class_rank_in_field": np.nan,
+            "shape_is_class_best": 0,
+            "shape_is_speed_best": 0,
+            "shape_lone_speed": 0,
+        }
+
+        # Build race-level cache on first access
+        if not hasattr(self, "_race_shape_cache"):
+            self._race_shape_cache = {}
+
+        if race_id not in self._race_shape_cache:
+            race_entries = race_df[race_df["race_id"] == race_id]
+            if race_entries.empty:
+                self._race_shape_cache[race_id] = {}
+                return null_feats
+
+            # Collect per-horse data for this race
+            horse_data = {}
+            for _, row in race_entries.iterrows():
+                hid = row["horse_id"]
+
+                # Get speed figures from history (point-in-time)
+                group = self._horse_groups.get(hid) if hasattr(self, "_horse_groups") else None
+                spd_last = np.nan
+                spd_best = np.nan
+                if group is not None and not group.empty:
+                    idx = group["date"].searchsorted(race_date, side="left")
+                    hist = group.iloc[:idx]
+                    if not hist.empty and "time_secs" in hist.columns:
+                        # Use the speed baseline calculation (simplified)
+                        times = hist["time_secs"].dropna()
+                        if len(times) >= 1:
+                            # Simple proxy: faster time = higher speed figure
+                            # (actual speed figures are computed elsewhere, we just need relative ranking)
+                            spd_last = -times.iloc[-1] if len(times) > 0 else np.nan
+                            spd_best = -times.min() if len(times) > 0 else np.nan
+
+                # Get running style from pace cache
+                style = None
+                pace_data = self._pace_cache.get(race_id, {}).get(hid)
+                if pace_data:
+                    style = pace_data.get("style")
+
+                horse_data[hid] = {
+                    "style": style,
+                    "class_rank": CLASS_RANK.get(row.get("race_class"), CLASS_RANK.get(row.get("grade"), 10)),
+                }
+
+            self._race_shape_cache[race_id] = horse_data
+
+        race_data = self._race_shape_cache.get(race_id, {})
+        if not race_data or horse_id not in race_data:
+            return null_feats
+
+        n_runners = len(race_data)
+
+        # --- Running style distribution ---
+        styles = [d["style"] for d in race_data.values() if d["style"]]
+        n_front = sum(1 for s in styles if s == STYLE_FRONT)
+        n_stalk = sum(1 for s in styles if s == STYLE_STALK)
+        n_closer = sum(1 for s in styles if s in (STYLE_CLOSER, STYLE_DEEP))
+
+        front_ratio = n_front / n_runners if n_runners > 0 else 0
+        closer_ratio = n_closer / n_runners if n_runners > 0 else 0
+
+        # Pace pressure: 0=slow pace (few front-runners), high=hot pace
+        pace_pressure = n_front / max(n_runners, 1)
+
+        # This horse's style
+        my_style = race_data[horse_id]["style"]
+
+        # Style advantage based on pace scenario:
+        # - Few front-runners (slow pace) → front-runners have advantage
+        # - Many front-runners (hot pace) → closers have advantage
+        style_advantage = 0.0
+        if my_style:
+            if my_style == STYLE_FRONT:
+                # Lone speed = huge advantage, contested speed = disadvantage
+                style_advantage = 1.0 if n_front == 1 else -0.5 * (n_front - 1)
+            elif my_style == STYLE_STALK:
+                # Stalkers benefit from moderate-to-hot pace
+                style_advantage = 0.5 if n_front >= 2 else -0.2
+            elif my_style in (STYLE_CLOSER, STYLE_DEEP):
+                # Closers benefit from hot pace
+                style_advantage = 0.3 * (n_front - 1) if n_front >= 2 else -0.5
+
+        lone_speed = 1 if my_style == STYLE_FRONT and n_front == 1 else 0
+
+        # --- Speed figure rank within field ---
+        # Use the horse_speed_last/best passed from the already-computed features
+        speed_rank = np.nan
+        speed_rank_pct = np.nan
+        speed_vs_avg = np.nan
+        speed_vs_best = np.nan
+        is_speed_best = 0
+
+        if not np.isnan(horse_speed_last):
+            # We need to compare against field, but other horses' speed figures
+            # aren't stored in the cache. Use the features already computed.
+            # Since we compute features per-horse, we defer field-level speed
+            # ranking to the post-hoc normalisation (z-scores already handle this).
+            # Instead, pass through the raw values for z-scoring.
+            speed_rank = np.nan  # Will be filled by z-score normalisation
+            speed_rank_pct = np.nan
+
+        # --- Class rank within field ---
+        class_ranks = [d["class_rank"] for d in race_data.values()]
+        field_avg_class = np.mean(class_ranks) if class_ranks else np.nan
+        class_vs_avg = horse_class_rank - field_avg_class if not np.isnan(horse_class_rank) and not np.isnan(field_avg_class) else np.nan
+
+        # Rank this horse's class within the field (lower class_rank = higher class)
+        sorted_classes = sorted(class_ranks)
+        class_rank_in_field = sorted_classes.index(horse_class_rank) + 1 if horse_class_rank in sorted_classes else np.nan
+        is_class_best = 1 if class_rank_in_field == 1 else 0
+
+        return {
+            "shape_n_runners": n_runners,
+            "shape_n_front": n_front,
+            "shape_n_stalkers": n_stalk,
+            "shape_n_closers": n_closer,
+            "shape_front_ratio": front_ratio,
+            "shape_closer_ratio": closer_ratio,
+            "shape_pace_pressure": pace_pressure,
+            "shape_style_advantage": style_advantage,
+            "shape_speed_rank": speed_rank,
+            "shape_speed_rank_pct": speed_rank_pct,
+            "shape_speed_vs_field_avg": speed_vs_avg,
+            "shape_speed_vs_field_best": speed_vs_best,
+            "shape_class_vs_field_avg": class_vs_avg,
+            "shape_class_rank_in_field": class_rank_in_field,
+            "shape_is_class_best": is_class_best,
+            "shape_is_speed_best": is_speed_best,
+            "shape_lone_speed": lone_speed,
+        }
 
     def _get_pace_features(self, race_id: int, horse_id: int, race_df: pd.DataFrame, history_df: pd.DataFrame) -> dict:
         """
@@ -1753,6 +1940,61 @@ class FeatureBuilder:
         }
 
     # ------------------------------------------------------------------
+    # Feature Computation — Odds Movement (Path 2)
+    # ------------------------------------------------------------------
+
+    def _odds_movement_features(
+        self, race_id: int, post_position: int, odds_win: float
+    ) -> dict:
+        """
+        Compute odds movement features from snapshots (drift, steam, late money).
+        
+        - odds_morning: the earliest recorded odds for this horse
+        - odds_drift: final_odds / morning_odds (< 1.0 means backed/shortened)
+        - steam_move: 1 if odds shortened significantly (>30% drop)
+        - late_money: odds change in the final snapshot
+        """
+        null_feats = {
+            "odds_morning": np.nan,
+            "odds_drift": np.nan,
+            "steam_move": 0,
+            "late_money": np.nan,
+        }
+        
+        if post_position is None or np.isnan(post_position):
+            return null_feats
+            
+        if not hasattr(self, "_odds_snapshots_cache"):
+            return null_feats
+            
+        race_snaps = self._odds_snapshots_cache.get(race_id)
+        if race_snaps is None or race_snaps.empty:
+            return null_feats
+            
+        # combination in odds_snapshots corresponds to post_position for win bets
+        horse_snaps = race_snaps[race_snaps["combination"] == str(int(post_position))]
+        if horse_snaps.empty:
+            return null_feats
+            
+        snaps = horse_snaps.sort_values("captured_at")
+        morning_odds = float(snaps.iloc[0]["odds_value"])
+        final_odds = float(snaps.iloc[-1]["odds_value"])
+        
+        drift = final_odds / morning_odds if morning_odds > 0 else np.nan
+        steam = 1 if (not np.isnan(drift) and drift < 0.70) else 0
+        
+        late_money = np.nan
+        if len(snaps) >= 2:
+            late_money = float(snaps.iloc[-1]["odds_value"] - snaps.iloc[-2]["odds_value"])
+            
+        return {
+            "odds_morning": morning_odds,
+            "odds_drift": drift,
+            "steam_move": steam,
+            "late_money": late_money,
+        }
+
+    # ------------------------------------------------------------------
     # Feature Computation — Race-Level (Static)
     # ------------------------------------------------------------------
 
@@ -1854,6 +2096,10 @@ class FeatureBuilder:
             log.info("Loading full history for rolling features...")
             history_df = self._load_horse_history()
             history_df = history_df.sort_values("date", ascending=True)
+
+            log.info("Loading odds snapshots for movement features...")
+            odds_df = self._load_odds_snapshots()
+            self._odds_snapshots_cache = dict(tuple(odds_df.groupby("race_id")))
 
             # Pre-index history by entity for O(1) lookups (major speedup)
             log.info("Pre-indexing history for fast lookups...")
@@ -2014,6 +2260,15 @@ class FeatureBuilder:
                 )
             )
 
+            # Odds Movement Features (drift, steam, late money)
+            features.update(
+                self._odds_movement_features(
+                    race_id=row["race_id"],
+                    post_position=row.get("post_position"),
+                    odds_win=row.get("odds_win"),
+                )
+            )
+
             # --- Sprint 8: New domain-specific features ---
 
             # Speed figures (normalised time by course/distance/going)
@@ -2098,6 +2353,22 @@ class FeatureBuilder:
                     distance=row["distance"] or 0,
                     surface=row["surface"] or "",
                     history_df=history_df,
+                )
+            )
+
+            # --- Race-Shape Composition Features (cross-sectional) ---
+            # Must come after pace features (uses pace cache for styles)
+            # and after speed figure features (uses speed_figure_last)
+            features.update(
+                self._race_shape_features(
+                    race_id=row["race_id"],
+                    horse_id=row["horse_id"],
+                    race_df=race_df,
+                    history_df=history_df,
+                    horse_speed_last=features.get("speed_figure_last", np.nan),
+                    horse_speed_best=features.get("speed_figure_best", np.nan),
+                    horse_class_rank=features.get("class_rank", np.nan),
+                    race_date=str(row["date"]),
                 )
             )
 

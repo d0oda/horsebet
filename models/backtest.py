@@ -271,10 +271,14 @@ class Backtester:
         # Per-bet Sharpe — mean(profit/stake) / std(profit/stake)
         # NOTE: structurally depressed by binary payout variance (longshots).
         # Use daily_sharpe for a more meaningful risk-adjusted metric.
-        if result.bets and len(result.bets) >= 10:
-            bet_returns = np.array([b.profit / b.stake for b in result.bets])
-            if bet_returns.std() > 0:
-                result.sharpe = bet_returns.mean() / bet_returns.std()
+        if result.bets:
+            valid_bets = [b for b in result.bets if b.stake > 0]
+            if len(valid_bets) >= 10:
+                bet_returns = np.array([b.profit / b.stake for b in valid_bets])
+                if bet_returns.std() > 0:
+                    result.sharpe = bet_returns.mean() / bet_returns.std()
+                else:
+                    result.sharpe = 0
             else:
                 result.sharpe = 0
         else:

@@ -1,0 +1,159 @@
+2026-05-11 18:29:52,803 [INFO] Loading cached features from data/features.parquet...
+2026-05-11 18:29:53,798 [INFO] Fold 1: train=1184 races, val=1020 races, test=2748 races (2020-01-18→2021-01-30)
+/Users/ryfei.wang/Documents/horsebet/models/train.py:269: RuntimeWarning: invalid value encountered in cast
+  return rel.astype(int)
+2026-05-11 18:29:56,034 [INFO] LightGBM Ranker — Top 15 features (gain):
+2026-05-11 18:29:56,034 [INFO]   odds_win: 5527
+2026-05-11 18:29:56,034 [INFO]   log_odds_z: 3754
+2026-05-11 18:29:56,034 [INFO]   odds_deviation_z: 2531
+2026-05-11 18:29:56,034 [INFO]   log_odds: 1095
+2026-05-11 18:29:56,034 [INFO]   trainer_offspring_avg_finish_z: 846
+2026-05-11 18:29:56,034 [INFO]   odds_ratio_to_fav: 617
+2026-05-11 18:29:56,034 [INFO]   trainer_offspring_avg_finish: 529
+2026-05-11 18:29:56,034 [INFO]   trainer_roi_10_z: 346
+2026-05-11 18:29:56,034 [INFO]   sire_avg_finish_z: 342
+2026-05-11 18:29:56,034 [INFO]   trainer_offspring_win_pct_z: 327
+2026-05-11 18:29:56,034 [INFO]   trainer_course_runs: 325
+2026-05-11 18:29:56,034 [INFO]   bms_win_pct_z: 316
+2026-05-11 18:29:56,034 [INFO]   jockey_place_pct_5_z: 311
+2026-05-11 18:29:56,034 [INFO]   course_month_bias_z: 300
+2026-05-11 18:29:56,034 [INFO]   bms_win_pct_surface_z: 299
+Training until validation scores don't improve for 50 rounds
+Early stopping, best iteration is:
+[30]	valid_0's ndcg@1: 0.373055	valid_0's ndcg@3: 0.537552
+[0]	val-ndcg@1:0.40047
+[71]	val-ndcg@1:0.45478
+2026-05-11 18:29:57,061 [INFO] Fold 2: train=3488 races, val=1464 races, test=3156 races (2021-01-31→2021-12-26)
+/Users/ryfei.wang/Documents/horsebet/models/train.py:269: RuntimeWarning: invalid value encountered in cast
+  return rel.astype(int)
+2026-05-11 18:29:59,264 [INFO] LightGBM Ranker — Top 15 features (gain):
+2026-05-11 18:29:59,265 [INFO]   log_odds_z: 2472
+2026-05-11 18:29:59,265 [INFO]   log_odds: 466
+2026-05-11 18:29:59,265 [INFO]   trainer_offspring_avg_finish: 71
+2026-05-11 18:29:59,265 [INFO]   best_time_at_dist: 17
+2026-05-11 18:29:59,265 [INFO]   bms_win_pct_distance: 16
+2026-05-11 18:29:59,265 [INFO]   course_month_bias_z: 14
+2026-05-11 18:29:59,265 [INFO]   shape_closer_ratio: 13
+2026-05-11 18:29:59,265 [INFO]   last5_win_pct_z: 13
+2026-05-11 18:29:59,265 [INFO]   sire_avg_finish_z: 11
+2026-05-11 18:29:59,265 [INFO]   sire_win_pct_z: 11
+2026-05-11 18:29:59,265 [INFO]   last10_avg_beaten_pct_z: 10
+2026-05-11 18:29:59,265 [INFO]   speed_figure_best: 10
+2026-05-11 18:29:59,265 [INFO]   jt_combo_place_pct_z: 9
+2026-05-11 18:29:59,265 [INFO]   is_improving_3yo_z: 9
+2026-05-11 18:29:59,265 [INFO]   jockey_course_win_pct: 9
+Training until validation scores don't improve for 50 rounds
+Early stopping, best iteration is:
+[1]	valid_0's ndcg@1: 0.342411	valid_0's ndcg@3: 0.504081
+[0]	val-ndcg@1:0.42398
+[58]	val-ndcg@1:0.42960
+2026-05-11 18:30:00,933 [INFO] Fold 3: train=6608 races, val=1500 races, test=2471 races (2021-12-28→2022-12-11)
+/Users/ryfei.wang/Documents/horsebet/models/train.py:269: RuntimeWarning: invalid value encountered in cast
+  return rel.astype(int)
+2026-05-11 18:30:04,244 [INFO] LightGBM Ranker — Top 15 features (gain):
+2026-05-11 18:30:04,244 [INFO]   odds_win: 35904
+2026-05-11 18:30:04,244 [INFO]   log_odds_z: 5584
+2026-05-11 18:30:04,244 [INFO]   log_odds: 4229
+2026-05-11 18:30:04,244 [INFO]   odds_ratio_to_fav: 4106
+2026-05-11 18:30:04,244 [INFO]   odds_deviation_z: 1168
+2026-05-11 18:30:04,244 [INFO]   trainer_offspring_avg_finish: 509
+2026-05-11 18:30:04,244 [INFO]   sire_avg_finish_z: 309
+2026-05-11 18:30:04,244 [INFO]   best_class_rank_z: 238
+2026-05-11 18:30:04,244 [INFO]   popularity_z: 213
+2026-05-11 18:30:04,244 [INFO]   bms_win_pct_distance: 203
+2026-05-11 18:30:04,244 [INFO]   horse_weight_change_z: 195
+2026-05-11 18:30:04,244 [INFO]   draw_bias_90d: 192
+2026-05-11 18:30:04,244 [INFO]   jt_combo_win_pct_z: 192
+2026-05-11 18:30:04,244 [INFO]   trainer_course_win_pct_z: 191
+2026-05-11 18:30:04,244 [INFO]   sire_runners: 189
+Training until validation scores don't improve for 50 rounds
+Early stopping, best iteration is:
+[10]	valid_0's ndcg@1: 0.372624	valid_0's ndcg@3: 0.532617
+[0]	val-ndcg@1:0.44159
+[100]	val-ndcg@1:0.45690
+[133]	val-ndcg@1:0.45557
+2026-05-11 18:30:08,676 [INFO] Fold 4: train=9250 races, val=1329 races, test=1447 races (2022-12-17→2025-02-08)
+/Users/ryfei.wang/Documents/horsebet/models/train.py:269: RuntimeWarning: invalid value encountered in cast
+  return rel.astype(int)
+2026-05-11 18:30:12,687 [INFO] LightGBM Ranker — Top 15 features (gain):
+2026-05-11 18:30:12,687 [INFO]   odds_win: 61010
+2026-05-11 18:30:12,687 [INFO]   odds_ratio_to_fav: 18553
+2026-05-11 18:30:12,687 [INFO]   log_odds_z: 8248
+2026-05-11 18:30:12,687 [INFO]   log_odds: 4819
+2026-05-11 18:30:12,687 [INFO]   odds_deviation_z: 829
+2026-05-11 18:30:12,687 [INFO]   trainer_offspring_avg_finish: 675
+2026-05-11 18:30:12,687 [INFO]   best_class_rank_z: 443
+2026-05-11 18:30:12,687 [INFO]   class_drops_last5_z: 346
+2026-05-11 18:30:12,687 [INFO]   trainer_course_win_pct_z: 322
+2026-05-11 18:30:12,687 [INFO]   sire_avg_finish: 297
+2026-05-11 18:30:12,687 [INFO]   trainer_offspring_avg_finish_z: 295
+2026-05-11 18:30:12,687 [INFO]   bms_win_pct_z: 294
+2026-05-11 18:30:12,687 [INFO]   sire_avg_finish_z: 271
+2026-05-11 18:30:12,687 [INFO]   trainer_course_place_pct_z: 268
+2026-05-11 18:30:12,687 [INFO]   last_time_secs_z: 247
+Training until validation scores don't improve for 50 rounds
+Early stopping, best iteration is:
+[18]	valid_0's ndcg@1: 0.394403	valid_0's ndcg@3: 0.553542
+[0]	val-ndcg@1:0.46579
+[62]	val-ndcg@1:0.47693
+2026-05-11 18:30:16,504 [INFO] Fold 5: train=11312 races, val=714 races, test=2094 races (2025-02-09→2026-04-25)
+/Users/ryfei.wang/Documents/horsebet/models/train.py:269: RuntimeWarning: invalid value encountered in cast
+  return rel.astype(int)
+2026-05-11 18:30:21,576 [INFO] LightGBM Ranker — Top 15 features (gain):
+2026-05-11 18:30:21,576 [INFO]   odds_win: 88365
+2026-05-11 18:30:21,576 [INFO]   log_odds_z: 16882
+2026-05-11 18:30:21,576 [INFO]   odds_ratio_to_fav: 12997
+2026-05-11 18:30:21,576 [INFO]   log_odds: 6291
+2026-05-11 18:30:21,576 [INFO]   odds_deviation_z: 2917
+2026-05-11 18:30:21,576 [INFO]   trainer_offspring_avg_finish: 770
+2026-05-11 18:30:21,576 [INFO]   best_class_rank_z: 626
+2026-05-11 18:30:21,576 [INFO]   sire_runners_z: 465
+2026-05-11 18:30:21,576 [INFO]   sire_avg_finish_z: 461
+2026-05-11 18:30:21,576 [INFO]   jt_combo_win_pct_z: 443
+2026-05-11 18:30:21,576 [INFO]   course_month_bias: 414
+2026-05-11 18:30:21,576 [INFO]   sire_avg_finish: 397
+2026-05-11 18:30:21,576 [INFO]   bms_win_pct_surface: 370
+2026-05-11 18:30:21,576 [INFO]   draw_bias_90d_z: 352
+2026-05-11 18:30:21,576 [INFO]   bms_win_pct_surface_z: 348
+Training until validation scores don't improve for 50 rounds
+Early stopping, best iteration is:
+[29]	valid_0's ndcg@1: 0.378558	valid_0's ndcg@3: 0.565817
+[0]	val-ndcg@1:0.45690
+[100]	val-ndcg@1:0.46408
+[116]	val-ndcg@1:0.46941
+2026-05-11 18:30:27,908 [INFO] 
+=== Walk-Forward Backtest Simulation Results ===
+
+============================================================
+  UmaEdge — Backtest Report
+============================================================
+  Races analysed:        11916
+  Bets placed:             332
+  NaN-odds skipped:        240
+  Hit rate:              14.5%
+  Avg EV per bet:       1.032
+  Avg odds:               6.7x
+------------------------------------------------------------
+  Total staked:       ¥   332,000
+  Total payout:       ¥   232,200
+  Total profit:       ¥   -99,800
+  ROI:                  -30.1%
+------------------------------------------------------------
+  Max drawdown:       ¥    99,800 (99.8%)
+  Sharpe (per-bet):     -0.16  ← depressed by binary variance
+  Sharpe (daily ann):   -1.23  ← annualised, industry standard
+============================================================
+
+  Last 10 bets:
+  Date         Horse          P(win)  Odds     EV  Stake     P&L
+  ----------------------------------------------------------
+  2021-03-13   デルマヤクシ         18.9%  12.2 +1.30 ¥1,000   -1000 ❌
+  2021-03-07   ギャラントウォリア      26.4%  12.6 +2.33 ¥1,000   -1000 ❌
+  2021-03-13   ディーズローリエ       21.0%  10.4 +1.18 ¥1,000   -1000 ❌
+  2021-03-06   ゲンティアナ         21.0%  12.4 +1.60 ¥1,000   -1000 ❌
+  2021-03-13   ベレヌス           21.0%   8.2 +0.72 ¥1,000   -1000 ❌
+  2021-03-13   プライムフェイズ       11.0%  14.3 +0.57 ¥1,000   -1000 ❌
+  2021-03-14   キーパンチ          15.9%  12.9 +1.05 ¥1,000   -1000 ❌
+  2021-03-13   ランカンカン         24.5%   6.3 +0.54 ¥1,000   -1000 ❌
+  2021-03-13   デルマキッショウ       21.0%   7.2 +0.51 ¥1,000   -1000 ❌
+  2021-03-14   ルヴェルソー         18.9%   8.6 +0.62 ¥1,000   -1000 ❌

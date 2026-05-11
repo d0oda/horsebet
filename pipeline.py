@@ -781,8 +781,8 @@ Examples:
         """,
     )
     parser.add_argument("--date", required=True, help="Race date (YYYY-MM-DD)")
-    parser.add_argument("--version", default="retrain_20260507_1645", help="Model version (default: retrain_20260507_1645)")
-    parser.add_argument("--ev-threshold", type=float, default=0.30, help="Min EV for value bet (default: 30%%)")
+    parser.add_argument("--version", default="retrain_20260511_1818", help="Model version (default: retrain_20260511_1818)")
+    parser.add_argument("--ev-threshold", type=float, default=0.50, help="Min EV for value bet (default: 50%%)")
     parser.add_argument("--max-odds", type=float, default=30.0, help="Max odds filter (default: 30)")
     parser.add_argument("--min-odds", type=float, default=2.0, help="Min odds filter (default: 2.0)")
     parser.add_argument("--skip-scrape", action="store_true", help="Skip race scraping (already in DB)")

@@ -28,5 +28,15 @@
     "n_samples": 38022,
     "calibration_error": 0.0,
     "notes": ""
+  },
+  {
+    "version": "retrain_20260511_1818",
+    "timestamp": "2026-05-11T18:18:36.939146",
+    "auc": 0.839745,
+    "log_loss": 0,
+    "brier": 0.055779,
+    "n_samples": 39975,
+    "calibration_error": 0.0,
+    "notes": ""
   }
 ]

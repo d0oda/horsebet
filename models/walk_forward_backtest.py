@@ -18,14 +18,18 @@ import numpy as np
 import pandas as pd
 import xgboost as xgb
 
-from models.features import FeatureBuilder
-from models.train import prepare_data, train_lightgbm, train_xgboost, ensemble_predict
+from models.features import FeatureBuilder, ODDS_FEATURES
+from models.train import (
+    prepare_data, train_lightgbm, train_xgboost, ensemble_predict,
+    train_lightgbm_ranker, train_xgboost_ranker,
+    _make_group_array, _finish_to_relevance, scores_to_probs,
+)
 from models.backtest import Backtester, BacktestConfig
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("walk_forward_backtest")
 
-def run_walk_forward_backtest(n_folds=5, ev_threshold=0.10, use_cache=False, use_kelly=True, flat_stake=1000, initial_bankroll=100000, kelly_fraction=0.25, max_odds=30.0, min_odds=2.0):
+def run_walk_forward_backtest(n_folds=5, ev_threshold=0.10, use_cache=False, use_kelly=True, flat_stake=1000, initial_bankroll=100000, kelly_fraction=0.25, max_odds=30.0, min_odds=2.0, odds_free=False, use_ranker=False, snapshot_only=False):
     cache_path = "data/features.parquet"
     if use_cache and os.path.exists(cache_path):
         log.info(f"Loading cached features from {cache_path}...")
@@ -49,6 +53,12 @@ def run_walk_forward_backtest(n_folds=5, ev_threshold=0.10, use_cache=False, use
 
     df = df.dropna(subset=["target_win", "date"]).copy()
     df = df.sort_values("date")
+    
+    if snapshot_only:
+        log.info("Filtering dataset to ONLY include races with odds_drift data...")
+        before = len(df)
+        df = df[df["odds_drift"].notna()]
+        log.info(f"Filtered {before} -> {len(df)} entries.")
 
     target = "target_win"
     exclude = {"race_id", "entry_id", "target_win", "target_place", "finish_pos", "date", "horse_name"}
@@ -56,6 +66,18 @@ def run_walk_forward_backtest(n_folds=5, ev_threshold=0.10, use_cache=False, use
     
     valid_cols = [c for c in feature_cols if not df[c].isna().all()]
     feature_cols = valid_cols
+
+    # Odds-free mode: exclude all odds-derived features from MODEL training.
+    # The model must predict win probability from fundamentals only.
+    # Note: odds_win is still used by the backtester to calculate EV and sizing.
+    if odds_free:
+        odds_set = set(ODDS_FEATURES)
+        # Also exclude z-scored variants
+        odds_z = {f"{f}_z" for f in ODDS_FEATURES}
+        remove = odds_set | odds_z
+        before = len(feature_cols)
+        feature_cols = [c for c in feature_cols if c not in remove]
+        log.info(f"ODDS-FREE mode: excluded {before - len(feature_cols)} odds features, {len(feature_cols)} features remain")
 
     unique_dates = sorted(df["date"].unique())
     total_dates = len(unique_dates)
@@ -85,9 +107,11 @@ def run_walk_forward_backtest(n_folds=5, ev_threshold=0.10, use_cache=False, use
 
         n_train_races = train_df["race_id"].nunique()
         log.info(f"Fold {fold_i + 1}: train={n_train_races} races, val={val_df['race_id'].nunique()} races, test={test_df['race_id'].nunique()} races ({test_dates[0]}→{test_dates[-1]})")
-        
-        # Removed manual NaN imputation here.
-        # Tree-based models natively support and optimize missing value splits.
+
+        # Sort by race_id for group-based ranking models
+        train_df = train_df.sort_values("race_id")
+        val_df = val_df.sort_values("race_id")
+        test_df = test_df.sort_values("race_id")
 
         X_train = train_df[feature_cols].values
         y_train = train_df[target].values
@@ -98,18 +122,65 @@ def run_walk_forward_backtest(n_folds=5, ev_threshold=0.10, use_cache=False, use
         if len(X_val) < 10 or len(X_train) < 50 or len(X_test) == 0:
             continue
 
-        lgb_model, _ = train_lightgbm(X_train, y_train, X_val, y_val, feature_cols)
-        xgb_model, _ = train_xgboost(X_train, y_train, X_val, y_val, feature_cols)
-        
-        # Predict purely out-of-sample on the quarantined test set
-        lgb_preds = lgb_model.predict(X_test)
-        import xgboost as xgb_lib
-        xgb_preds = xgb_model.predict(xgb_lib.DMatrix(X_test, feature_names=feature_cols))
-        ensemble_preds = ensemble_predict(lgb_preds, xgb_preds)
+        if use_ranker:
+            # --- LambdaRank path ---
+            # Convert binary win labels to graded relevance from finish_pos
+            train_rel = _finish_to_relevance(train_df["finish_pos"].values)
+            val_rel = _finish_to_relevance(val_df["finish_pos"].values)
+            
+            train_groups = _make_group_array(train_df["race_id"].values)
+            val_groups = _make_group_array(val_df["race_id"].values)
+            
+            lgb_model, _ = train_lightgbm_ranker(
+                X_train, train_rel, X_val, val_rel, feature_cols,
+                train_groups, val_groups,
+            )
+            xgb_model, _ = train_xgboost_ranker(
+                X_train, train_rel, X_val, val_rel, feature_cols,
+                train_groups, val_groups,
+            )
+            
+            # Get raw scores on train set to fit calibrator
+            import xgboost as xgb_lib
+            lgb_scores_train = lgb_model.predict(X_train)
+            xgb_scores_train = xgb_model.predict(xgb_lib.DMatrix(X_train, feature_names=feature_cols))
+            ensemble_scores_train = ensemble_predict(lgb_scores_train, xgb_scores_train)
+            
+            # Convert train scores to softmax probs
+            ensemble_probs_train = scores_to_probs(ensemble_scores_train, train_df["race_id"].values)
+            
+            # Fit isotonic calibrator using true binary labels
+            from sklearn.isotonic import IsotonicRegression
+            calibrator = IsotonicRegression(y_min=0, y_max=1, out_of_bounds="clip")
+            calibrator.fit(ensemble_probs_train, y_train)
+
+            # Raw ranking scores on test set
+            lgb_scores = lgb_model.predict(X_test)
+            xgb_scores = xgb_model.predict(xgb_lib.DMatrix(X_test, feature_names=feature_cols))
+            ensemble_scores = ensemble_predict(lgb_scores, xgb_scores)
+            
+            # Convert test scores → per-race probabilities via softmax
+            ensemble_probs_test = scores_to_probs(ensemble_scores, test_df["race_id"].values)
+            
+            # Calibrate probabilities
+            ensemble_preds = calibrator.predict(ensemble_probs_test)
+        else:
+            # --- Standard binary classification path ---
+            lgb_model, _ = train_lightgbm(X_train, y_train, X_val, y_val, feature_cols)
+            xgb_model, _ = train_xgboost(X_train, y_train, X_val, y_val, feature_cols)
+            
+            lgb_preds = lgb_model.predict(X_test)
+            import xgboost as xgb_lib
+            xgb_preds = xgb_model.predict(xgb_lib.DMatrix(X_test, feature_names=feature_cols))
+            ensemble_preds = ensemble_predict(lgb_preds, xgb_preds)
 
         # Build prediction dataframe for backtest
         pred_df = test_df[["race_id", "entry_id", "date", "horse_name", "finish_pos"]].copy()
         pred_df["win_prob"] = ensemble_preds
+
+        # Normalize probabilities per race so they sum to 1.0
+        # This is critical because IsotonicRegression distorts the marginals
+        pred_df["win_prob"] = pred_df.groupby("race_id")["win_prob"].transform(lambda x: x / x.sum() if x.sum() > 0 else x)
 
         # Ensure we have odds available
         if "odds_win" in test_df.columns:
@@ -166,6 +237,9 @@ if __name__ == "__main__":
     parser.add_argument("--kelly-fraction", type=float, default=0.25, help="Kelly criterion multiplier (e.g. 0.25 = quarter Kelly)")
     parser.add_argument("--max-odds", type=float, default=30.0, help="Max odds to bet on")
     parser.add_argument("--min-odds", type=float, default=2.0, help="Min odds to bet on")
+    parser.add_argument("--odds-free", action="store_true", help="Exclude odds features from model training (fundamental-only)")
+    parser.add_argument("--ranker", action="store_true", help="Use LambdaRank objective instead of binary classification")
+    parser.add_argument("--snapshot-only", action="store_true", help="Only evaluate on races that have odds snapshot data")
     args = parser.parse_args()
     
     run_walk_forward_backtest(
@@ -178,4 +252,7 @@ if __name__ == "__main__":
         kelly_fraction=args.kelly_fraction,
         max_odds=args.max_odds,
         min_odds=args.min_odds,
+        odds_free=args.odds_free,
+        use_ranker=args.ranker,
+        snapshot_only=args.snapshot_only,
     )

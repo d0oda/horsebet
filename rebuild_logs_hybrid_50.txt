@@ -1,0 +1,168 @@
+2026-05-11 18:12:09,873 [INFO] Loading cached features from data/features.parquet...
+2026-05-11 18:12:10,612 [INFO] Fold 1: train=1184 races, val=1020 races, test=2748 races (2020-01-18→2021-01-30)
+2026-05-11 18:12:13,353 [INFO] LightGBM — LogLoss: 0.2103, AUC: 0.8322, Brier: 0.0592
+2026-05-11 18:12:13,353 [INFO] Top 15 features (gain):
+2026-05-11 18:12:13,353 [INFO]   odds_win: 9291
+2026-05-11 18:12:13,353 [INFO]   log_odds: 3818
+2026-05-11 18:12:13,353 [INFO]   odds_ratio_to_fav: 1158
+2026-05-11 18:12:13,353 [INFO]   trainer_offspring_avg_finish_z: 924
+2026-05-11 18:12:13,353 [INFO]   trainer_offspring_avg_finish: 678
+2026-05-11 18:12:13,353 [INFO]   trainer_course_runs_z: 502
+2026-05-11 18:12:13,353 [INFO]   sire_runners_z: 484
+2026-05-11 18:12:13,353 [INFO]   trainer_14d_place_pct_z: 480
+2026-05-11 18:12:13,353 [INFO]   popularity: 463
+2026-05-11 18:12:13,353 [INFO]   sire_win_pct_surface_z: 463
+2026-05-11 18:12:13,353 [INFO]   jockey_win_pct_5_z: 438
+2026-05-11 18:12:13,353 [INFO]   bms_runners_z: 425
+2026-05-11 18:12:13,353 [INFO]   trainer_course_win_pct_z: 413
+2026-05-11 18:12:13,353 [INFO]   log_odds_z: 410
+2026-05-11 18:12:13,353 [INFO]   course_month_bias_z: 410
+Training until validation scores don't improve for 50 rounds
+[100]	valid_0's binary_logloss: 0.213329
+Early stopping, best iteration is:
+[58]	valid_0's binary_logloss: 0.210268
+[0]	val-logloss:0.25786
+[100]	val-logloss:0.20777
+[144]	val-logloss:0.20944
+2026-05-11 18:12:14,413 [INFO] XGBoost  — LogLoss: 0.2094, AUC: 0.8317, Brier: 0.0592
+2026-05-11 18:12:14,579 [INFO] Fold 2: train=3488 races, val=1464 races, test=3156 races (2021-01-31→2021-12-26)
+2026-05-11 18:12:18,222 [INFO] LightGBM — LogLoss: 0.2123, AUC: 0.8171, Brier: 0.0595
+2026-05-11 18:12:18,223 [INFO] Top 15 features (gain):
+2026-05-11 18:12:18,223 [INFO]   odds_win: 28291
+2026-05-11 18:12:18,223 [INFO]   log_odds: 11435
+2026-05-11 18:12:18,223 [INFO]   odds_ratio_to_fav: 1853
+2026-05-11 18:12:18,223 [INFO]   best_class_rank_z: 1448
+2026-05-11 18:12:18,223 [INFO]   trainer_offspring_avg_finish: 1287
+2026-05-11 18:12:18,223 [INFO]   trainer_offspring_avg_finish_z: 856
+2026-05-11 18:12:18,223 [INFO]   is_longshot: 610
+2026-05-11 18:12:18,223 [INFO]   sire_win_pct: 547
+2026-05-11 18:12:18,223 [INFO]   sire_avg_finish: 545
+2026-05-11 18:12:18,223 [INFO]   trainer_course_runs_z: 541
+2026-05-11 18:12:18,223 [INFO]   bms_runners: 534
+2026-05-11 18:12:18,223 [INFO]   draw_bias_90d_z: 531
+2026-05-11 18:12:18,223 [INFO]   sire_win_pct_z: 510
+2026-05-11 18:12:18,223 [INFO]   jockey_course_place_pct: 505
+2026-05-11 18:12:18,223 [INFO]   trainer_offspring_win_pct: 505
+Training until validation scores don't improve for 50 rounds
+[100]	valid_0's binary_logloss: 0.213021
+Early stopping, best iteration is:
+[62]	valid_0's binary_logloss: 0.212289
+[0]	val-logloss:0.25334
+[100]	val-logloss:0.21115
+[136]	val-logloss:0.21180
+2026-05-11 18:12:19,977 [INFO] XGBoost  — LogLoss: 0.2118, AUC: 0.8181, Brier: 0.0595
+2026-05-11 18:12:20,172 [INFO] Fold 3: train=6608 races, val=1500 races, test=2471 races (2021-12-28→2022-12-11)
+2026-05-11 18:12:25,330 [INFO] LightGBM — LogLoss: 0.2092, AUC: 0.8283, Brier: 0.0589
+2026-05-11 18:12:25,331 [INFO] Top 15 features (gain):
+2026-05-11 18:12:25,331 [INFO]   odds_win: 54149
+2026-05-11 18:12:25,331 [INFO]   log_odds: 22405
+2026-05-11 18:12:25,331 [INFO]   odds_ratio_to_fav: 2924
+2026-05-11 18:12:25,331 [INFO]   trainer_offspring_avg_finish: 1394
+2026-05-11 18:12:25,331 [INFO]   best_class_rank_z: 1320
+2026-05-11 18:12:25,331 [INFO]   is_longshot: 1135
+2026-05-11 18:12:25,331 [INFO]   trainer_course_runs: 937
+2026-05-11 18:12:25,331 [INFO]   sire_avg_finish_z: 933
+2026-05-11 18:12:25,331 [INFO]   sire_runners_z: 927
+2026-05-11 18:12:25,331 [INFO]   bms_win_pct_z: 771
+2026-05-11 18:12:25,331 [INFO]   course_month_bias_z: 761
+2026-05-11 18:12:25,331 [INFO]   trainer_14d_place_pct_z: 735
+2026-05-11 18:12:25,331 [INFO]   sire_avg_finish: 726
+2026-05-11 18:12:25,331 [INFO]   sire_runners: 701
+2026-05-11 18:12:25,331 [INFO]   trainer_offspring_win_pct: 678
+Training until validation scores don't improve for 50 rounds
+[100]	valid_0's binary_logloss: 0.209603
+Early stopping, best iteration is:
+[79]	valid_0's binary_logloss: 0.209222
+[0]	val-logloss:0.25531
+[100]	val-logloss:0.20947
+[122]	val-logloss:0.20967
+2026-05-11 18:12:27,966 [INFO] XGBoost  — LogLoss: 0.2097, AUC: 0.8252, Brier: 0.0589
+2026-05-11 18:12:28,207 [INFO] Fold 4: train=9250 races, val=1329 races, test=1447 races (2022-12-17→2025-02-08)
+2026-05-11 18:12:35,529 [INFO] LightGBM — LogLoss: 0.2089, AUC: 0.8384, Brier: 0.0593
+2026-05-11 18:12:35,529 [INFO] Top 15 features (gain):
+2026-05-11 18:12:35,529 [INFO]   odds_win: 103072
+2026-05-11 18:12:35,529 [INFO]   log_odds: 7433
+2026-05-11 18:12:35,529 [INFO]   odds_ratio_to_fav: 3353
+2026-05-11 18:12:35,529 [INFO]   trainer_offspring_avg_finish: 1759
+2026-05-11 18:12:35,529 [INFO]   best_class_rank_z: 1356
+2026-05-11 18:12:35,529 [INFO]   sire_avg_finish_z: 1308
+2026-05-11 18:12:35,529 [INFO]   trainer_course_win_pct_z: 1095
+2026-05-11 18:12:35,529 [INFO]   course_month_bias: 1091
+2026-05-11 18:12:35,529 [INFO]   log_odds_z: 1075
+2026-05-11 18:12:35,529 [INFO]   draw_bias_90d_z: 1035
+2026-05-11 18:12:35,529 [INFO]   sire_runners_z: 1013
+2026-05-11 18:12:35,529 [INFO]   jockey_course_runs_z: 987
+2026-05-11 18:12:35,529 [INFO]   trainer_offspring_avg_finish_z: 963
+2026-05-11 18:12:35,529 [INFO]   sire_avg_finish: 956
+2026-05-11 18:12:35,529 [INFO]   trainer_place_pct_10_z: 953
+Training until validation scores don't improve for 50 rounds
+[100]	valid_0's binary_logloss: 0.209118
+Early stopping, best iteration is:
+[117]	valid_0's binary_logloss: 0.208869
+[0]	val-logloss:0.26042
+[100]	val-logloss:0.20837
+[156]	val-logloss:0.20870
+2026-05-11 18:12:39,414 [INFO] XGBoost  — LogLoss: 0.2087, AUC: 0.8386, Brier: 0.0593
+2026-05-11 18:12:39,652 [INFO] Fold 5: train=11312 races, val=714 races, test=2094 races (2025-02-09→2026-04-25)
+2026-05-11 18:12:49,570 [INFO] LightGBM — LogLoss: 0.2051, AUC: 0.8398, Brier: 0.0580
+2026-05-11 18:12:49,570 [INFO] Top 15 features (gain):
+2026-05-11 18:12:49,570 [INFO]   odds_win: 128027
+2026-05-11 18:12:49,570 [INFO]   log_odds: 8792
+2026-05-11 18:12:49,570 [INFO]   odds_ratio_to_fav: 4249
+2026-05-11 18:12:49,570 [INFO]   trainer_offspring_avg_finish: 1812
+2026-05-11 18:12:49,570 [INFO]   best_class_rank_z: 1645
+2026-05-11 18:12:49,570 [INFO]   sire_runners_z: 1484
+2026-05-11 18:12:49,570 [INFO]   draw_bias_90d: 1336
+2026-05-11 18:12:49,570 [INFO]   trainer_course_win_pct_z: 1335
+2026-05-11 18:12:49,570 [INFO]   sire_avg_finish_z: 1332
+2026-05-11 18:12:49,570 [INFO]   sire_runners: 1332
+2026-05-11 18:12:49,570 [INFO]   jockey_course_runs: 1328
+2026-05-11 18:12:49,571 [INFO]   jockey_course_runs_z: 1316
+2026-05-11 18:12:49,571 [INFO]   trainer_course_place_pct_z: 1236
+2026-05-11 18:12:49,571 [INFO]   horse_weight_change_z: 1228
+2026-05-11 18:12:49,571 [INFO]   trainer_course_runs_z: 1214
+Training until validation scores don't improve for 50 rounds
+[100]	valid_0's binary_logloss: 0.205351
+[200]	valid_0's binary_logloss: 0.205324
+Early stopping, best iteration is:
+[167]	valid_0's binary_logloss: 0.205093
+[0]	val-logloss:0.25497
+[100]	val-logloss:0.20513
+[152]	val-logloss:0.20531
+2026-05-11 18:12:53,926 [INFO] XGBoost  — LogLoss: 0.2053, AUC: 0.8397, Brier: 0.0580
+2026-05-11 18:12:54,030 [INFO] 
+=== Walk-Forward Backtest Simulation Results ===
+
+============================================================
+  UmaEdge — Backtest Report
+============================================================
+  Races analysed:        11916
+  Bets placed:             726
+  NaN-odds skipped:        240
+  Hit rate:              12.8%
+  Avg EV per bet:       0.833
+  Avg odds:              10.4x
+------------------------------------------------------------
+  Total staked:       ¥   726,000
+  Total payout:       ¥   884,800
+  Total profit:       ¥   158,800
+  ROI:                   21.9%
+------------------------------------------------------------
+  Max drawdown:       ¥   119,300 (36.3%)
+  Sharpe (per-bet):      0.06  ← depressed by binary variance
+  Sharpe (daily ann):    0.79  ← annualised, industry standard
+============================================================
+
+  Last 10 bets:
+  Date         Horse          P(win)  Odds     EV  Stake     P&L
+  ----------------------------------------------------------
+  2022-02-26   プラティナマリア       21.3%   7.8 +0.66 ¥1,000   -1000 ❌
+  2022-07-03   アンジュレイ         17.3%   9.6 +0.66 ¥1,000   -1000 ❌
+  2026-01-18   サトノエピック        15.9%   9.9 +0.57 ¥1,000   -1000 ❌
+  2026-01-24   ウェイクフィールド      14.6%  11.4 +0.66 ¥1,000   -1000 ❌
+  2026-01-24   ペンティメント        24.7%   6.4 +0.58 ¥1,000   -1000 ❌
+  2026-01-31   レッドシュテルン       18.7%   9.0 +0.69 ¥1,000   -1000 ❌
+  2026-02-01   ドーバーブライト       17.0%   9.6 +0.63 ¥1,000   +8600 ✅
+  2026-03-14   ユマハム           12.4%  12.3 +0.53 ¥1,000   -1000 ❌
+  2026-03-15   タケルムサシ         22.1%   6.9 +0.52 ¥1,000   +5900 ✅
+  2026-03-21   スマートプリエール      14.6%  12.8 +0.87 ¥1,000  +11800 ✅

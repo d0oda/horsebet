@@ -107,6 +107,10 @@ def predict_and_store(
             if calibrator is not None:
                 model_probs = calibrator.predict(model_probs)
                 log.info("Applied calibrator to predictions")
+                
+            # Normalize probabilities to sum to 1.0 per race (prevents IsotonicRegression inflation)
+            if np.sum(model_probs) > 0:
+                model_probs = model_probs / np.sum(model_probs)
         except FileNotFoundError:
             log.warning("No trained model found — using uniform probabilities")
             n = len(features_df)

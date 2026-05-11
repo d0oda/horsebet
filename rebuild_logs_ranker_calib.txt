@@ -1,0 +1,168 @@
+2026-05-11 18:27:00,782 [INFO] Loading cached features from data/features.parquet...
+2026-05-11 18:27:01,751 [INFO] ODDS-FREE mode: excluded 22 odds features, 276 features remain
+2026-05-11 18:27:01,842 [INFO] Fold 1: train=1184 races, val=1020 races, test=2748 races (2020-01-18→2021-01-30)
+/Users/ryfei.wang/Documents/horsebet/models/train.py:269: RuntimeWarning: invalid value encountered in cast
+  return rel.astype(int)
+2026-05-11 18:27:06,173 [INFO] LightGBM Ranker — Top 15 features (gain):
+2026-05-11 18:27:06,173 [INFO]   trainer_offspring_avg_finish: 3106
+2026-05-11 18:27:06,173 [INFO]   trainer_offspring_avg_finish_z: 1906
+2026-05-11 18:27:06,173 [INFO]   jockey_course_place_pct_z: 872
+2026-05-11 18:27:06,173 [INFO]   jockey_place_pct_10_z: 869
+2026-05-11 18:27:06,173 [INFO]   sire_runners_z: 833
+2026-05-11 18:27:06,173 [INFO]   horse_weight_change_z: 751
+2026-05-11 18:27:06,173 [INFO]   jockey_course_win_pct_z: 730
+2026-05-11 18:27:06,173 [INFO]   sire_avg_finish_z: 701
+2026-05-11 18:27:06,173 [INFO]   best_class_rank_z: 668
+2026-05-11 18:27:06,173 [INFO]   sex_code_z: 666
+2026-05-11 18:27:06,173 [INFO]   trainer_place_pct_10_z: 663
+2026-05-11 18:27:06,173 [INFO]   course_month_bias: 637
+2026-05-11 18:27:06,173 [INFO]   jockey_course_place_pct: 618
+2026-05-11 18:27:06,173 [INFO]   bms_win_pct_surface_z: 615
+2026-05-11 18:27:06,173 [INFO]   trainer_course_runs_z: 591
+Training until validation scores don't improve for 50 rounds
+[100]	valid_0's ndcg@1: 0.298071	valid_0's ndcg@3: 0.447961
+Early stopping, best iteration is:
+[118]	valid_0's ndcg@1: 0.310784	valid_0's ndcg@3: 0.44826
+[0]	val-ndcg@1:0.31037
+[100]	val-ndcg@1:0.36907
+[104]	val-ndcg@1:0.36958
+2026-05-11 18:27:07,511 [INFO] Fold 2: train=3488 races, val=1464 races, test=3156 races (2021-01-31→2021-12-26)
+/Users/ryfei.wang/Documents/horsebet/models/train.py:269: RuntimeWarning: invalid value encountered in cast
+  return rel.astype(int)
+2026-05-11 18:27:11,548 [INFO] LightGBM Ranker — Top 15 features (gain):
+2026-05-11 18:27:11,548 [INFO]   trainer_offspring_avg_finish: 5661
+2026-05-11 18:27:11,548 [INFO]   best_class_rank_z: 3636
+2026-05-11 18:27:11,548 [INFO]   trainer_offspring_avg_finish_z: 2423
+2026-05-11 18:27:11,548 [INFO]   jockey_course_place_pct_z: 1980
+2026-05-11 18:27:11,548 [INFO]   last3_avg_beaten_pct: 1203
+2026-05-11 18:27:11,548 [INFO]   trainer_offspring_win_pct_z: 1199
+2026-05-11 18:27:11,548 [INFO]   last10_avg_finish_z: 1150
+2026-05-11 18:27:11,548 [INFO]   last3_avg_finish_z: 1122
+2026-05-11 18:27:11,548 [INFO]   sire_avg_finish: 1075
+2026-05-11 18:27:11,548 [INFO]   speed_figure_last_z: 1030
+2026-05-11 18:27:11,548 [INFO]   last3_avg_beaten_pct_z: 1020
+2026-05-11 18:27:11,548 [INFO]   age_z: 1018
+2026-05-11 18:27:11,548 [INFO]   jockey_course_place_pct: 1018
+2026-05-11 18:27:11,548 [INFO]   last5_avg_beaten_pct_z: 937
+2026-05-11 18:27:11,548 [INFO]   jockey_course_win_pct_z: 934
+Training until validation scores don't improve for 50 rounds
+[100]	valid_0's ndcg@1: 0.273202	valid_0's ndcg@3: 0.421857
+Early stopping, best iteration is:
+[67]	valid_0's ndcg@1: 0.2812	valid_0's ndcg@3: 0.428018
+[0]	val-ndcg@1:0.31584
+[88]	val-ndcg@1:0.35385
+2026-05-11 18:27:13,558 [INFO] Fold 3: train=6608 races, val=1500 races, test=2471 races (2021-12-28→2022-12-11)
+/Users/ryfei.wang/Documents/horsebet/models/train.py:269: RuntimeWarning: invalid value encountered in cast
+  return rel.astype(int)
+2026-05-11 18:27:18,625 [INFO] LightGBM Ranker — Top 15 features (gain):
+2026-05-11 18:27:18,626 [INFO]   trainer_offspring_avg_finish: 5973
+2026-05-11 18:27:18,626 [INFO]   last3_avg_beaten_pct_z: 5536
+2026-05-11 18:27:18,626 [INFO]   last5_avg_beaten_pct_z: 4114
+2026-05-11 18:27:18,626 [INFO]   jockey_course_place_pct_z: 3152
+2026-05-11 18:27:18,626 [INFO]   last10_avg_finish_z: 2683
+2026-05-11 18:27:18,626 [INFO]   best_class_rank_z: 2595
+2026-05-11 18:27:18,626 [INFO]   last3_avg_beaten_pct: 2519
+2026-05-11 18:27:18,626 [INFO]   trainer_offspring_avg_finish_z: 2483
+2026-05-11 18:27:18,626 [INFO]   last_finish_pos: 2338
+2026-05-11 18:27:18,626 [INFO]   last_finish_pos_z: 2109
+2026-05-11 18:27:18,626 [INFO]   last10_avg_beaten_pct_z: 1965
+2026-05-11 18:27:18,626 [INFO]   sire_avg_finish_z: 1952
+2026-05-11 18:27:18,626 [INFO]   jockey_course_place_pct: 1722
+2026-05-11 18:27:18,626 [INFO]   jockey_place_pct_10_z: 1510
+2026-05-11 18:27:18,626 [INFO]   sire_avg_finish: 1458
+Training until validation scores don't improve for 50 rounds
+[100]	valid_0's ndcg@1: 0.291742	valid_0's ndcg@3: 0.448396
+Early stopping, best iteration is:
+[62]	valid_0's ndcg@1: 0.298022	valid_0's ndcg@3: 0.450205
+[0]	val-ndcg@1:0.32630
+[64]	val-ndcg@1:0.36232
+2026-05-11 18:27:21,350 [INFO] Fold 4: train=9250 races, val=1329 races, test=1447 races (2022-12-17→2025-02-08)
+/Users/ryfei.wang/Documents/horsebet/models/train.py:269: RuntimeWarning: invalid value encountered in cast
+  return rel.astype(int)
+2026-05-11 18:27:28,071 [INFO] LightGBM Ranker — Top 15 features (gain):
+2026-05-11 18:27:28,071 [INFO]   last5_avg_beaten_pct_z: 9667
+2026-05-11 18:27:28,071 [INFO]   trainer_offspring_avg_finish: 6298
+2026-05-11 18:27:28,071 [INFO]   last3_avg_beaten_pct: 4824
+2026-05-11 18:27:28,071 [INFO]   last10_avg_finish_z: 4523
+2026-05-11 18:27:28,071 [INFO]   jockey_course_place_pct_z: 4252
+2026-05-11 18:27:28,071 [INFO]   last_finish_pos_z: 3907
+2026-05-11 18:27:28,071 [INFO]   last_finish_pos: 3883
+2026-05-11 18:27:28,071 [INFO]   trainer_offspring_avg_finish_z: 3556
+2026-05-11 18:27:28,071 [INFO]   last3_avg_beaten_pct_z: 2977
+2026-05-11 18:27:28,071 [INFO]   best_class_rank_z: 2506
+2026-05-11 18:27:28,071 [INFO]   last10_avg_beaten_pct_z: 2353
+2026-05-11 18:27:28,071 [INFO]   speed_figure_last_z: 2209
+2026-05-11 18:27:28,071 [INFO]   jockey_course_win_pct_z: 2179
+2026-05-11 18:27:28,071 [INFO]   jockey_course_place_pct: 2110
+2026-05-11 18:27:28,071 [INFO]   sire_avg_finish_z: 1999
+Training until validation scores don't improve for 50 rounds
+[100]	valid_0's ndcg@1: 0.3036	valid_0's ndcg@3: 0.467014
+Early stopping, best iteration is:
+[82]	valid_0's ndcg@1: 0.315445	valid_0's ndcg@3: 0.471267
+[0]	val-ndcg@1:0.34001
+[100]	val-ndcg@1:0.38627
+[147]	val-ndcg@1:0.37957
+2026-05-11 18:27:33,769 [INFO] Fold 5: train=11312 races, val=714 races, test=2094 races (2025-02-09→2026-04-25)
+/Users/ryfei.wang/Documents/horsebet/models/train.py:269: RuntimeWarning: invalid value encountered in cast
+  return rel.astype(int)
+2026-05-11 18:27:43,085 [INFO] LightGBM Ranker — Top 15 features (gain):
+2026-05-11 18:27:43,085 [INFO]   last5_avg_beaten_pct_z: 10995
+2026-05-11 18:27:43,085 [INFO]   last3_avg_beaten_pct_z: 7022
+2026-05-11 18:27:43,085 [INFO]   trainer_offspring_avg_finish: 6736
+2026-05-11 18:27:43,085 [INFO]   jockey_course_place_pct_z: 6275
+2026-05-11 18:27:43,085 [INFO]   last_finish_pos_z: 5510
+2026-05-11 18:27:43,085 [INFO]   last3_avg_beaten_pct: 3871
+2026-05-11 18:27:43,085 [INFO]   trainer_offspring_avg_finish_z: 3826
+2026-05-11 18:27:43,085 [INFO]   last_finish_pos: 3698
+2026-05-11 18:27:43,085 [INFO]   last10_avg_beaten_pct_z: 3571
+2026-05-11 18:27:43,085 [INFO]   career_place_pct_z: 3084
+2026-05-11 18:27:43,085 [INFO]   last10_avg_finish_z: 3060
+2026-05-11 18:27:43,085 [INFO]   age_z: 2860
+2026-05-11 18:27:43,085 [INFO]   speed_figure_last_z: 2818
+2026-05-11 18:27:43,085 [INFO]   jockey_course_win_pct_z: 2814
+2026-05-11 18:27:43,085 [INFO]   trainer_offspring_win_pct_z: 2786
+Training until validation scores don't improve for 50 rounds
+[100]	valid_0's ndcg@1: 0.26945	valid_0's ndcg@3: 0.41954
+Early stopping, best iteration is:
+[128]	valid_0's ndcg@1: 0.278531	valid_0's ndcg@3: 0.422776
+[0]	val-ndcg@1:0.29046
+[100]	val-ndcg@1:0.32461
+[200]	val-ndcg@1:0.33672
+[300]	val-ndcg@1:0.34689
+[352]	val-ndcg@1:0.34449
+2026-05-11 18:27:54,830 [INFO] 
+=== Walk-Forward Backtest Simulation Results ===
+
+============================================================
+  UmaEdge — Backtest Report
+============================================================
+  Races analysed:        11916
+  Bets placed:            1876
+  NaN-odds skipped:        240
+  Hit rate:              16.0%
+  Avg EV per bet:       1.590
+  Avg odds:               7.5x
+------------------------------------------------------------
+  Total staked:       ¥ 1,876,000
+  Total payout:       ¥ 1,776,700
+  Total profit:       ¥   -99,300
+  ROI:                   -5.3%
+------------------------------------------------------------
+  Max drawdown:       ¥   147,300 (99.5%)
+  Sharpe (per-bet):     -0.02  ← depressed by binary variance
+  Sharpe (daily ann):   -0.45  ← annualised, industry standard
+============================================================
+
+  Last 10 bets:
+  Date         Horse          P(win)  Odds     EV  Stake     P&L
+  ----------------------------------------------------------
+  2021-04-03   ノーダブルディップ      41.2%   4.4 +0.81 ¥1,000   -1000 ❌
+  2021-04-10   クインズミモザ        41.2%   5.5 +1.26 ¥1,000   +4500 ✅
+  2021-04-04   ビバヴィットーリオ      63.8%   3.0 +0.91 ¥1,000   -1000 ❌
+  2021-04-04   シャイニングライト      13.9%  14.4 +1.01 ¥1,000   -1000 ❌
+  2021-04-10   インフォーマント       36.8%   4.4 +0.62 ¥1,000   -1000 ❌
+  2021-03-28   キャロライナリーパ      31.2%   5.7 +0.78 ¥1,000   -1000 ❌
+  2021-04-03   アスティ           61.3%   4.9 +2.00 ¥1,000   -1000 ❌
+  2021-03-28   ラインポラリス        45.2%   7.2 +2.25 ¥1,000   -1000 ❌
+  2021-04-10   ブレッシングレイン      84.2%   3.0 +1.53 ¥1,000   -1000 ❌
+  2021-04-04   アルーフクライ        41.2%   4.6 +0.89 ¥1,000   -1000 ❌

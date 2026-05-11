@@ -101,6 +101,66 @@ def fetch_win_odds(race_id: str) -> list[dict]:
     return []
 
 
+def fetch_exotic_odds(race_id: str) -> list[dict]:
+    """
+    Fetch current exotic odds for a race.
+    Returns list of dicts: [{bet_type: "exacta", combination: "1-2", odds_value: 3.5}, ...]
+    """
+    import json as _json
+
+    odds_list = []
+    # 4: quinella, 5: wide, 6: exacta, 7: trio, 8: trifecta
+    api_types = {
+        "4": "quinella",
+        "5": "wide",
+        "6": "exacta",
+        "7": "trio",
+        "8": "trifecta",
+    }
+
+    for api_type, bet_type in api_types.items():
+        api_url = (
+            f"https://race.netkeiba.com/api/api_get_jra_odds.html"
+            f"?race_id={race_id}&type={api_type}&action=init"
+        )
+        for attempt in range(2):
+            try:
+                resp = requests.get(api_url, headers=HEADERS, timeout=(5.0, 10.0))
+                if resp.status_code == 200:
+                    data = _json.loads(resp.text)
+                    if data.get("status") != "NG" and isinstance(data.get("data"), dict):
+                        odds_data = data["data"].get("odds", {})
+                        pool = odds_data.get(api_type, {})
+                        if pool and isinstance(pool, dict):
+                            for horse_key, values in pool.items():
+                                if isinstance(values, list) and len(values) >= 1:
+                                    odds_str = str(values[0])
+                                    if odds_str in ("", "---", "取消", "除外", "0"):
+                                        continue
+                                    
+                                    # Convert "0102" -> "1-2"
+                                    # Convert "010203" -> "1-2-3"
+                                    try:
+                                        chunks = [str(int(horse_key[i:i+2])) for i in range(0, len(horse_key), 2)]
+                                        combination = "-".join(chunks)
+                                        odds_val = float(odds_str.replace(",", ""))
+                                        
+                                        odds_list.append({
+                                            "bet_type": bet_type,
+                                            "combination": combination,
+                                            "odds_value": odds_val,
+                                        })
+                                    except (ValueError, TypeError):
+                                        continue
+                            break  # Success, move to next api_type
+                time.sleep(1)  # Be polite to Netkeiba
+            except Exception as e:
+                log.warning(f"Exotic API ({bet_type}) exception for {race_id}: {e}")
+                
+    if odds_list:
+        log.info(f"Got {len(odds_list)} exotic odds from API for {race_id}")
+    return odds_list
+
 def save_odds_snapshot(race_id: str, odds: list[dict]) -> int:
     """Save a batch of odds snapshots to the database. Returns count inserted."""
     if not odds:
@@ -126,11 +186,12 @@ def save_odds_snapshot(race_id: str, odds: list[dict]) -> int:
             session.execute(
                 text("""
                     INSERT INTO odds_snapshots (race_id, captured_at, bet_type, combination, odds_value)
-                    VALUES (:race_id, :captured_at, 'win', :combination, :odds_value)
+                    VALUES (:race_id, :captured_at, :bet_type, :combination, :odds_value)
                 """),
                 {
                     "race_id": race_db_id,
                     "captured_at": now,
+                    "bet_type": odd.get("bet_type", "win"),
                     "combination": odd["combination"],
                     "odds_value": odd["odds_value"],
                 },
@@ -154,10 +215,12 @@ def watch_race(race_id: str, interval_secs: int = 300, max_snapshots: int = 100)
 
     for i in range(max_snapshots):
         odds = fetch_win_odds(race_id)
-        if odds:
-            save_odds_snapshot(race_id, odds)
-            log.info(f"  Snapshot {i + 1}/{max_snapshots}: {len(odds)} horses, "
-                     f"fav={min(o['odds_value'] for o in odds):.1f}x")
+        exotic = fetch_exotic_odds(race_id)
+        
+        all_odds = odds + exotic
+        if all_odds:
+            save_odds_snapshot(race_id, all_odds)
+            log.info(f"  Snapshot {i + 1}/{max_snapshots}: {len(odds)} win, {len(exotic)} exotic")
         else:
             log.warning(f"  Snapshot {i + 1}: no odds data")
 
@@ -196,10 +259,15 @@ def stream_odds(race_ids: list[str], interval_secs: int = 60):
             if not running:
                 break
             odds = fetch_win_odds(rid)
-            if odds:
-                count = save_odds_snapshot(rid, odds)
-                fav = min(o["odds_value"] for o in odds)
-                log.info(f"  [cycle {cycle}] {rid}: {count} horses, fav={fav:.1f}x")
+            exotic = fetch_exotic_odds(rid)
+            all_odds = odds + exotic
+            if all_odds:
+                count = save_odds_snapshot(rid, all_odds)
+                if odds:
+                    fav = min(o["odds_value"] for o in odds)
+                    log.info(f"  [cycle {cycle}] {rid}: {count} total combos, win_fav={fav:.1f}x")
+                else:
+                    log.info(f"  [cycle {cycle}] {rid}: {count} total combos, no win odds")
             else:
                 log.warning(f"  [cycle {cycle}] {rid}: no odds data")
 

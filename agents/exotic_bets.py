@@ -28,6 +28,8 @@ import numpy as np
 from sqlalchemy import text
 
 from scraper.db import get_session
+from models.simulate_race import load_race_entries
+from models.pace_sim import PaceSimulator, classify_running_style, STYLE_FRONT
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("exotic_bets")
@@ -43,6 +45,8 @@ class ExoticBetType(Enum):
     TRIO = "trio"           # 三連複 — top 3 in any order
     TRIFECTA = "trifecta"   # 三連単 — top 3 in exact order
     WIDE = "wide"           # ワイド — any 2 of top 3
+    EXACTA = "exacta"       # 馬単 — 1st and 2nd in exact order
+    QUINELLA = "quinella"   # 馬連 — 1st and 2nd in any order
 
 
 # ---------------------------------------------------------------------------
@@ -83,6 +87,7 @@ class TicketConstructor:
 
     def build_finish_distribution(
         self,
+        race_id: int,
         win_probs: dict[int, float],
         n_sims: int = None,
     ) -> np.ndarray:
@@ -108,18 +113,57 @@ class TicketConstructor:
         if n_horses < 2:
             return np.zeros((n_sims, n_horses), dtype=int)
 
-        # Use win probs as concentration parameters for Dirichlet
-        probs = np.array([win_probs[hid] for hid in horse_ids])
-        probs = np.maximum(probs, 0.001)  # prevent zeros
-        probs = probs / probs.sum()  # normalise
+        # 1. Load running styles from db to model pace correlations
+        entries = load_race_entries(race_id)
+        styles = []
+        for horse_num in horse_ids:
+            entry = next((e for e in entries if e["post_position"] == horse_num), {})
+            style = classify_running_style(
+                avg_first_corner=entry.get("avg_first_corner"),
+                field_size=n_horses,
+                explicit_style=entry.get("running_style"),
+            )
+            styles.append(style)
 
-        # Scale to make Dirichlet sharper (respects relative probs)
-        alpha = probs * n_horses * 2
+        # Determine pace scenario weights
+        n_front = sum(1 for s in styles if s == STYLE_FRONT)
+        pace_fast_prob = min(0.2 + n_front * 0.15, 0.7)
+        pace_slow_prob = max(0.3 - n_front * 0.1, 0.1)
+        pace_mod_prob = 1.0 - pace_fast_prob - pace_slow_prob
+        pace_probs = [pace_fast_prob, pace_mod_prob, pace_slow_prob]
+        pace_scenarios = ["fast", "moderate", "slow"]
+        
+        # We need the pace_modifier from PaceSimulator
+        sim_engine = PaceSimulator()
+
+        probs = np.array([win_probs[horse_num] for horse_num in horse_ids])
+        probs = np.maximum(probs, 1e-6)  # prevent log(0)
+        probs = probs / probs.sum()  # normalise
+        log_probs = np.log(probs)
+
+        # Pre-calculate expected modifier for each horse to preserve ML marginals
+        expected_modifiers = np.zeros(n_horses)
+        for j in range(n_horses):
+            for k, p_scenario in enumerate(pace_scenarios):
+                mod = sim_engine._pace_modifier(styles[j], p_scenario)
+                expected_modifiers[j] += pace_probs[k] * mod
 
         finishes = np.zeros((n_sims, n_horses), dtype=int)
         for i in range(n_sims):
-            # Sample "ability scores" from Dirichlet, then rank
-            scores = self.rng.dirichlet(alpha)
+            # Sample pace scenario
+            pace = self.rng.choice(pace_scenarios, p=pace_probs)
+            
+            # Gumbel-max trick perfectly preserves Plackett-Luce probabilities
+            gumbels = self.rng.gumbel(loc=0, scale=1, size=n_horses)
+            scores = log_probs + gumbels
+            
+            # Apply structural pace correlation to scores
+            # Divide by expected_modifier to center the bias and preserve the baseline ML marginal
+            for j in range(n_horses):
+                raw_modifier = sim_engine._pace_modifier(styles[j], pace)
+                centered_modifier = raw_modifier / expected_modifiers[j]
+                scores[j] += np.log(centered_modifier)
+                
             # argsort descending → best horse gets position 0 (first)
             order = np.argsort(-scores)
             for pos, horse_idx in enumerate(order):
@@ -163,12 +207,27 @@ class TicketConstructor:
                 combo_counts[key] = combo_counts.get(key, 0) + 1
 
             elif bet_type == ExoticBetType.WIDE:
-                # Any 2 of top 3
+                # Any 2 of the top 3 (3 possible combinations per race)
                 top3_indices = np.argsort(positions)[:3]
-                top3_ids = sorted([horse_ids[i] for i in top3_indices])
-                for pair in combinations(top3_ids, 2):
-                    key = "-".join(str(h) for h in pair)
+                top3_ids = [horse_ids[i] for i in top3_indices]
+                pairs = list(combinations(top3_ids, 2))
+                for p in pairs:
+                    key = "-".join(str(h) for h in sorted(p))
                     combo_counts[key] = combo_counts.get(key, 0) + 1
+                    
+            elif bet_type == ExoticBetType.EXACTA:
+                # Top 2 in exact order
+                top2_indices = np.argsort(positions)[:2]
+                top2_ids = [horse_ids[i] for i in top2_indices]
+                key = "-".join(str(h) for h in top2_ids)
+                combo_counts[key] = combo_counts.get(key, 0) + 1
+                
+            elif bet_type == ExoticBetType.QUINELLA:
+                # Top 2 in any order
+                top2_indices = np.argsort(positions)[:2]
+                top2_ids = sorted([horse_ids[i] for i in top2_indices])
+                key = "-".join(str(h) for h in top2_ids)
+                combo_counts[key] = combo_counts.get(key, 0) + 1
 
         # Normalise to probabilities
         return {k: v / n_sims for k, v in combo_counts.items()}
@@ -190,6 +249,8 @@ class TicketConstructor:
             ExoticBetType.TRIO: "trio",
             ExoticBetType.TRIFECTA: "trifecta",
             ExoticBetType.WIDE: "wide",
+            ExoticBetType.EXACTA: "exacta",
+            ExoticBetType.QUINELLA: "quinella",
         }
 
         try:
@@ -382,49 +443,35 @@ class TicketConstructor:
         win_probs = {}
         horse_names = {}
 
-        with get_session() as session:
-            rows = session.execute(text("""
-                SELECT p.entry_id, e.horse_id, h.name_jp, p.win_prob
-                FROM predictions p
-                JOIN entries e ON e.id = p.entry_id
-                JOIN horses h ON h.id = e.horse_id
-                WHERE p.race_id = :race_id
-                ORDER BY p.win_prob DESC
-            """), {"race_id": race_id}).fetchall()
+        # We must use RAW model_win_prob for the Plackett-Luce simulation.
+        # Using combined_win_prob from the DB would double-count the PaceSimulator's correlation multipliers.
+        from models.predict import predict_and_store
+        pred_df = predict_and_store(race_id, store_to_db=False)
+        
+        if pred_df.empty:
+            log.error("Could not generate predictions")
+            return []
 
-        if not rows:
-            # Fallback: run predictions
-            log.info("No stored predictions — running prediction pipeline...")
-            from models.predict import predict_and_store
-            pred_df = predict_and_store(race_id, store_to_db=True)
-            if pred_df.empty:
-                log.error("Could not generate predictions")
-                return []
+        for _, r in pred_df.iterrows():
+            with get_session() as session:
+                entry = session.execute(text(
+                    "SELECT post_position FROM entries WHERE id = :eid"
+                ), {"eid": r["entry_id"]}).fetchone()
+                horse = session.execute(text(
+                    "SELECT h.name_jp FROM horses h JOIN entries e ON e.horse_id = h.id WHERE e.id = :eid"
+                ), {"eid": r["entry_id"]}).fetchone() if entry else None
 
-            for _, r in pred_df.iterrows():
-                with get_session() as session:
-                    entry = session.execute(text(
-                        "SELECT horse_id FROM entries WHERE id = :eid"
-                    ), {"eid": r["entry_id"]}).fetchone()
-                    horse = session.execute(text(
-                        "SELECT name_jp FROM horses WHERE id = :hid"
-                    ), {"hid": entry[0]}).fetchone() if entry else None
-
-                hid = entry[0] if entry else r["entry_id"]
-                win_probs[hid] = r["combined_win_prob"]
-                horse_names[hid] = horse[0] if horse else str(hid)
-        else:
-            for row in rows:
-                win_probs[row[1]] = float(row[3])
-                horse_names[row[1]] = row[2] or str(row[1])
+            horse_num = entry[0] if entry else int(str(r["entry_id"])[-2:]) # Fallback to last 2 digits of entry_id
+            win_probs[horse_num] = r["model_win_prob"]
+            horse_names[horse_num] = horse[0] if horse else str(horse_num)
 
         if len(win_probs) < 3:
             log.error(f"Need at least 3 horses, got {len(win_probs)}")
             return []
 
         # 2. Simulate finish distribution
-        log.info(f"Simulating {self.n_simulations:,} race finishes...")
-        finishes = self.build_finish_distribution(win_probs)
+        log.info(f"Simulating {self.n_simulations:,} pace-correlated race finishes...")
+        finishes = self.build_finish_distribution(race_id, win_probs)
         horse_ids = sorted(win_probs.keys())
 
         # 3. Compute combination probabilities
@@ -506,8 +553,13 @@ class TicketConstructor:
 def main():
     parser = argparse.ArgumentParser(description="UmaEdge — Exotic Bet Constructor")
     parser.add_argument("--race-id", type=int, required=True, help="Database race ID")
-    parser.add_argument("--type", choices=["trio", "trifecta", "wide"], default="trio",
-                        help="Bet type (default: trio)")
+    parser.add_argument(
+        "--type",
+        type=str,
+        choices=["trio", "trifecta", "wide", "exacta", "quinella"],
+        default="trio",
+        help="Exotic bet type",
+    )
     parser.add_argument("--budget", type=int, default=5000, help="Budget in yen (default: 5000)")
     parser.add_argument("--sims", type=int, default=10000, help="Simulations (default: 10000)")
     parser.add_argument("--no-store", action="store_true", help="Don't store to DB")
@@ -531,6 +583,8 @@ def main():
         ExoticBetType.TRIO: "三連複 (Trio)",
         ExoticBetType.TRIFECTA: "三連単 (Trifecta)",
         ExoticBetType.WIDE: "ワイド (Wide)",
+        ExoticBetType.EXACTA: "馬単 (Exacta)",
+        ExoticBetType.QUINELLA: "馬連 (Quinella)",
     }
 
     print(f"\n🎰 {type_names[bet_type]} — Race #{args.race_id}")
