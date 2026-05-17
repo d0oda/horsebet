@@ -320,30 +320,30 @@ Total Bets: 4
       Win Prob: 8.0%
 
 📍 Kyoto (05-17) R8 - 4歳以上2勝クラス
-   🐴 #3 ゴッドエスパーダ
-      Odds: 0.0x | EV: 0.0%
-      Win Prob: 15.1%
-   🐴 #8 ブルーワール
-      Odds: 0.0x | EV: 0.0%
-      Win Prob: 15.0%
-   🐴 #6 ワイドクリーガー
-      Odds: 0.0x | EV: 0.0%
-      Win Prob: 12.8%
-   🐴 #2 レッドボブ
-      Odds: 0.0x | EV: 0.0%
-      Win Prob: 12.6%
-   🐴 #7 ジョータルマエ
-      Odds: 0.0x | EV: 0.0%
-      Win Prob: 12.3%
    🐴 #1 フクキタテーラー
-      Odds: 0.0x | EV: 0.0%
-      Win Prob: 11.9%
+      Odds: 16.5x | EV: -4.4%
+      Win Prob: 5.8%
+   🐴 #3 ゴッドエスパーダ
+      Odds: 2.8x | EV: -11.4%
+      Win Prob: 31.6%
+   🐴 #6 ワイドクリーガー
+      Odds: 5.7x | EV: -12.3%
+      Win Prob: 15.4%
+   🐴 #2 レッドボブ
+      Odds: 5.5x | EV: -15.0%
+      Win Prob: 15.4%
+   🐴 #8 ブルーワール
+      Odds: 5.9x | EV: -25.1%
+      Win Prob: 12.7%
+   🐴 #7 ジョータルマエ
+      Odds: 7.2x | EV: -34.1%
+      Win Prob: 9.2%
    🐴 #4 ソウルアンドジャズ
-      Odds: 0.0x | EV: 0.0%
-      Win Prob: 11.9%
+      Odds: 7.5x | EV: -35.5%
+      Win Prob: 8.6%
    🐴 #5 ヒデノレインボー
-      Odds: 0.0x | EV: 0.0%
-      Win Prob: 8.4%
+      Odds: 23.3x | EV: -70.3%
+      Win Prob: 1.3%
 
 📍 Kyoto (05-17) R9 - 白川特別
    🐴 #5 ファーングロット
@@ -857,36 +857,36 @@ Total Bets: 4
       Win Prob: 6.2%
 
 📍 Niigata (05-17) R8 - 4歳以上1勝クラス
-   🐴 #10 ゴルデールスカー
-      Odds: 0.0x | EV: 0.0%
-      Win Prob: 14.1%
-   🐴 #4 ミッキーコンドル
-      Odds: 0.0x | EV: 0.0%
-      Win Prob: 12.1%
-   🐴 #8 アバレリュウ
-      Odds: 0.0x | EV: 0.0%
-      Win Prob: 10.1%
-   🐴 #7 ダノンアンチュラス
-      Odds: 0.0x | EV: 0.0%
-      Win Prob: 9.8%
-   🐴 #1 ビスケットマリー
-      Odds: 0.0x | EV: 0.0%
-      Win Prob: 9.6%
    🐴 #2 ココデイック
-      Odds: 0.0x | EV: 0.0%
-      Win Prob: 9.1%
+      Odds: 2.1x | EV: -2.7%
+      Win Prob: 46.4%
+   🐴 #8 アバレリュウ
+      Odds: 9.1x | EV: -9.7%
+      Win Prob: 9.9%
+   🐴 #10 ゴルデールスカー
+      Odds: 4.6x | EV: -20.5%
+      Win Prob: 17.3%
+   🐴 #4 ミッキーコンドル
+      Odds: 9.1x | EV: -27.6%
+      Win Prob: 8.0%
    🐴 #3 グランコネクシオン
-      Odds: 0.0x | EV: 0.0%
-      Win Prob: 9.1%
+      Odds: 15.5x | EV: -28.1%
+      Win Prob: 4.6%
    🐴 #5 ラテライト
-      Odds: 0.0x | EV: 0.0%
-      Win Prob: 9.1%
+      Odds: 15.4x | EV: -41.0%
+      Win Prob: 3.8%
+   🐴 #7 ダノンアンチュラス
+      Odds: 11.3x | EV: -47.3%
+      Win Prob: 4.7%
    🐴 #9 オンクラウドナイン
-      Odds: 0.0x | EV: 0.0%
-      Win Prob: 9.1%
+      Odds: 13.7x | EV: -47.6%
+      Win Prob: 3.8%
    🐴 #6 アイファーファイト
-      Odds: 0.0x | EV: 0.0%
-      Win Prob: 7.9%
+      Odds: 31.9x | EV: -71.8%
+      Win Prob: 0.9%
+   🐴 #1 ビスケットマリー
+      Odds: 35.5x | EV: -76.5%
+      Win Prob: 0.7%
 
 📍 Niigata (05-17) R9 - 飛竜特別
    🐴 #12 ウインマスカレード
@@ -1387,30 +1387,30 @@ Total Bets: 4
       Win Prob: 11.5%
 
 📍 Tokyo (05-17) R7 - 3歳1勝クラス
-   🐴 #1 サトノマティーニ
-      Odds: 0.0x | EV: 0.0%
-      Win Prob: 14.9%
    🐴 #8 デアトゥノウ
-      Odds: 0.0x | EV: 0.0%
-      Win Prob: 13.2%
-   🐴 #2 トミーバローズ
-      Odds: 0.0x | EV: 0.0%
-      Win Prob: 12.8%
+      Odds: 91.6x | EV: +29.7%
+      Win Prob: 1.4%
    🐴 #5 ヴァロアーク
-      Odds: 0.0x | EV: 0.0%
-      Win Prob: 12.5%
+      Odds: 3.9x | EV: +12.9%
+      Win Prob: 28.9%
+   🐴 #1 サトノマティーニ
+      Odds: 4.0x | EV: -23.8%
+      Win Prob: 19.1%
    🐴 #7 リアライズリバティ
-      Odds: 0.0x | EV: 0.0%
-      Win Prob: 12.5%
-   🐴 #4 ブルースカイブルー
-      Odds: 0.0x | EV: 0.0%
-      Win Prob: 11.9%
+      Odds: 4.9x | EV: -24.7%
+      Win Prob: 15.4%
    🐴 #6 タイセイフレッサ
-      Odds: 0.0x | EV: 0.0%
-      Win Prob: 11.9%
+      Odds: 12.5x | EV: -31.5%
+      Win Prob: 5.5%
+   🐴 #4 ブルースカイブルー
+      Odds: 4.3x | EV: -33.9%
+      Win Prob: 15.4%
+   🐴 #2 トミーバローズ
+      Odds: 4.5x | EV: -36.6%
+      Win Prob: 14.1%
    🐴 #3 ギガントマキア
-      Odds: 0.0x | EV: 0.0%
-      Win Prob: 10.3%
+      Odds: 114.6x | EV: -67.5%
+      Win Prob: 0.3%
 
 📍 Tokyo (05-17) R8 - 4歳以上1勝クラス
    🐴 #11 ウインファヴォリ
