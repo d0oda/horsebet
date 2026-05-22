@@ -29,7 +29,7 @@ from models.backtest import Backtester, BacktestConfig
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("walk_forward_backtest")
 
-def run_walk_forward_backtest(n_folds=5, ev_threshold=0.10, use_cache=False, use_kelly=True, flat_stake=1000, initial_bankroll=100000, kelly_fraction=0.25, max_odds=30.0, min_odds=2.0, odds_free=False, use_ranker=False, snapshot_only=False):
+def run_walk_forward_backtest(n_folds=5, ev_threshold=0.10, use_cache=False, use_kelly=True, flat_stake=1000, initial_bankroll=100000, kelly_fraction=0.25, max_odds=30.0, min_odds=2.0, odds_free=False, use_ranker=False, snapshot_only=False, exotic=False):
     cache_path = "data/features.parquet"
     if use_cache and os.path.exists(cache_path):
         log.info(f"Loading cached features from {cache_path}...")
@@ -209,22 +209,33 @@ def run_walk_forward_backtest(n_folds=5, ev_threshold=0.10, use_cache=False, use
 
     final_pred_df = pd.concat(all_out_of_sample_preds, ignore_index=True)
     
-    log.info("\n=== Walk-Forward Backtest Simulation Results ===")
-    config = BacktestConfig(
-        ev_threshold=ev_threshold, 
-        bet_type="win",
-        use_kelly=use_kelly,
-        flat_stake=flat_stake,
-        initial_bankroll=initial_bankroll,
-        kelly_fraction=kelly_fraction,
-        max_odds=max_odds,
-        min_odds=min_odds,
-    )
-    bt = Backtester(config)
-    result = bt.run(final_pred_df)
-    bt.print_report(result)
+    # Save OOS predictions for fast parameter sweeping
+    final_pred_df.to_parquet("data/oos_preds.parquet")
+    log.info("Saved out-of-sample predictions to data/oos_preds.parquet for sweeping.")
     
-    return result
+    if exotic:
+        from models.exotic_backtester import ExoticBacktester
+        log.info("\n=== Exotic Walk-Forward Backtest Simulation ===")
+        bt = ExoticBacktester(final_pred_df)
+        result = bt.run()
+        return result
+    else:
+        log.info("\n=== Walk-Forward Backtest Simulation Results ===")
+        config = BacktestConfig(
+            ev_threshold=ev_threshold, 
+            bet_type="win",
+            use_kelly=use_kelly,
+            flat_stake=flat_stake,
+            initial_bankroll=initial_bankroll,
+            kelly_fraction=kelly_fraction,
+            max_odds=max_odds,
+            min_odds=min_odds,
+        )
+        bt = Backtester(config)
+        result = bt.run(final_pred_df)
+        bt.print_report(result)
+        
+        return result
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -240,6 +251,7 @@ if __name__ == "__main__":
     parser.add_argument("--odds-free", action="store_true", help="Exclude odds features from model training (fundamental-only)")
     parser.add_argument("--ranker", action="store_true", help="Use LambdaRank objective instead of binary classification")
     parser.add_argument("--snapshot-only", action="store_true", help="Only evaluate on races that have odds snapshot data")
+    parser.add_argument("--exotic", action="store_true", help="Run the Best Bet Exotic Pool recommender backtest instead of Win pool")
     args = parser.parse_args()
     
     run_walk_forward_backtest(
@@ -255,4 +267,5 @@ if __name__ == "__main__":
         odds_free=args.odds_free,
         use_ranker=args.ranker,
         snapshot_only=args.snapshot_only,
+        exotic=args.exotic,
     )

@@ -78,6 +78,43 @@ def save_state(date: str, state: dict):
         json.dump(state, f, indent=2)
 
 
+def is_active_racing_window(date: str) -> bool:
+    """Check if the current time is within the active racing window for the given date."""
+    def get_bounds():
+        with get_session() as session:
+            result = session.execute(
+                text("SELECT MIN(post_time) as min_t, MAX(post_time) as max_t FROM horsebet.races WHERE date = :d"),
+                {"d": date}
+            ).fetchone()
+            return result.min_t, result.max_t
+
+    min_t, max_t = get_bounds()
+    if min_t is None:
+        log.info("No races found in DB for today. Scraping schedule ahead of time...")
+        from pipeline import step_scrape
+        step_scrape(date)
+        min_t, max_t = get_bounds()
+        
+        if min_t is None:
+            log.info("Still no races found after scraping. No racing today.")
+            return False
+
+    race_date = datetime.strptime(date, "%Y-%m-%d").date()
+    start_dt = datetime.combine(race_date, min_t, tzinfo=JST) - timedelta(minutes=60)
+    end_dt = datetime.combine(race_date, max_t, tzinfo=JST) + timedelta(minutes=30)
+    
+    now = datetime.now(JST)
+    if start_dt <= now <= end_dt:
+        return True
+    else:
+        wait_min = (start_dt - now).total_seconds() / 60
+        if wait_min > 0:
+            log.info(f"Outside active racing window. Next window starts at {start_dt.strftime('%H:%M')} (in {wait_min:.0f} min).")
+        else:
+            log.info(f"Outside active racing window. Window ended at {end_dt.strftime('%H:%M')}.")
+        return False
+
+
 def refresh_pipeline(date: str) -> str:
     """
     Run the pipeline: fresh odds → predictions → data.json.
@@ -293,6 +330,9 @@ def run_once(date: str, lead_time_min: int):
     """
     log.info(f"🏇 UmaEdge Watcher (once) — {date}")
 
+    if not is_active_racing_window(date):
+        return
+
     # 1. Refresh odds + predictions + data.json
     refresh_pipeline(date)
 
@@ -383,6 +423,9 @@ def run_once(date: str, lead_time_min: int):
 def run_continuous(date: str, lead_time_min: int, test_mode: bool):
     """Continuous mode — refreshes odds + re-predicts before each notification."""
     log.info(f"🏇 UmaEdge Race Watcher — {date}")
+
+    if not test_mode and not is_active_racing_window(date):
+        return
 
     # Initial refresh
     refresh_pipeline(date)

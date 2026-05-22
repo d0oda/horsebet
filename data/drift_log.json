@@ -38,5 +38,25 @@
     "n_samples": 39975,
     "calibration_error": 0.0,
     "notes": ""
+  },
+  {
+    "version": "retrain_20260522_2232",
+    "timestamp": "2026-05-22T22:33:17.401262",
+    "auc": 0.838767,
+    "log_loss": 0,
+    "brier": 0.054978,
+    "n_samples": 40248,
+    "calibration_error": 0.0,
+    "notes": ""
+  },
+  {
+    "version": "retrain_20260522_2234",
+    "timestamp": "2026-05-22T22:35:08.196389",
+    "auc": 0.838767,
+    "log_loss": 0,
+    "brier": 0.054978,
+    "n_samples": 40248,
+    "calibration_error": 0.0,
+    "notes": ""
   }
 ]

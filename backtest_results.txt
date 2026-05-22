@@ -1,0 +1,8 @@
+--- STANDARD (EV 0.05, Qtr Kelly) ---
+  ROI:                   -0.0%
+
+--- HIGH CONFIDENCE (EV 0.15, Qtr Kelly) ---
+  ROI:                   -0.0%
+
+--- FLAT BETTING (EV 0.10, Flat 1000¥) ---
+  ROI:                    2.3%

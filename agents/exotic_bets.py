@@ -283,16 +283,19 @@ class TicketConstructor:
         self,
         combo_probs: dict[str, float],
         take_rate: float = 0.25,
+        max_odds: float = 30000.0,
     ) -> dict[str, float]:
         """
         Estimate odds from probabilities if no market odds available.
-        Uses simple 1/prob with take-rate adjustment.
+        Uses simple 1/prob with take-rate adjustment, capped at max_odds to prevent
+        infinite liquidity assumptions on rare combinations.
         """
         estimated = {}
         for combo, prob in combo_probs.items():
             if prob > 0:
                 fair_odds = 1.0 / prob
-                estimated[combo] = fair_odds * (1 - take_rate)
+                pool_odds = fair_odds * (1 - take_rate)
+                estimated[combo] = min(pool_odds, max_odds)
             else:
                 estimated[combo] = 0
         return estimated
@@ -420,37 +423,22 @@ class TicketConstructor:
     # High-Level Pipeline
     # -------------------------------------------------------------------
 
-    def construct_tickets(
-        self,
-        race_id: int,
-        bet_type: ExoticBetType,
-        budget: int = 5000,
-        store_to_db: bool = True,
-        model_version: str = "latest",
-    ) -> list[TicketRecommendation]:
+    def prepare_race_data(self, race_id: int) -> tuple[dict, dict, list]:
         """
-        End-to-end ticket construction for a race.
-
-        1. Load predictions (win probabilities)
-        2. Simulate joint finish distribution
-        3. Compute combination probabilities
-        4. Load or estimate pool odds
-        5. Optimise ticket selection
-        6. Store to DB
+        Step 1 & 2: Load win probabilities and simulate finish distribution.
+        Run this once per race.
         """
-        # 1. Load win probabilities
         log.info(f"Loading predictions for race {race_id}...")
         win_probs = {}
         horse_names = {}
 
         # We must use RAW model_win_prob for the Plackett-Luce simulation.
-        # Using combined_win_prob from the DB would double-count the PaceSimulator's correlation multipliers.
         from models.predict import predict_and_store
         pred_df = predict_and_store(race_id, store_to_db=False)
         
         if pred_df.empty:
             log.error("Could not generate predictions")
-            return []
+            return {}, {}, []
 
         for _, r in pred_df.iterrows():
             with get_session() as session:
@@ -467,25 +455,35 @@ class TicketConstructor:
 
         if len(win_probs) < 3:
             log.error(f"Need at least 3 horses, got {len(win_probs)}")
-            return []
+            return {}, {}, []
 
-        # 2. Simulate finish distribution
         log.info(f"Simulating {self.n_simulations:,} pace-correlated race finishes...")
         finishes = self.build_finish_distribution(race_id, win_probs)
-        horse_ids = sorted(win_probs.keys())
+        return win_probs, horse_names, finishes
 
+    def evaluate_pool_tickets(
+        self,
+        race_id: int,
+        bet_type: ExoticBetType,
+        budget: int,
+        win_probs: dict,
+        horse_names: dict,
+        finishes: list,
+    ) -> list[TicketRecommendation]:
+        """
+        Step 3-5: Calculate combinations, odds, and optimize for a specific pool.
+        """
+        horse_ids = sorted(win_probs.keys())
+        
         # 3. Compute combination probabilities
         combo_probs = self.compute_combo_probabilities(finishes, horse_ids, bet_type)
-        log.info(f"Generated {len(combo_probs)} unique combinations")
 
         # 4. Load or estimate pool odds
         pool_odds = self.get_pool_odds(race_id, bet_type)
         if not pool_odds:
-            log.info("No pool odds available — estimating from probabilities")
             pool_odds = self.estimate_odds(combo_probs)
 
         # 5. Optimise
-        log.info(f"Optimising ticket selection (budget: ¥{budget:,})...")
         tickets = self.find_optimal_tickets(combo_probs, pool_odds, budget)
 
         # Fill in horse names
@@ -493,11 +491,86 @@ class TicketConstructor:
             ids = t.combination.split("-")
             t.horse_names = [horse_names.get(int(hid), str(hid)) for hid in ids]
 
+        return tickets
+
+    def construct_tickets(
+        self,
+        race_id: int,
+        bet_type: ExoticBetType,
+        budget: int = 5000,
+        store_to_db: bool = True,
+        model_version: str = "latest",
+    ) -> list[TicketRecommendation]:
+        """End-to-end ticket construction for a single pool."""
+        win_probs, horse_names, finishes = self.prepare_race_data(race_id)
+        if len(finishes) == 0:
+            return []
+            
+        log.info(f"Evaluating {bet_type.value} pool...")
+        tickets = self.evaluate_pool_tickets(race_id, bet_type, budget, win_probs, horse_names, finishes)
+        
         # 6. Store to DB
         if store_to_db and tickets:
             self._store_tickets(race_id, bet_type, budget, tickets, model_version)
 
         return tickets
+
+    def recommend_best_pool(
+        self, 
+        race_id: int, 
+        budget: int,
+        store_to_db: bool = True,
+        model_version: str = "latest",
+    ) -> tuple[ExoticBetType, list[TicketRecommendation]]:
+        """Evaluate all pools and return the one with the highest Total EV."""
+        win_probs, horse_names, finishes = self.prepare_race_data(race_id)
+        if len(finishes) == 0:
+            return ExoticBetType.TRIO, []
+
+        log.info(f"Evaluating ALL exotic pools to find highest Total EV (Budget: ¥{budget:,})...")
+        best_type = ExoticBetType.TRIO
+        best_ev = -float('inf')
+        best_tickets = []
+        
+        pool_types = [
+            ExoticBetType.TRIO, 
+            ExoticBetType.TRIFECTA, 
+            ExoticBetType.EXACTA, 
+            ExoticBetType.QUINELLA, 
+            ExoticBetType.WIDE
+        ]
+        
+        results = []
+        for bt in pool_types:
+            tickets = self.evaluate_pool_tickets(race_id, bt, budget, win_probs, horse_names, finishes)
+            total_ev = sum(t.ev for t in tickets)
+            total_cost = sum(t.cost for t in tickets)
+            roi = (total_ev / total_cost * 100) if total_cost > 0 else 0
+            
+            results.append((bt, tickets, total_ev, total_cost, roi))
+            
+            if total_ev > best_ev:
+                best_ev = total_ev
+                best_type = bt
+                best_tickets = tickets
+                
+        # Print summary
+        print(f"\n📊 Pool Evaluation Summary - Race #{race_id}")
+        print("-" * 65)
+        for bt, tkts, ev, cost, roi in sorted(results, key=lambda x: x[2], reverse=True):
+            type_name = bt.value.capitalize()
+            # If cost is 0, print "No +EV tickets"
+            if cost == 0:
+                print(f" {type_name:<10}: {'No +EV tickets found':<48}")
+            else:
+                marker = "⭐ BEST " if bt == best_type else "        "
+                print(f"{marker}{type_name:<10}: {len(tkts):>2} tkts | Cost: ¥{cost:>5,} | EV: {ev:>+7,.0f} | ROI: {roi:>+5.1f}%")
+        print("-" * 65)
+        
+        if store_to_db and best_tickets:
+            self._store_tickets(race_id, best_type, budget, best_tickets, model_version)
+            
+        return best_type, best_tickets
 
     def _store_tickets(
         self,
@@ -556,24 +629,33 @@ def main():
     parser.add_argument(
         "--type",
         type=str,
-        choices=["trio", "trifecta", "wide", "exacta", "quinella"],
-        default="trio",
-        help="Exotic bet type",
+        choices=["trio", "trifecta", "wide", "exacta", "quinella", "best"],
+        default="best",
+        help="Exotic bet type (or 'best' to evaluate all and pick the highest EV)",
     )
     parser.add_argument("--budget", type=int, default=5000, help="Budget in yen (default: 5000)")
     parser.add_argument("--sims", type=int, default=10000, help="Simulations (default: 10000)")
     parser.add_argument("--no-store", action="store_true", help="Don't store to DB")
     args = parser.parse_args()
 
-    bet_type = ExoticBetType(args.type)
     constructor = TicketConstructor(n_simulations=args.sims)
+    store = not args.no_store
 
-    tickets = constructor.construct_tickets(
-        race_id=args.race_id,
-        bet_type=bet_type,
-        budget=args.budget,
-        store_to_db=not args.no_store,
-    )
+    if args.type == "best":
+        bet_type, tickets = constructor.recommend_best_pool(
+            race_id=args.race_id,
+            budget=args.budget,
+            store_to_db=store,
+            model_version="latest", # Usually queried dynamically inside predict_and_store but we'll use latest here
+        )
+    else:
+        bet_type = ExoticBetType(args.type)
+        tickets = constructor.construct_tickets(
+            race_id=args.race_id,
+            bet_type=bet_type,
+            budget=args.budget,
+            store_to_db=store,
+        )
 
     if not tickets:
         print(f"No profitable tickets found for race #{args.race_id}")

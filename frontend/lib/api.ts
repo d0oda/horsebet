@@ -67,6 +67,12 @@ export interface Prediction {
   place_prob: number;
   top3_prob: number;
   model_version: string;
+  fair_odds?: number;
+  edge?: number;
+  ability_rating?: number;
+  condition_fit?: number;
+  bounce_risk?: boolean;
+  decision?: string;
   entries?: Entry;
 }
 
@@ -173,6 +179,13 @@ export const api = {
   // Odds
   getOdds: (raceId: number, betType = "win") =>
     fetchAPI<{ odds: unknown[] }>(`/api/odds/${raceId}?bet_type=${betType}`),
+
+  // Automation / Refresh
+  scrapeDate: (dateStr: string) => 
+    fetchAPI<{ status: string; date: string; races_scraped: number }>(`/api/scraper/date/${dateStr}`, { method: 'POST' }),
+
+  refreshRace: (raceId: number) =>
+    fetchAPI<{ status: string; race_id: number; entries_predicted: number }>(`/api/races/${raceId}/refresh`, { method: 'POST' }),
 
   // Health
   health: () => fetchAPI<{ status: string }>("/api/health"),

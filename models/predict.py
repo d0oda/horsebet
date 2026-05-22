@@ -124,24 +124,30 @@ def predict_and_store(
         log.warning(f"Pace simulation failed: {e}")
         pace_results = {}
 
-    # 4. Combine probabilities
+    # 4. Look up entry data (horse_id, odds) for all entries at once
+    entry_ids = features_df["entry_id"].tolist()
+    with get_session() as session:
+        entry_rows = session.execute(
+            text("SELECT id, horse_id, odds_win FROM entries WHERE id = ANY(:ids)"),
+            {"ids": entry_ids}
+        ).fetchall()
+    entry_map = {r[0]: (r[1], r[2] or 0) for r in entry_rows}
+
+    # 4b. Compute overround-adjusted fair market probabilities
+    all_odds = [entry_map.get(eid, (None, 0))[1] for eid in entry_ids]
+    raw_implied = [(1.0 / o) if o > 0 else 0 for o in all_odds]
+    overround = sum(raw_implied)
+    if overround <= 0:
+        overround = 1.0  # safety
+    log.info(f"Market overround: {overround:.3f} ({overround*100:.1f}%)")
+
+    # 4c. (Removed: We now read ability ratings directly from the point-in-time safe feature vector)
+
+    # 5. Combine probabilities and apply decision labels
     result_rows = []
     for i, (_, row) in enumerate(features_df.iterrows()):
         entry_id = row["entry_id"]
-        horse_id = None
-
-        # Look up horse_id from entry
-        with get_session() as session:
-            entry_data = session.execute(
-                text("SELECT horse_id, odds_win FROM entries WHERE id = :eid"),
-                {"eid": entry_id}
-            ).fetchone()
-
-        if entry_data:
-            horse_id = entry_data[0]
-            odds = entry_data[1] or 0
-        else:
-            odds = 0
+        horse_id, odds = entry_map.get(entry_id, (None, 0))
 
         model_p = float(model_probs[i])
         fund_p = float(fundamental_probs[i]) if fundamental_probs is not None else None
@@ -151,22 +157,40 @@ def predict_and_store(
         # Weighted combination: 60% model, 40% pace sim
         combined_win = 0.6 * model_p + 0.4 * pace_p
 
-        # Market implied probability
-        market_prob = (1.0 / odds) if odds > 0 else 0
-        ev = combined_win - market_prob
+        # Fair market probability (overround-stripped)
+        raw_prob = (1.0 / odds) if odds > 0 else 0
+        fair_market_prob = raw_prob / overround if overround > 0 else 0
+        edge = combined_win - fair_market_prob
+        fair_odds = (1.0 / combined_win) if combined_win > 0 else 999
+
+        # Ability rating and condition fit from feature vector
+        ability_rating = row.get("horse_ability_rating", np.nan) if "horse_ability_rating" in features_df.columns else np.nan
+        condition_fit = row.get("condition_fit_score", np.nan) if "condition_fit_score" in features_df.columns else np.nan
+        bounce_risk = row.get("bounce_risk_flag", 0) if "bounce_risk_flag" in features_df.columns else 0
+
+        # True Expected Value (ROI based on payout odds)
+        payout_ev = (combined_win * odds) - 1.0 if odds > 0 else 0.0
 
         row_data = {
             "race_id": race_id,
             "entry_id": entry_id,
+            "horse_id": horse_id,
             "horse_name": row.get("horse_name", ""),
             "model_win_prob": round(model_p, 4),
             "pace_win_prob": round(pace_p, 4),
             "combined_win_prob": round(combined_win, 4),
-            "pace_place_prob": round(pace_place_p, 4) if pace_place_p else None,
+            "pace_place_prob": round(float(pace_place_p), 4) if pd.notna(pace_place_p) else None,
             "odds": odds,
-            "market_prob": round(market_prob, 4),
-            "ev": round(ev, 4),
-            "is_value": ev >= ev_threshold and min_odds <= odds <= max_odds,
+            "market_prob_raw": round(raw_prob, 4),
+            "fair_market_prob": round(fair_market_prob, 4),
+            "overround": round(overround, 4),
+            "edge": round(edge, 4),
+            "fair_odds": round(fair_odds, 2),
+            "ev": round(payout_ev, 4),
+            "ability_rating": round(ability_rating, 1) if not pd.isna(ability_rating) else None,
+            "condition_fit": round(condition_fit, 1) if not pd.isna(condition_fit) else None,
+            "bounce_risk": int(bounce_risk),
+            "is_value": payout_ev >= ev_threshold and min_odds <= odds <= max_odds,
         }
 
         if fund_p is not None:
@@ -175,14 +199,47 @@ def predict_and_store(
         result_rows.append(row_data)
 
     result_df = pd.DataFrame(result_rows)
-    result_df = result_df.sort_values("combined_win_prob", ascending=False)
+    result_df = result_df.sort_values("combined_win_prob", ascending=False).reset_index(drop=True)
 
-    # 5. Store to DB
+    # 6. Apply decision labels
+    result_df["decision"] = result_df.apply(
+        lambda r: _decision_label(r, field_size=len(result_df)), axis=1
+    )
+
+    # 7. Store to DB
     if store_to_db:
         _store_predictions(result_df, model_version)
         _store_value_bets(result_df, model_version, ev_threshold)
 
     return result_df
+
+
+def _decision_label(row, field_size: int) -> str:
+    """Assign a decision label based on edge, condition fit, and ability rank.
+
+    Labels (from Blueprint §7):
+      Strong Value — edge >= 7%, condition_fit >= 80, high confidence
+      Value        — edge >= 3%, condition_fit >= 75
+      Lean         — top 3 on race-relative rank, edge >= 0
+      Watch Only   — strong ability but poor conditions/bouncing
+      Avoid        — everything else
+    """
+    edge = row.get("edge", 0) or 0
+    cfit = row.get("condition_fit") or 0
+    bounce = row.get("bounce_risk", 0) or 0
+    ability = row.get("ability_rating") or 0
+    rank = row.name + 1 if hasattr(row, "name") else field_size  # 1-based
+
+    if edge >= 0.07 and cfit >= 80 and bounce == 0:
+        return "Strong Value"
+    elif edge >= 0.03 and cfit >= 75:
+        return "Value"
+    elif rank <= 3 and edge >= 0:
+        return "Lean"
+    elif ability >= 85 and (cfit < 70 or bounce == 1):
+        return "Watch Only"
+    else:
+        return "Avoid"
 
 
 def _store_predictions(df: pd.DataFrame, model_version: str):
@@ -191,11 +248,23 @@ def _store_predictions(df: pd.DataFrame, model_version: str):
         for _, row in df.iterrows():
             session.execute(
                 text("""
-                    INSERT INTO predictions (race_id, entry_id, model_version, win_prob, place_prob)
-                    VALUES (:race_id, :entry_id, :version, :win_prob, :place_prob)
+                    INSERT INTO predictions (
+                        race_id, entry_id, model_version, win_prob, place_prob,
+                        fair_odds, edge, ability_rating, condition_fit, bounce_risk, decision
+                    )
+                    VALUES (
+                        :race_id, :entry_id, :version, :win_prob, :place_prob,
+                        :fair_odds, :edge, :ability_rating, :condition_fit, :bounce_risk, :decision
+                    )
                     ON CONFLICT (race_id, entry_id, model_version) DO UPDATE SET
                         win_prob = EXCLUDED.win_prob,
-                        place_prob = EXCLUDED.place_prob
+                        place_prob = EXCLUDED.place_prob,
+                        fair_odds = EXCLUDED.fair_odds,
+                        edge = EXCLUDED.edge,
+                        ability_rating = EXCLUDED.ability_rating,
+                        condition_fit = EXCLUDED.condition_fit,
+                        bounce_risk = EXCLUDED.bounce_risk,
+                        decision = EXCLUDED.decision
                 """),
                 {
                     "race_id": row["race_id"],
@@ -203,8 +272,15 @@ def _store_predictions(df: pd.DataFrame, model_version: str):
                     "version": model_version,
                     "win_prob": row["combined_win_prob"],
                     "place_prob": row.get("pace_place_prob"),
+                    "fair_odds": row.get("fair_odds"),
+                    "edge": row.get("edge"),
+                    "ability_rating": row.get("ability_rating"),
+                    "condition_fit": row.get("condition_fit"),
+                    "bounce_risk": bool(row.get("bounce_risk", 0)),
+                    "decision": row.get("decision"),
                 }
             )
+    session.commit()
     log.info(f"💾 Stored {len(df)} predictions (version: {model_version})")
 
 
@@ -217,13 +293,10 @@ def _store_value_bets(df: pd.DataFrame, model_version: str, ev_threshold: float)
 
     with get_session() as session:
         for _, row in value_df.iterrows():
-            # Kelly sizing
-            b = row["odds"] - 1
-            p = row["combined_win_prob"]
-            q = 1 - p
-            kelly = max(0, (b * p - q) / b) if b > 0 else 0
-            quarter_kelly = kelly * 0.25
-            recommended_stake = int(100000 * quarter_kelly)  # assume 100k bankroll
+            # Flat Betting Strategy (Top ROI Performer)
+            # Replaces volatile Kelly sizing with robust ¥1,000 flat stakes
+            quarter_kelly = 0.0
+            recommended_stake = 1000
 
             session.execute(
                 text("""
@@ -241,7 +314,7 @@ def _store_value_bets(df: pd.DataFrame, model_version: str, ev_threshold: float)
                     "race_id": row["race_id"],
                     "entry_id": row["entry_id"],
                     "model_prob": row["combined_win_prob"],
-                    "market_prob": row["market_prob"],
+                    "market_prob": row.get("fair_market_prob", row.get("market_prob", 0)),
                     "ev": row["ev"],
                     "kelly": quarter_kelly,
                     "stake": recommended_stake,
@@ -261,7 +334,7 @@ def main():
     parser.add_argument("--race-id", type=int, required=True, help="Database race ID")
     parser.add_argument("--version", type=str, default="latest", help="Model version")
     parser.add_argument("--no-store", action="store_true", help="Don't store to DB")
-    parser.add_argument("--ev-threshold", type=float, default=0.05, help="Min EV for value bet")
+    parser.add_argument("--ev-threshold", type=float, default=0.20, help="Min EV for value bet (default: 0.20)")
     parser.add_argument("--max-odds", type=float, default=30.0, help="Max odds to bet (default: 30)")
     parser.add_argument("--min-odds", type=float, default=1.5, help="Min odds to bet (default: 1.5)")
     parser.add_argument("--hybrid", action="store_true", help="Use hybrid ensemble")
@@ -282,23 +355,28 @@ def main():
         return
 
     # Display
-    print(f"\n🎯 Predictions — Race #{args.race_id}")
-    print("-" * 75)
-    print(f"{'Horse':<16} {'Model':>6} {'Pace':>6} {'Combined':>8} {'Odds':>5} {'MktP':>5} {'EV':>6} {'Value':>5}")
-    print("-" * 75)
+    overround_pct = result["overround"].iloc[0] * 100 if "overround" in result.columns else 0
+    print(f"\n🎯 Predictions — Race #{args.race_id}  (Overround: {overround_pct:.1f}%)")
+    print("-" * 105)
+    print(f"{'Horse':<14} {'Prob':>5} {'Odds':>5} {'Fair':>5} {'FairP':>5} {'Edge':>6} {'Ability':>7} {'Fit':>4} {'Decision':<12}")
+    print("-" * 105)
 
     for _, row in result.iterrows():
-        name = str(row.get("horse_name", "?"))[:14]
-        is_val = "✅" if row["is_value"] else ""
+        name = str(row.get("horse_name", "?"))[:12]
+        ab = f"{row['ability_rating']:.0f}" if row.get('ability_rating') else "  -"
+        cf = f"{row['condition_fit']:.0f}" if row.get('condition_fit') else " -"
+        dec = row.get("decision", "")
+        dec_icon = {"Strong Value": "🔥", "Value": "✅", "Lean": "👀", "Watch Only": "⚠️", "Avoid": ""}.get(dec, "")
         print(
-            f"{name:<16} "
-            f"{row['model_win_prob']:>5.1%} "
-            f"{row['pace_win_prob']:>5.1%} "
-            f"{row['combined_win_prob']:>7.1%} "
+            f"{name:<14} "
+            f"{row['combined_win_prob']:>5.1%} "
             f"{row['odds']:>5.1f} "
-            f"{row['market_prob']:>5.1%} "
-            f"{row['ev']:>+5.2f} "
-            f"{is_val:>5}"
+            f"{row.get('fair_odds', 0):>5.1f} "
+            f"{row.get('fair_market_prob', 0):>5.1%} "
+            f"{row.get('edge', 0):>+5.2f} "
+            f"{ab:>7} "
+            f"{cf:>4} "
+            f"{dec_icon} {dec}"
         )
 
 

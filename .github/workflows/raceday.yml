@@ -2,9 +2,10 @@ name: Race Day Pipeline
 
 on:
   # Races run 09:45 – 16:30 JST = 00:45 – 07:30 UTC
-  # We start the pipeline at 09:00 JST (00:00 UTC) so it scrapes the races early.
+  # We start the pipeline at 08:00 JST to scrape races early.
   schedule:
-    - cron: '*/10 0-8 * * 0,5,6'      # Fri, Sat & Sun 00:00-08:50 UTC = 09:00-17:50 JST
+    - cron: '*/10 23 * * 5,6'         # Fri, Sat 23:00-23:50 UTC = 08:00-08:50 JST (Sat, Sun)
+    - cron: '*/10 0-8 * * 0,6'        # Sat, Sun 00:00-08:50 UTC = 09:00-17:50 JST (Sat, Sun)
 
   workflow_dispatch:
     inputs:
@@ -59,7 +60,7 @@ jobs:
         run: |
           DATE="${{ steps.date.outputs.date }}"
           DOW=$(date -d "$DATE" +%u 2>/dev/null || gdate -d "$DATE" +%u)
-          if [ "$DOW" = "5" ] || [ "$DOW" = "6" ] || [ "$DOW" = "7" ] || [ -n "${{ inputs.race_date }}" ]; then
+          if [ "$DOW" = "6" ] || [ "$DOW" = "7" ] || [ -n "${{ inputs.race_date }}" ]; then
             echo "is_race_day=true" >> $GITHUB_OUTPUT
           else
             echo "is_race_day=false" >> $GITHUB_OUTPUT
@@ -91,6 +92,7 @@ jobs:
         if: steps.check.outputs.is_race_day == 'true'
         run: |
           DATE="${{ steps.date.outputs.date }}"
+          mkdir -p results
           git fetch origin gh-pages || true
           git checkout origin/gh-pages -- results/watcher_state_$DATE.json 2>/dev/null || echo "No previous state found"
 
@@ -106,6 +108,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: predictions-${{ steps.date.outputs.date }}
+          if-no-files-found: ignore
           path: |
             results/predictions_*.json
             results/data.json

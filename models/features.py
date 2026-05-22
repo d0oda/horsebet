@@ -2069,6 +2069,168 @@ class FeatureBuilder:
         return df
 
     # ------------------------------------------------------------------
+    # Ability Rating Features (Sprint 10 — Blueprint §2)
+    # ------------------------------------------------------------------
+
+    def _ability_rating_features(self, horse_id, race_id, race_date, race_df):
+        """Features derived from persistent EWMA ability ratings (Point-In-Time safe)."""
+        feats = {"horse_ability_rating": np.nan, "rating_trend_slope": np.nan,
+                 "rating_vs_field_avg": np.nan, "field_avg_ability_rating": np.nan,
+                 "rating_percentile_in_field": np.nan}
+
+        if not hasattr(self, "_ability_history_cache"):
+            self._ability_history_cache = {}
+            try:
+                with get_session() as session:
+                    rows = session.execute(text("SELECT horse_id, race_date, rating_after FROM horse_rating_history ORDER BY race_date")).fetchall()
+                for r in rows:
+                    self._ability_history_cache.setdefault(r[0], []).append((str(r[1]), r[2]))
+                log.info(f"Loaded history for {len(self._ability_history_cache)} horses for point-in-time ratings")
+            except Exception as e:
+                log.warning(f"Could not load ability ratings: {e}")
+                return feats
+
+        def _get_pit_rating(h_id, r_date):
+            history = self._ability_history_cache.get(h_id, [])
+            prior = [r for d, r in history if d < r_date]
+            return prior[-1] if prior else 55.0
+
+        horse_rating = _get_pit_rating(horse_id, race_date)
+        feats["horse_ability_rating"] = horse_rating
+
+        history = self._ability_history_cache.get(horse_id, [])
+        prior = [r for d, r in history if d < race_date]
+        if len(prior) >= 3:
+            last_n = prior[-5:]
+            x = np.arange(len(last_n))
+            try:
+                feats["rating_trend_slope"] = round(np.polyfit(x, last_n, 1)[0], 4)
+            except Exception:
+                pass
+
+        if not hasattr(self, "_field_rating_cache"):
+            self._field_rating_cache = {}
+            
+        if race_id not in self._field_rating_cache:
+            field_horses = race_df[race_df["race_id"] == race_id]["horse_id"].unique()
+            self._field_rating_cache[race_id] = [_get_pit_rating(h, race_date) for h in field_horses]
+
+        fr = self._field_rating_cache[race_id]
+        if fr:
+            field_avg = np.mean(fr)
+            feats["field_avg_ability_rating"] = round(field_avg, 2)
+            feats["rating_vs_field_avg"] = round(horse_rating - field_avg, 2)
+            feats["rating_percentile_in_field"] = round(sum(1 for r in fr if r <= horse_rating) / len(fr), 4)
+            
+        return feats
+
+    # ------------------------------------------------------------------
+    # Condition Fit Composite (Sprint 10 — Blueprint §4)
+    # ------------------------------------------------------------------
+
+    def _condition_fit_features(self, horse_id, race_date, distance, surface, going, course_id, class_change, days_since_last):
+        """Composite condition fit score (0-100)."""
+        h_hist = self._horse_groups.get(horse_id, pd.DataFrame())
+        prior = h_hist[h_hist["date"].astype(str) < race_date] if isinstance(h_hist, pd.DataFrame) and not h_hist.empty else pd.DataFrame()
+
+        comps = {}
+        # Distance fit
+        if not prior.empty and "distance" in prior.columns and "finish_pos" in prior.columns:
+            bands = {"sprint": (0, 1400), "mile": (1401, 1800), "middle": (1801, 2200), "staying": (2201, 9999)}
+            band = next((b for b, (lo, hi) in bands.items() if lo <= distance <= hi), "mile")
+            lo, hi = bands[band]
+            br = prior[(prior["distance"] >= lo) & (prior["distance"] <= hi)]
+            owr = (prior["finish_pos"] == 1).mean()
+            comps["distance_fit"] = min(max((br["finish_pos"] == 1).mean() / owr * 100, 60), 115) if len(br) >= 2 and owr > 0 else 75
+        else:
+            comps["distance_fit"] = 75
+
+        # Going fit
+        if not prior.empty and "going" in prior.columns and going and "finish_pos" in prior.columns:
+            gr = prior[prior["going"] == going]
+            owr = (prior["finish_pos"] == 1).mean()
+            comps["going_fit"] = min(max((gr["finish_pos"] == 1).mean() / owr * 100, 60), 115) if len(gr) >= 2 and owr > 0 else 75
+        else:
+            comps["going_fit"] = 75
+
+        # Surface fit
+        if not prior.empty and "surface" in prior.columns and surface and "finish_pos" in prior.columns:
+            sr = prior[prior["surface"] == surface]
+            owr = (prior["finish_pos"] == 1).mean()
+            comps["surface_fit"] = min(max((sr["finish_pos"] == 1).mean() / owr * 100, 60), 115) if len(sr) >= 2 and owr > 0 else 75
+        else:
+            comps["surface_fit"] = 75
+
+        # Track fit
+        if not prior.empty and "course_id" in prior.columns and course_id and "finish_pos" in prior.columns:
+            tr = prior[prior["course_id"] == course_id]
+            comps["track_fit"] = min(max((tr["finish_pos"] <= 3).mean() * 120, 60), 100) if len(tr) >= 2 else 75
+        else:
+            comps["track_fit"] = 75
+
+        # Class fit
+        if not pd.isna(class_change):
+            comps["class_fit"] = 90 if class_change < 0 else (80 if class_change == 0 else 65)
+        else:
+            comps["class_fit"] = 75
+
+        # Rest fit
+        if not pd.isna(days_since_last):
+            if 14 <= days_since_last <= 35: comps["rest_fit"] = 90
+            elif 36 <= days_since_last <= 60: comps["rest_fit"] = 80
+            elif days_since_last > 90: comps["rest_fit"] = 60
+            elif days_since_last < 14: comps["rest_fit"] = 70
+            else: comps["rest_fit"] = 75
+        else:
+            comps["rest_fit"] = 70
+
+        score = (0.25 * comps["distance_fit"] + 0.20 * comps["going_fit"]
+                 + 0.15 * comps["surface_fit"] + 0.10 * comps["track_fit"]
+                 + 0.10 * 75 + 0.08 * 75  # pace_fit and draw_fit defaults
+                 + 0.07 * comps["class_fit"] + 0.05 * comps["rest_fit"])
+        return {"condition_fit_score": round(score, 2)}
+
+    # ------------------------------------------------------------------
+    # Form Trajectory Features (Sprint 10 — Blueprint §5)
+    # ------------------------------------------------------------------
+
+    def _form_trajectory_features(self, horse_id, race_date):
+        """Bounce risk, second/third up flags, new peak, consistency."""
+        feats = {"bounce_risk_flag": 0, "second_up_flag": 0, "third_up_flag": 0,
+                 "new_peak_flag": 0, "ability_consistency": np.nan}
+
+        if not hasattr(self, "_ability_history_cache"):
+            return feats
+
+        history = self._ability_history_cache.get(horse_id, [])
+        prior = [(d, r) for d, r in history if d < race_date]
+        if not prior:
+            return feats
+        scores = [r for _, r in prior]
+
+        if len(scores) >= 2:
+            if scores[-1] > max(scores[:-1]) + 8:
+                feats["bounce_risk_flag"] = 1
+            if scores[-1] >= max(scores):
+                feats["new_peak_flag"] = 1
+        if len(scores) >= 3:
+            feats["ability_consistency"] = round(np.std(scores[-5:]), 2)
+
+        # Second/third up detection
+        h_hist = self._horse_groups.get(horse_id, pd.DataFrame())
+        if isinstance(h_hist, pd.DataFrame) and not h_hist.empty:
+            pr = h_hist[h_hist["date"].astype(str) < race_date].sort_values("date")
+            if len(pr) >= 2:
+                dates = pd.to_datetime(pr["date"]).values
+                gaps = np.diff(dates).astype("timedelta64[D]").astype(int)
+                spells = np.where(gaps > 60)[0]
+                if len(spells) > 0:
+                    runs_since = len(pr) - spells[-1] - 1
+                    if runs_since == 1: feats["second_up_flag"] = 1
+                    elif runs_since == 2: feats["third_up_flag"] = 1
+        return feats
+
+    # ------------------------------------------------------------------
     # Main Builder
     # ------------------------------------------------------------------
 
@@ -2368,6 +2530,40 @@ class FeatureBuilder:
                     horse_speed_last=features.get("speed_figure_last", np.nan),
                     horse_speed_best=features.get("speed_figure_best", np.nan),
                     horse_class_rank=features.get("class_rank", np.nan),
+                    race_date=str(row["date"]),
+                )
+            )
+
+            # --- Sprint 10: Ability Rating + Condition Fit + Trajectory ---
+
+            # Ability rating features
+            features.update(
+                self._ability_rating_features(
+                    horse_id=row["horse_id"],
+                    race_id=row["race_id"],
+                    race_date=str(row["date"]),
+                    race_df=race_df,
+                )
+            )
+
+            # Condition fit composite
+            features.update(
+                self._condition_fit_features(
+                    horse_id=row["horse_id"],
+                    race_date=str(row["date"]),
+                    distance=row["distance"] or 0,
+                    surface=row["surface"] or "",
+                    going=row.get("going") or "",
+                    course_id=row.get("course_id"),
+                    class_change=features.get("class_change", np.nan),
+                    days_since_last=features.get("days_since_last_run", np.nan),
+                )
+            )
+
+            # Form trajectory flags
+            features.update(
+                self._form_trajectory_features(
+                    horse_id=row["horse_id"],
                     race_date=str(row["date"]),
                 )
             )

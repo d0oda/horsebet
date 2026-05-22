@@ -101,8 +101,11 @@ def run_retrain(
     if walk_forward and "date" in df.columns:
         log.info("Step 3: Running walk-forward CV...")
         cv_results = walk_forward_cv(df, feature_cols, n_folds=4)
-        log.info(f"  Avg AUC: {cv_results['avg_metrics'].get('auc', 0):.4f}")
-        log.info(f"  Avg Log-loss: {cv_results['avg_metrics'].get('log_loss', 0):.4f}")
+        if cv_results:
+            avg_auc = sum(f.get("auc", 0) for f in cv_results) / len(cv_results)
+            avg_logloss = sum(f.get("logloss", 0) for f in cv_results) / len(cv_results)
+            log.info(f"  Avg AUC: {avg_auc:.4f}")
+            log.info(f"  Avg Log-loss: {avg_logloss:.4f}")
 
     # Step 4: Full retrain on all data
     log.info("Step 4: Training final model...")

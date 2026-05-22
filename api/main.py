@@ -421,6 +421,77 @@ def live_trading_status():
 
 
 # ===================================================================
+# 10. AUTOMATION PIPELINE
+# ===================================================================
+
+@app.post("/api/scraper/date/{date_str}")
+def scrape_date(date_str: str):
+    """Trigger the scraper pipeline to fetch races for a specific date (YYYY-MM-DD)."""
+    try:
+        from pipeline import step_scrape
+        # step_scrape returns a list of netkeiba_ids
+        race_ids = step_scrape(date_str)
+        return {"status": "success", "message": f"Scraped {len(race_ids)} races for {date_str}"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Scraping failed: {str(e)}")
+
+
+@app.post("/api/races/{race_id}/refresh")
+def refresh_race(race_id: int):
+    """Refresh live odds and recalculate predictions for a specific race."""
+    from sqlalchemy import text
+    from scraper.db import get_session
+    
+    # 1. Look up netkeiba_id
+    with get_session() as session:
+        race_row = session.execute(
+            text("SELECT netkeiba_id FROM horsebet.races WHERE id = :id"),
+            {"id": race_id}
+        ).fetchone()
+        
+    if not race_row:
+        raise HTTPException(status_code=404, detail="Race not found")
+        
+    nk_id = race_row.netkeiba_id
+    
+    # 2. Fetch new odds
+    from scraper.odds_watcher import fetch_win_odds
+    odds = fetch_win_odds(nk_id)
+    if odds:
+        with get_session() as session:
+            for o in odds:
+                session.execute(
+                    text("""
+                        UPDATE horsebet.entries
+                        SET odds_win = :odds
+                        WHERE race_id = :race_id AND post_position = :pp
+                    """),
+                    {"odds": o["odds_value"], "race_id": race_id, "pp": int(o["combination"])}
+                )
+            session.commit()
+            
+    # 3. Predict and Store
+    from models.predict import predict_and_store
+    try:
+        result_df = predict_and_store(
+            race_id=race_id,
+            model_version="latest", 
+            store_to_db=True
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Prediction failed: {str(e)}")
+    
+    if result_df is None or result_df.empty:
+        raise HTTPException(status_code=500, detail="No predictions generated")
+        
+    return {
+        "status": "success", 
+        "message": "Odds updated and predictions recalculated", 
+        "updated_horses": len(odds) if odds else 0
+    }
+
+
+# ===================================================================
 # Health
 # ===================================================================
 
