@@ -209,8 +209,10 @@ class FeatureBuilder:
             log.info(f"Loaded {len(df)} entries across {df['race_id'].nunique()} races")
         return df
 
-    def _load_horse_history(self) -> pd.DataFrame:
-        """Load all historical results for rolling calculations."""
+    def _load_horse_history(self, horse_ids: Optional[list[int]] = None, jockey_ids: Optional[list[int]] = None, trainer_ids: Optional[list[int]] = None) -> pd.DataFrame:
+        """Load all historical results for rolling calculations.
+        Optionally filter to specific horses, jockeys, or trainers to save memory.
+        """
         base_query = """
             SELECT
                 e.id AS entry_id,
@@ -239,8 +241,23 @@ class FeatureBuilder:
             JOIN horses h ON h.id = e.horse_id
             LEFT JOIN results res ON res.entry_id = e.id
             WHERE res.finish_pos IS NOT NULL
-            ORDER BY e.horse_id, r.date
         """
+        
+        has_filters = False
+        if horse_ids or jockey_ids or trainer_ids:
+            conditions = []
+            if horse_ids:
+                conditions.append(f"e.horse_id IN ({','.join(str(int(x)) for x in horse_ids)})")
+            if jockey_ids:
+                conditions.append(f"e.jockey_id IN ({','.join(str(int(x)) for x in jockey_ids)})")
+            if trainer_ids:
+                conditions.append(f"h.trainer_id IN ({','.join(str(int(x)) for x in trainer_ids)})")
+            
+            if conditions:
+                base_query += " AND (" + " OR ".join(conditions) + ")"
+                has_filters = True
+
+        base_query += " ORDER BY e.horse_id, r.date"
         
         with get_session() as session:
             result = session.execute(text(base_query))
@@ -2256,7 +2273,21 @@ class FeatureBuilder:
 
         if not hasattr(self, '_horse_groups'):
             log.info("Loading full history for rolling features...")
-            history_df = self._load_horse_history()
+            
+            # If we're only building for a few races, restrict the history loaded to save memory
+            horse_ids = None
+            jockey_ids = None
+            trainer_ids = None
+            if race_ids and len(race_ids) < 50:
+                horse_ids = race_df["horse_id"].dropna().unique().tolist()
+                jockey_ids = race_df["jockey_id"].dropna().unique().tolist() if "jockey_id" in race_df.columns else []
+                trainer_ids = race_df["trainer_id"].dropna().unique().tolist() if "trainer_id" in race_df.columns else []
+
+            history_df = self._load_horse_history(
+                horse_ids=horse_ids,
+                jockey_ids=jockey_ids,
+                trainer_ids=trainer_ids
+            )
             history_df = history_df.sort_values("date", ascending=True)
 
             log.info("Loading odds snapshots for movement features...")
