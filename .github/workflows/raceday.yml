@@ -72,20 +72,9 @@ jobs:
         if: steps.check.outputs.is_race_day == 'true'
         run: |
           DATE="${{ steps.date.outputs.date }}"
-          RACE_COUNT=$(python -c "
-          from scraper.db import get_session
-          from sqlalchemy import text
-          with get_session() as s:
-              n = s.execute(text(\"SELECT COUNT(*) FROM horsebet.races WHERE date = '$DATE'\")).scalar()
-              print(n)
-          ")
-          if [ "$RACE_COUNT" -gt "0" ]; then
-            echo "✅ $RACE_COUNT races already in DB, skipping scrape"
-          else
-            echo "🔍 Scraping races for $DATE"
-            python pipeline.py --date "$DATE" --version retrain_20260507_1645 \
-              --skip-odds --skip-predict --skip-paddock --skip-notify
-          fi
+          echo "🔍 Scraping races for $DATE"
+          python pipeline.py --date "$DATE" --version retrain_20260507_1645 \
+            --skip-odds --skip-predict --skip-paddock --skip-notify
 
       # ── Step 2: Race Watcher (fresh odds → predict → notify) ──
       - name: Restore watcher state
