@@ -29,7 +29,7 @@ def build_data_json(predictions_paths: list, output: str = None):
     global_total_bets = 0
     global_total_winners = 0
     global_total_returns = 0
-    model_name = 'retrain_20260507_1645'
+    model_name = 'retrain_20260522_2234'
     dates = []
 
     for path in predictions_paths:

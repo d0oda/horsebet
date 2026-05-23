@@ -33,7 +33,7 @@ log = logging.getLogger("predict_final")
 
 def predict_with_filters(
     race_ids: list[int],
-    model_version: str = "retrain_20260507_1645",
+    model_version: str = "retrain_20260522_2234",
     ev_threshold: float = 0.30,
     max_odds: float = 30.0,
     min_odds: float = 2.0,
@@ -188,7 +188,7 @@ def main():
     )
     parser.add_argument("--race-id", type=int, help="Single race ID to predict")
     parser.add_argument("--date", type=str, help="Predict all races for a date (YYYY-MM-DD)")
-    parser.add_argument("--version", type=str, default="retrain_20260507_1645", help="Model version")
+    parser.add_argument("--version", type=str, default="retrain_20260522_2234", help="Model version")
     parser.add_argument("--ev-threshold", type=float, default=0.05, help="Min EV (default: 5%%)")
     parser.add_argument("--max-odds", type=float, default=30.0, help="Max odds (default: 30)")
     parser.add_argument("--min-odds", type=float, default=1.5, help="Min odds (default: 1.5)")

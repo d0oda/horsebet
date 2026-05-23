@@ -46,7 +46,7 @@ log = logging.getLogger("race_watcher")
 JST = timezone(timedelta(hours=9))
 
 # Default model config (same as pipeline)
-MODEL_VERSION = "retrain_20260507_1645"
+MODEL_VERSION = "retrain_20260522_2234"
 EV_THRESHOLD = 0.25
 MAX_ODDS = 30.0
 MIN_ODDS = 2.0

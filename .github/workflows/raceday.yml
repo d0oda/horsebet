@@ -73,7 +73,7 @@ jobs:
         run: |
           DATE="${{ steps.date.outputs.date }}"
           echo "🔍 Scraping races for $DATE"
-          python pipeline.py --date "$DATE" --version retrain_20260507_1645 \
+          python pipeline.py --date "$DATE" --version retrain_20260522_2234 \
             --skip-odds --skip-predict --skip-paddock --skip-notify
 
       # ── Step 2: Race Watcher (fresh odds → predict → notify) ──

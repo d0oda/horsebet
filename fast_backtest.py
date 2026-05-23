@@ -7,7 +7,7 @@ from sqlalchemy import text
 import pandas as pd
 import numpy as np
 
-def run_fast(date_str, fb, version="retrain_20260507_1645", ev_threshold=0.2):
+def run_fast(date_str, fb, version="retrain_20260522_2234", ev_threshold=0.2):
     with get_session() as session:
         rows = session.execute(
             text("SELECT id FROM horsebet.races WHERE date = :d ORDER BY course_id, race_number"),
@@ -108,7 +108,7 @@ def run_fast(date_str, fb, version="retrain_20260507_1645", ev_threshold=0.2):
 
 if __name__ == "__main__":
     import sys
-    version = sys.argv[1] if len(sys.argv) > 1 else "retrain_20260507_1645"
+    version = sys.argv[1] if len(sys.argv) > 1 else "retrain_20260522_2234"
     ev_threshold = float(sys.argv[2]) if len(sys.argv) > 2 else 0.30
 
     dates = [

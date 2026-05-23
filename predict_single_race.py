@@ -41,7 +41,7 @@ def run(race_netkeiba_id):
     
     # Predict using predict_with_filters
     # Actually wait, predict_with_filters needs to write to db? Let's just predict
-    version = "retrain_20260507_1645"
+    version = "retrain_20260522_2234"
     
     print(f"Building features for race_id={db_id}...")
     fb = FeatureBuilder()
