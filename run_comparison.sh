@@ -1,8 +1,8 @@
 #!/bin/bash
 export PYTHONPATH=.
 
-echo "=== Evaluating retrain_20260522_2234 ==="
-./.venv/bin/python fast_backtest.py retrain_20260522_2234 0.30
+echo "=== Evaluating retrain_20260523_2115 ==="
+./.venv/bin/python fast_backtest.py retrain_20260523_2115 0.30
 ./.venv/bin/python scripts/analyze_april.py > retrain_results.txt
 cat retrain_results.txt | grep -A 6 "==="
 

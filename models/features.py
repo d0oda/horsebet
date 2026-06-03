@@ -2278,10 +2278,6 @@ class FeatureBuilder:
             horse_ids = None
             jockey_ids = None
             trainer_ids = None
-            if race_ids and len(race_ids) < 50:
-                horse_ids = race_df["horse_id"].dropna().unique().tolist()
-                jockey_ids = race_df["jockey_id"].dropna().unique().tolist() if "jockey_id" in race_df.columns else []
-                trainer_ids = race_df["trainer_id"].dropna().unique().tolist() if "trainer_id" in race_df.columns else []
 
             history_df = self._load_horse_history(
                 horse_ids=horse_ids,

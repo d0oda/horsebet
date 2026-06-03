@@ -1,7 +1,7 @@
 import pandas as pd
 from models.backtest import Backtester, BacktestConfig
 
-print("Running 2026 Walk-Forward Backtest (Model: retrain_20260522_2234)")
+print("Running 2026 Walk-Forward Backtest (Model: retrain_20260523_2115)")
 df = pd.read_parquet("data/oos_preds.parquet")
 
 # Filter for 2026 races

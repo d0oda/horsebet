@@ -5,9 +5,9 @@ from sqlalchemy import text
 from scraper.db import get_session
 from scraper.odds_watcher import fetch_win_odds
 from models.predict_final import predict_with_filters
-from models.ensemble import HybridEnsemble
+from models.train import load_model, ensemble_predict, MODELS_DIR
 from models.features import FeatureBuilder
-from models.train import MODELS_DIR
+
 
 def run(race_netkeiba_id):
     # Get race_id
@@ -41,7 +41,7 @@ def run(race_netkeiba_id):
     
     # Predict using predict_with_filters
     # Actually wait, predict_with_filters needs to write to db? Let's just predict
-    version = "retrain_20260522_2234"
+    version = "retrain_20260523_2115"
     
     print(f"Building features for race_id={db_id}...")
     fb = FeatureBuilder()
@@ -52,18 +52,27 @@ def run(race_netkeiba_id):
         return
 
     print("Predicting...")
-    hybrid = HybridEnsemble.load(version=version)
-    all_model_cols = set(hybrid.fund_feature_cols) | set(hybrid.mkt_feature_cols)
-    for col in all_model_cols:
+    import xgboost as xgb_lib
+    lgb_model, xgb_model, meta = load_model(version=version)
+    feature_cols = meta["feature_cols"]
+    calibrator = meta.get("calibrator")
+    for col in feature_cols:
         if col not in features_df.columns:
             features_df[col] = np.nan
             
-    preds = hybrid.predict(features_df)
-    combined_probs = preds["combined"]
+    X = features_df[feature_cols].values
+    lgb_preds = lgb_model.predict(X)
+    xgb_preds = xgb_model.predict(xgb_lib.DMatrix(X, feature_names=feature_cols))
+    combined_probs = ensemble_predict(lgb_preds, xgb_preds)
     
-    features_df["_unnorm_combined"] = combined_probs
-    race_sums = features_df.groupby("race_id")["_unnorm_combined"].transform("sum")
-    features_df["combined_win"] = features_df["_unnorm_combined"] / race_sums.replace(0, 1)
+    if calibrator is not None:
+        from sklearn.linear_model import LogisticRegression
+        if isinstance(calibrator, LogisticRegression):
+            combined_probs = calibrator.predict_proba(combined_probs.reshape(-1, 1))[:, 1]
+        else:
+            combined_probs = calibrator.predict(combined_probs)
+            
+    features_df["combined_win"] = combined_probs
     
     entry_ids = features_df["entry_id"].tolist()
     with get_session() as session:

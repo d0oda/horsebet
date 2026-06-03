@@ -396,9 +396,9 @@ def step_predict(date: str, version: str, ev_threshold: float,
                 # Proper EV calculation
                 ev = (combined_win * odds) - 1.0 if odds > 0 else 0
                 
-                # Flat sizing (1000 yen default)
-                quarter_kelly = 0
-                recommended_stake = 1000
+                # Assign 200 yen stake ONLY if it meets your criteria (as requested)
+                is_value = ev >= ev_threshold and min_odds <= odds <= max_odds
+                recommended_stake = 200 if is_value else 0
 
                 result_rows.append({
                     "race_id": race_id,
@@ -411,8 +411,8 @@ def step_predict(date: str, version: str, ev_threshold: float,
                     "odds": odds,
                     "market_prob": round(market_prob, 4),
                     "ev": round(ev, 4),
-                    "is_value": ev >= ev_threshold and min_odds <= odds <= max_odds,
-                    "kelly_fraction": quarter_kelly,
+                    "is_value": is_value,
+                    "kelly_fraction": 0,
                     "recommended_stake": recommended_stake
                 })
 
@@ -768,6 +768,15 @@ def step_results(date: str, race_ids: list[str]):
 
     log.info(f"✅ Collected results for {len(finished_ids)} races")
 
+    if finished_ids:
+        log.info("  Updating EWMA Ability Ratings (Elo) for completed races...")
+        try:
+            from models.ability_rating import AbilityRatingEngine
+            engine = AbilityRatingEngine()
+            engine.update_for_date(date)
+        except Exception as e:
+            log.error(f"  ⚠️ Failed to update ability ratings: {e}")
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -782,7 +791,7 @@ Examples:
     )
     parser.add_argument("--date", required=True, help="Race date (YYYY-MM-DD)")
     parser.add_argument("--version", default="retrain_20260511_1818", help="Model version (default: retrain_20260511_1818)")
-    parser.add_argument("--ev-threshold", type=float, default=0.50, help="Min EV for value bet (default: 50%%)")
+    parser.add_argument("--ev-threshold", type=float, default=0.30, help="Min EV for value bet (default: 30%%)")
     parser.add_argument("--max-odds", type=float, default=30.0, help="Max odds filter (default: 30)")
     parser.add_argument("--min-odds", type=float, default=2.0, help="Min odds filter (default: 2.0)")
     parser.add_argument("--skip-scrape", action="store_true", help="Skip race scraping (already in DB)")

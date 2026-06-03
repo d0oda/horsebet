@@ -53,7 +53,7 @@ DEFAULT_RATING = 55.0
 
 # Rating bounds
 RATING_MIN = 20.0
-RATING_MAX = 100.0
+RATING_MAX = 150.0
 
 # Margin text to beaten-lengths conversion
 _MARGIN_TEXT = {
@@ -124,19 +124,20 @@ class AbilityRatingEngine:
         """
         components = {}
 
+        class_val = CLASS_SCORE.get(race_class, 78)
+
         # 1. Base speed figure
         if time_secs and time_secs > 0 and par_time and par_time > 0:
             if par_std and par_std > 0:
-                base = 100 + ((par_time - time_secs) / par_std) * 10
+                base = class_val + ((par_time - time_secs) / max(par_std, 0.5)) * 10.0
             else:
-                # Fallback: use percentage deviation × 100
-                base = 100 + ((par_time - time_secs) / par_time) * 1000
+                # Fallback: use percentage deviation × 1000
+                base = class_val + ((par_time - time_secs) / par_time) * 1000.0
             components["base_speed"] = round(base, 2)
         else:
             # No timing data — approximate from class + position
-            class_base = CLASS_SCORE.get(race_class, 78)
             pos_penalty = max(0, (finish_pos - 1) * 2) if finish_pos else 10
-            base = class_base - pos_penalty
+            base = class_val - pos_penalty
             components["base_speed"] = round(base, 2)
 
         # 2. Class adjustment
@@ -211,7 +212,7 @@ class AbilityRatingEngine:
               AND r.distance IS NOT NULL
               AND r.going IS NOT NULL
             GROUP BY r.course_id, r.distance, r.going
-            HAVING COUNT(*) >= 5
+            HAVING COUNT(*) >= 500
         """
         with get_session() as session:
             rows = session.execute(text(query)).fetchall()
@@ -513,7 +514,7 @@ class AbilityRatingEngine:
                         INSERT INTO horse_rating_history
                             (horse_id, race_id, race_date, rating_before, race_score, rating_after, components)
                         VALUES
-                            (:horse_id, :race_id, :race_date, :rating_before, :race_score, :rating_after, :components::jsonb)
+                            (:horse_id, :race_id, :race_date, :rating_before, :race_score, :rating_after, CAST(:components AS jsonb))
                         ON CONFLICT (horse_id, race_id) DO UPDATE SET
                             rating_before = EXCLUDED.rating_before,
                             race_score = EXCLUDED.race_score,

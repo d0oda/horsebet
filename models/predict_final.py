@@ -33,14 +33,13 @@ log = logging.getLogger("predict_final")
 
 def predict_with_filters(
     race_ids: list[int],
-    model_version: str = "retrain_20260522_2234",
+    model_version: str = "retrain_20260523_2115",
     ev_threshold: float = 0.30,
-    max_odds: float = 30.0,
+    max_odds: float = 100.0,
     min_odds: float = 2.0,
     bankroll: int = 100000,
     kelly_fraction: float = 0.25,
-    flat: bool = False,
-    hybrid=None,
+    flat: bool = True,
 ) -> pd.DataFrame:
     """
     Run predictions with all P1-P3 filters applied.
@@ -50,15 +49,16 @@ def predict_with_filters(
     recommended_stake, is_value_bet.
     """
     from models.features import FeatureBuilder
-    from models.ensemble import HybridEnsemble
+    from models.train import load_model, ensemble_predict
 
-    if hybrid is None:
-        log.info(f"Loading model version: {model_version}")
-        try:
-            hybrid = HybridEnsemble.load(version=model_version)
-        except FileNotFoundError:
-            log.error(f"Model version '{model_version}' not found")
-            return pd.DataFrame()
+    log.info(f"Loading model version: {model_version}")
+    try:
+        lgb_model, xgb_model, meta = load_model(version=model_version)
+        feature_cols = meta["feature_cols"]
+        calibrator = meta.get("calibrator")
+    except FileNotFoundError:
+        log.error(f"Model version '{model_version}' not found")
+        return pd.DataFrame()
 
     all_results = []
     
@@ -77,17 +77,26 @@ def predict_with_filters(
 
         # Ensure all expected feature columns exist (pre-race data may
         # be missing columns like horse_weight_z when weights aren't out).
-        all_model_cols = set(hybrid.fund_feature_cols) | set(hybrid.mkt_feature_cols)
-        for col in all_model_cols:
+        import xgboost as xgb_lib
+        for col in feature_cols:
             if col not in features_df.columns:
                 log.debug(f"Adding missing column '{col}' as NaN")
                 features_df[col] = np.nan
 
-        # Get predictions with adaptive blending + longshot suppression
-        preds = hybrid.predict(features_df)
-        combined = preds["combined"]
-        fundamental = preds["fundamental"]
-        market = preds["market"]
+        X = features_df[feature_cols].values
+        lgb_preds = lgb_model.predict(X)
+        xgb_preds = xgb_model.predict(xgb_lib.DMatrix(X, feature_names=feature_cols))
+        combined = ensemble_predict(lgb_preds, xgb_preds)
+        
+        if calibrator is not None:
+            from sklearn.linear_model import LogisticRegression
+            if isinstance(calibrator, LogisticRegression):
+                combined = calibrator.predict_proba(combined.reshape(-1, 1))[:, 1]
+            else:
+                combined = calibrator.predict(combined)
+
+        fundamental = combined
+        market = combined
 
         # Look up odds and horse names
         with get_session() as session:
@@ -188,13 +197,13 @@ def main():
     )
     parser.add_argument("--race-id", type=int, help="Single race ID to predict")
     parser.add_argument("--date", type=str, help="Predict all races for a date (YYYY-MM-DD)")
-    parser.add_argument("--version", type=str, default="retrain_20260522_2234", help="Model version")
-    parser.add_argument("--ev-threshold", type=float, default=0.05, help="Min EV (default: 5%%)")
-    parser.add_argument("--max-odds", type=float, default=30.0, help="Max odds (default: 30)")
+    parser.add_argument("--version", type=str, default="retrain_20260523_2115", help="Model version")
+    parser.add_argument("--ev-threshold", type=float, default=0.30, help="Min EV (default: 30%%)")
+    parser.add_argument("--max-odds", type=float, default=100.0, help="Max odds (default: 100)")
     parser.add_argument("--min-odds", type=float, default=1.5, help="Min odds (default: 1.5)")
     parser.add_argument("--bankroll", type=int, default=100000, help="Bankroll in yen")
     parser.add_argument("--kelly", type=float, default=0.25, help="Kelly fraction (default: 0.25)")
-    parser.add_argument("--flat", action="store_true", help="Use flat betting (¥1000) instead of Kelly")
+    parser.add_argument("--kelly-betting", action="store_true", help="Use Kelly betting instead of Flat (¥1000) defaults")
     parser.add_argument("--output", type=str, help="Output JSON path")
     parser.add_argument("--value-only", action="store_true", help="Only show value bets")
     args = parser.parse_args()
@@ -226,7 +235,7 @@ def main():
         min_odds=args.min_odds,
         bankroll=args.bankroll,
         kelly_fraction=args.kelly,
-        flat=args.flat,
+        flat=not args.kelly_betting,
     )
 
     if df.empty:
@@ -240,7 +249,7 @@ def main():
     value_bets = df[df["is_value_bet"]]
     total_stake = value_bets["recommended_stake"].sum()
 
-    stake_label = "Flat stake" if args.flat else "Kelly stake"
+    stake_label = "Flat stake" if not args.kelly_betting else "Kelly stake"
     print(f"\n🎯 UmaEdge Predictions — {len(race_ids)} race(s)")
     print(f"   Filters: EV≥{args.ev_threshold:.0%}, odds {args.min_odds}x-{args.max_odds}x")
     print(f"   Value bets: {len(value_bets)} | Total {stake_label}: ¥{total_stake:,}")
