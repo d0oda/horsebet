@@ -27,7 +27,7 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 from sklearn.calibration import CalibratedClassifierCV
-from sklearn.metrics import log_loss, brier_score_loss, roc_auc_score
+from sklearn.metrics import log_loss, brier_score_loss, roc_auc_score, mean_squared_error, mean_absolute_error
 from sklearn.model_selection import GroupKFold
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -88,9 +88,15 @@ def prepare_data(
     # Drop rows with no target
     df = df.dropna(subset=[target]).copy()
 
+    # Categorical columns
+    cat_cols = ["sire_id", "broodmare_sire_id", "going_code", "surface_code", "draw"]
+    for col in cat_cols:
+        if col in df.columns:
+            df[col] = df[col].fillna("Unknown").astype(str).astype("category")
+
     # Get feature columns (everything except IDs and targets)
-    exclude = {"race_id", "entry_id", "target_win", "target_place", "finish_pos", "date", "horse_name"}
-    feature_cols = [c for c in df.columns if c not in exclude and df[c].dtype in [np.float64, np.float32, np.int64, float, int]]
+    exclude = {"race_id", "entry_id", "target_win", "target_place", "target_margin", "finish_pos", "date", "horse_name"}
+    feature_cols = [c for c in df.columns if c not in exclude]
 
     # Exclude specified features (e.g. odds-derived features for odds-free model)
     if exclude_features:
@@ -135,9 +141,9 @@ def prepare_data(
     # LightGBM and XGBoost natively handle NaN values perfectly by finding the optimal
     # split direction. Imputing with medians destroys this capability and risks train/serve skew.
 
-    X_train = train_df[feature_cols].values
+    X_train = train_df[feature_cols]
     y_train = train_df[target].values
-    X_val = val_df[feature_cols].values
+    X_val = val_df[feature_cols]
     y_val = val_df[target].values
 
     log.info(f"Train: {len(X_train)} entries ({len(train_races)} races)")
@@ -204,12 +210,13 @@ def train_xgboost(X_train, y_train, X_val, y_val, feature_cols) -> tuple:
     """Train an XGBoost binary classifier for win prediction."""
     xgb = _get_xgb()
 
-    dtrain = xgb.DMatrix(X_train, label=y_train, feature_names=feature_cols)
-    dval = xgb.DMatrix(X_val, label=y_val, feature_names=feature_cols)
+    dtrain = xgb.DMatrix(X_train, label=y_train, feature_names=feature_cols, enable_categorical=True)
+    dval = xgb.DMatrix(X_val, label=y_val, feature_names=feature_cols, enable_categorical=True)
 
     params = {
         "objective": "binary:logistic",
         "eval_metric": "logloss",
+        "tree_method": "hist",
         "max_depth": 6,
         "learning_rate": 0.05,
         "subsample": 0.8,
@@ -239,8 +246,87 @@ def train_xgboost(X_train, y_train, X_val, y_val, feature_cols) -> tuple:
     return model, y_pred
 
 
+
+def train_lightgbm_regression(X_train, y_train, X_val, y_val, feature_cols) -> tuple:
+    """Train a LightGBM regression model for Beaten Lengths."""
+    lgb = _get_lgb()
+
+    params = {
+        "objective": "regression",
+        "metric": "rmse",
+        "boosting_type": "gbdt",
+        "num_leaves": 63,
+        "learning_rate": 0.05,
+        "feature_fraction": 0.8,
+        "bagging_fraction": 0.8,
+        "bagging_freq": 5,
+        "min_child_samples": 20,
+        "lambda_l1": 0.1,
+        "lambda_l2": 1.0,
+        "verbose": -1,
+        "seed": 42,
+    }
+
+    train_set = lgb.Dataset(X_train, label=y_train, feature_name=feature_cols)
+    val_set = lgb.Dataset(X_val, label=y_val, feature_name=feature_cols, reference=train_set)
+
+    model = lgb.train(
+        params,
+        train_set,
+        num_boost_round=1000,
+        valid_sets=[val_set],
+        callbacks=[lgb.early_stopping(50), lgb.log_evaluation(100)],
+    )
+
+    y_pred = model.predict(X_val)
+    import numpy as np
+    rmse = np.sqrt(mean_squared_error(y_val, y_pred))
+    mae = mean_absolute_error(y_val, y_pred)
+    log.info(f"LightGBM Reg — RMSE: {rmse:.4f}, MAE: {mae:.4f}")
+
+    return model, y_pred
+
+def train_xgboost_regression(X_train, y_train, X_val, y_val, feature_cols) -> tuple:
+    """Train an XGBoost regression model for Beaten Lengths."""
+    xgb = _get_xgb()
+
+    dtrain = xgb.DMatrix(X_train, label=y_train, feature_names=feature_cols, enable_categorical=True)
+    dval = xgb.DMatrix(X_val, label=y_val, feature_names=feature_cols, enable_categorical=True)
+
+    params = {
+        "objective": "reg:squarederror",
+        "eval_metric": "rmse",
+        "tree_method": "hist",
+        "max_depth": 6,
+        "learning_rate": 0.05,
+        "subsample": 0.8,
+        "colsample_bytree": 0.8,
+        "min_child_weight": 10,
+        "reg_alpha": 0.1,
+        "reg_lambda": 1.0,
+        "seed": 42,
+    }
+
+    model = xgb.train(
+        params,
+        dtrain,
+        num_boost_round=1000,
+        evals=[(dval, "val")],
+        early_stopping_rounds=50,
+        verbose_eval=100,
+    )
+
+    y_pred = model.predict(dval)
+    import numpy as np
+    rmse = np.sqrt(mean_squared_error(y_val, y_pred))
+    mae = mean_absolute_error(y_val, y_pred)
+    log.info(f"XGBoost Reg  — RMSE: {rmse:.4f}, MAE: {mae:.4f}")
+
+    return model, y_pred
+
 # ---------------------------------------------------------------------------
 # Learning-to-Rank Training
+
 # ---------------------------------------------------------------------------
 
 def _make_group_array(race_ids: np.ndarray) -> np.ndarray:
@@ -496,6 +582,13 @@ def walk_forward_cv(
         raise ValueError("Walk-forward CV requires a 'date' column")
 
     df = df.dropna(subset=[target]).copy()
+    
+    # Categorical columns
+    cat_cols = ["sire_id", "broodmare_sire_id", "going_code", "surface_code", "draw"]
+    for col in cat_cols:
+        if col in df.columns:
+            df[col] = df[col].fillna("Unknown").astype(str).astype("category")
+
     df = df.sort_values("date")
 
     # Get unique race dates and split into chunks
@@ -532,9 +625,9 @@ def walk_forward_cv(
         # Removed manual NaN imputation here.
         # Tree-based models natively support and optimize missing value splits.
 
-        X_train = train_df[feature_cols].values
+        X_train = train_df[feature_cols]
         y_train = train_df[target].values
-        X_val = val_df[feature_cols].values
+        X_val = val_df[feature_cols]
         y_val = val_df[target].values
 
         if len(X_val) < 10 or len(X_train) < 50:
@@ -580,6 +673,7 @@ def save_model(
     lgb_model, xgb_model, feature_cols, metrics,
     version=None, calibrator=None, odds_free: bool = False,
     calibration_method: str = "none",
+    lgb_reg_model=None, xgb_reg_model=None,
 ):
     """Save trained models, calibrator, and metadata."""
     if version is None:
@@ -593,6 +687,12 @@ def save_model(
 
     # Save XGBoost
     xgb_model.save_model(str(model_dir / "xgb_model.json"))
+    
+    # Save Regression Models
+    if lgb_reg_model is not None:
+        lgb_reg_model.save_model(str(model_dir / "lgb_reg_model.txt"))
+    if xgb_reg_model is not None:
+        xgb_reg_model.save_model(str(model_dir / "xgb_reg_model.json"))
 
     # Save calibrator
     if calibrator is not None:
@@ -644,7 +744,18 @@ def load_model(version: str = "latest"):
     with open(model_dir / "metadata.json") as f:
         meta = json.load(f)
 
+    # Load regression models if they exist
+    lgb_reg_model = None
+    xgb_reg_model = None
+    if (model_dir / "lgb_reg_model.txt").exists():
+        lgb_reg_model = lgb.Booster(model_file=str(model_dir / "lgb_reg_model.txt"))
+    if (model_dir / "xgb_reg_model.json").exists():
+        xgb_reg_model = xgb.Booster()
+        xgb_reg_model.load_model(str(model_dir / "xgb_reg_model.json"))
+
     meta["calibrator"] = calibrator
+    meta["lgb_reg_model"] = lgb_reg_model
+    meta["xgb_reg_model"] = xgb_reg_model
     log.info(f"📦 Loaded model version: {meta['version']} (odds_free={meta.get('odds_free', False)})")
     return lgb_model, xgb_model, meta
 
@@ -665,11 +776,35 @@ def predict_race(race_features: pd.DataFrame, version: str = "latest") -> pd.Dat
     feature_cols = meta["feature_cols"]
 
     # Align features (pass NaNs directly, models handle natively)
-    X = race_features[feature_cols].values
+    for col in ["sire_id", "broodmare_sire_id", "going_code", "surface_code", "draw"]:
+        if col in race_features.columns:
+            race_features[col] = race_features[col].fillna("Unknown").astype(str).astype("category")
+
+    import numpy as np
+    missing_cols = set(feature_cols) - set(race_features.columns)
+    for col in missing_cols:
+        race_features[col] = np.nan
+
+    X = race_features[feature_cols]
 
     lgb_probs = lgb_model.predict(X)
-    xgb_probs = xgb_model.predict(xgb.DMatrix(X, feature_names=feature_cols))
+    xgb_probs = xgb_model.predict(xgb.DMatrix(X, feature_names=feature_cols, enable_categorical=True))
     ensemble_probs = ensemble_predict(lgb_probs, xgb_probs)
+    
+    # Regression blend
+    lgb_reg_model = meta.get("lgb_reg_model")
+    xgb_reg_model = meta.get("xgb_reg_model")
+    if lgb_reg_model is not None and xgb_reg_model is not None:
+        lgb_reg_preds = lgb_reg_model.predict(X)
+        xgb_reg_preds = xgb_reg_model.predict(xgb.DMatrix(X, feature_names=feature_cols, enable_categorical=True))
+        ensemble_reg_preds = ensemble_predict(lgb_reg_preds, xgb_reg_preds)
+        
+        # Convert margin to prob proxy (negative margin so lower is better)
+        race_ids = race_features["race_id"].values
+        # Assuming scores_to_probs is available in models.train, if not we inline a softmax
+        # But scores_to_probs is defined in models.train
+        reg_probs = scores_to_probs(-ensemble_reg_preds, race_ids)
+        ensemble_probs = 0.8 * ensemble_probs + 0.2 * reg_probs
 
     calibrator = meta.get("calibrator")
     if calibrator is not None:
@@ -744,6 +879,12 @@ def main():
         log.info("No cache found. Building features from scratch...")
         fb = FeatureBuilder()
         df = fb.build_features_all()
+        if not df.empty:
+            log.info("Saving features to cache data/features.parquet...")
+            os.makedirs("data", exist_ok=True)
+            if "date" in df.columns:
+                df["date"] = df["date"].astype(str)
+            df.to_parquet("data/features.parquet", index=False)
 
     if df.empty:
         log.error("No training data — run the scraper first")
@@ -756,11 +897,11 @@ def main():
         log.info("\n--- Walk-Forward Cross-Validation ---")
         # Prepare feature cols for CV (need to compute once)
         _, _, _, _, wf_feature_cols, _ = prepare_data(
-            df.copy(), target="target_win", val_date=args.val_date,
+            df.copy(), target="target_place", val_date=args.val_date,
             exclude_features=exclude,
         )
         cv_results = walk_forward_cv(
-            df.copy(), wf_feature_cols, target="target_win",
+            df.copy(), wf_feature_cols, target="target_place",
             n_folds=args.n_folds,
         )
         if not cv_results:
@@ -768,7 +909,7 @@ def main():
 
     # --- Final training ---
     X_train, y_train, X_val, y_val, feature_cols, race_ids_val = prepare_data(
-        df, target="target_win", val_date=args.val_date, test_date=args.test_date,
+        df, target="target_place", val_date=args.val_date, test_date=args.test_date,
         exclude_features=exclude,
     )
 
@@ -776,16 +917,39 @@ def main():
         log.error(f"Not enough training data ({len(X_train)} entries). Need at least 50.")
         return
 
-    # Train models
+    # Train binary classifiers
     log.info("\n--- Training LightGBM ---")
     lgb_model, lgb_preds = train_lightgbm(X_train, y_train, X_val, y_val, feature_cols)
 
     log.info("\n--- Training XGBoost ---")
     xgb_model, xgb_preds = train_xgboost(X_train, y_train, X_val, y_val, feature_cols)
+    
+    # Train regression models on Beaten Lengths (target_margin)
+    log.info("\n--- Training Regression Models (Beaten Lengths) ---")
+    X_train_reg, y_train_reg, X_val_reg, y_val_reg, _, race_ids_val_reg = prepare_data(
+        df, target="target_margin", val_date=args.val_date, test_date=args.test_date,
+        exclude_features=exclude,
+    )
+    if len(X_train_reg) > 50:
+        lgb_reg_model, lgb_reg_preds = train_lightgbm_regression(X_train_reg, y_train_reg, X_val_reg, y_val_reg, feature_cols)
+        xgb_reg_model, xgb_reg_preds = train_xgboost_regression(X_train_reg, y_train_reg, X_val_reg, y_val_reg, feature_cols)
+        ensemble_reg_preds = ensemble_predict(lgb_reg_preds, xgb_reg_preds)
+        
+        # Convert regression margins to probabilities (lower margin = higher prob)
+        reg_probs = scores_to_probs(-ensemble_reg_preds, race_ids_val_reg)
+    else:
+        log.warning("Not enough data to train regression models.")
+        reg_probs = None
 
-    # Ensemble
+    # Ensemble (Binary Classification + Regression)
     log.info("\n--- Ensemble ---")
     ensemble_preds = ensemble_predict(lgb_preds, xgb_preds)
+    
+    # If reg_probs is available and aligns perfectly (no rows dropped differently), blend them
+    if reg_probs is not None and len(reg_probs) == len(ensemble_preds):
+        log.info("Blending Binary classifiers (80%) and Regression probabilities (20%)")
+        ensemble_preds = 0.8 * ensemble_preds + 0.2 * reg_probs
+
 
     # Calibration
     calibrator = None
@@ -795,7 +959,7 @@ def main():
         lgb_train_preds = lgb_model.predict(X_train)
         import xgboost as xgb_lib
         xgb_train_preds = xgb_model.predict(
-            xgb_lib.DMatrix(X_train, feature_names=feature_cols)
+            xgb_lib.DMatrix(X_train, feature_names=feature_cols, enable_categorical=True)
         )
         ensemble_train_preds = ensemble_predict(lgb_train_preds, xgb_train_preds)
 
@@ -809,12 +973,18 @@ def main():
 
     # Save
     version_suffix = "odds_free" if odds_free else None
+    # Extract regression models from local scope if they exist
+    lgb_reg_model_save = locals().get("lgb_reg_model", None)
+    xgb_reg_model_save = locals().get("xgb_reg_model", None)
+
     version = save_model(
         lgb_model, xgb_model, feature_cols, metrics,
         version=version_suffix,
         calibrator=calibrator,
         odds_free=odds_free,
         calibration_method=args.calibration,
+        lgb_reg_model=lgb_reg_model_save,
+        xgb_reg_model=xgb_reg_model_save,
     )
     log.info(f"\n✅ Training complete. Model version: {version}")
 

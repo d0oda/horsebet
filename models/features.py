@@ -173,6 +173,8 @@ class FeatureBuilder:
                 h.birth_year,
                 h.netkeiba_id AS horse_nk_id,
                 h.trainer_id,
+                h.sire_id,
+                h.broodmare_sire_id,
                 j.name_jp AS jockey_name,
                 res.finish_pos,
                 res.margin,
@@ -2048,6 +2050,10 @@ class FeatureBuilder:
         # Horse attributes
         features["sex_code"] = SEX_MAP.get(row.get("sex"), np.nan)
 
+        # Bloodline IDs (Categorical)
+        features["sire_id"] = row.get("sire_id", np.nan)
+        features["broodmare_sire_id"] = row.get("broodmare_sire_id", np.nan)
+
         # Age
         if row.get("birth_year") and row.get("date"):
             try:
@@ -2314,6 +2320,14 @@ class FeatureBuilder:
         else:
             history_df = pd.DataFrame(columns=["horse_id", "date", "jockey_id", "trainer_id", "course_id"])
 
+        # Precompute winner times and second-place times for target_margin regression
+        # Winner time is the min time. Second place time is the 2nd min time.
+        winner_times = race_df[race_df["finish_pos"] == 1].groupby("race_id")["time_secs"].min()
+        winner_times_dict = winner_times.to_dict()
+        
+        second_times = race_df[race_df["finish_pos"] == 2].groupby("race_id")["time_secs"].min()
+        second_times_dict = second_times.to_dict()
+
         total = len(race_df)
         log.info(f"Building features for {total} entries...")
         feature_rows = []
@@ -2340,6 +2354,25 @@ class FeatureBuilder:
                 features["target_win"] = 1 if row["finish_pos"] == 1 else 0
                 features["target_place"] = 1 if row["finish_pos"] <= 3 else 0
                 features["finish_pos"] = row["finish_pos"]
+                
+                # Regression target for Beaten Lengths
+                if row.get("time_secs") is not None and row["time_secs"] > 0:
+                    rid = row["race_id"]
+                    # If horse is winner, margin is relative to 2nd place (negative). Otherwise relative to winner (positive).
+                    if row["finish_pos"] == 1:
+                        second_time = second_times_dict.get(rid)
+                        if second_time and second_time > 0:
+                            features["target_margin"] = (row["time_secs"] - second_time) * 6
+                        else:
+                            features["target_margin"] = 0.0 # Fallback if no 2nd place
+                    else:
+                        winner_time = winner_times_dict.get(rid)
+                        if winner_time and winner_time > 0:
+                            features["target_margin"] = (row["time_secs"] - winner_time) * 6
+                        else:
+                            features["target_margin"] = np.nan
+                else:
+                    features["target_margin"] = np.nan
 
             # Static features
             features.update(self._static_features(row))
@@ -2602,7 +2635,7 @@ class FeatureBuilder:
         # Per-race z-score normalisation
         numeric_cols = [
             c for c in df.columns
-            if c not in ["race_id", "entry_id", "target_win", "target_place", "finish_pos", "date", "horse_name"]
+            if c not in ["race_id", "entry_id", "target_win", "target_place", "target_margin", "finish_pos", "date", "horse_name", "sire_id", "broodmare_sire_id", "going_code", "surface_code", "draw"]
             and df[c].dtype in [np.float64, np.float32, np.int64, float, int]
         ]
         df = self.normalise_per_race(df, numeric_cols)
@@ -2631,7 +2664,7 @@ class FeatureBuilder:
     @staticmethod
     def get_feature_columns(df: pd.DataFrame) -> list[str]:
         """Return the list of feature columns (excluding IDs and targets)."""
-        exclude = {"race_id", "entry_id", "target_win", "target_place", "finish_pos", "date", "horse_name"}
+        exclude = {"race_id", "entry_id", "target_win", "target_place", "target_margin", "finish_pos", "date", "horse_name"}
         return [c for c in df.columns if c not in exclude]
 
 
