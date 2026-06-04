@@ -41,7 +41,7 @@ def run(race_netkeiba_id):
     
     # Predict using predict_with_filters
     # Actually wait, predict_with_filters needs to write to db? Let's just predict
-    version = "retrain_20260523_2115"
+    version = "20260604_223536"
     
     print(f"Building features for race_id={db_id}...")
     fb = FeatureBuilder()
@@ -64,6 +64,19 @@ def run(race_netkeiba_id):
     lgb_preds = lgb_model.predict(X)
     xgb_preds = xgb_model.predict(xgb_lib.DMatrix(X, feature_names=feature_cols))
     combined_probs = ensemble_predict(lgb_preds, xgb_preds)
+    
+    # Regression blend
+    lgb_reg_model = meta.get("lgb_reg_model")
+    xgb_reg_model = meta.get("xgb_reg_model")
+    if lgb_reg_model is not None and xgb_reg_model is not None:
+        lgb_reg_preds = lgb_reg_model.predict(X)
+        xgb_reg_preds = xgb_reg_model.predict(xgb_lib.DMatrix(X, feature_names=feature_cols))
+        ensemble_reg_preds = ensemble_predict(lgb_reg_preds, xgb_reg_preds)
+        
+        from models.train import scores_to_probs
+        race_ids_for_probs = features_df["race_id"].values
+        reg_probs = scores_to_probs(-ensemble_reg_preds, race_ids_for_probs)
+        combined_probs = 0.8 * combined_probs + 0.2 * reg_probs
     
     if calibrator is not None:
         from sklearn.linear_model import LogisticRegression

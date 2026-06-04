@@ -338,6 +338,19 @@ def step_predict(date: str, version: str, ev_threshold: float,
                 lgb_probs = lgb_model.predict(X)
                 xgb_probs = xgb_model.predict(xgb.DMatrix(X, feature_names=feature_cols))
                 model_probs = ensemble_predict(lgb_probs, xgb_probs)
+                
+                # Regression blend
+                lgb_reg_model = meta.get("lgb_reg_model")
+                xgb_reg_model = meta.get("xgb_reg_model")
+                if lgb_reg_model is not None and xgb_reg_model is not None:
+                    lgb_reg_preds = lgb_reg_model.predict(X)
+                    xgb_reg_preds = xgb_reg_model.predict(xgb.DMatrix(X, feature_names=feature_cols))
+                    ensemble_reg_preds = ensemble_predict(lgb_reg_preds, xgb_reg_preds)
+                    
+                    from models.train import scores_to_probs
+                    race_ids_for_probs = features_df["race_id"].values
+                    reg_probs = scores_to_probs(-ensemble_reg_preds, race_ids_for_probs)
+                    model_probs = 0.8 * model_probs + 0.2 * reg_probs
 
                 calibrator = meta.get("calibrator")
                 if calibrator is not None:
@@ -790,7 +803,7 @@ Examples:
         """,
     )
     parser.add_argument("--date", required=True, help="Race date (YYYY-MM-DD)")
-    parser.add_argument("--version", default="retrain_20260511_1818", help="Model version (default: retrain_20260511_1818)")
+    parser.add_argument("--version", default="20260604_223536", help="Model version (default: 20260604_223536)")
     parser.add_argument("--ev-threshold", type=float, default=0.30, help="Min EV for value bet (default: 30%%)")
     parser.add_argument("--max-odds", type=float, default=30.0, help="Max odds filter (default: 30)")
     parser.add_argument("--min-odds", type=float, default=2.0, help="Min odds filter (default: 2.0)")

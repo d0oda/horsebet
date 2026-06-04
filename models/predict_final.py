@@ -33,7 +33,7 @@ log = logging.getLogger("predict_final")
 
 def predict_with_filters(
     race_ids: list[int],
-    model_version: str = "retrain_20260523_2115",
+    model_version: str = "20260604_223536",
     ev_threshold: float = 0.30,
     max_odds: float = 100.0,
     min_odds: float = 2.0,
@@ -87,6 +87,19 @@ def predict_with_filters(
         lgb_preds = lgb_model.predict(X)
         xgb_preds = xgb_model.predict(xgb_lib.DMatrix(X, feature_names=feature_cols))
         combined = ensemble_predict(lgb_preds, xgb_preds)
+        
+        # Regression blend
+        lgb_reg_model = meta.get("lgb_reg_model")
+        xgb_reg_model = meta.get("xgb_reg_model")
+        if lgb_reg_model is not None and xgb_reg_model is not None:
+            lgb_reg_preds = lgb_reg_model.predict(X)
+            xgb_reg_preds = xgb_reg_model.predict(xgb_lib.DMatrix(X, feature_names=feature_cols))
+            ensemble_reg_preds = ensemble_predict(lgb_reg_preds, xgb_reg_preds)
+            
+            from models.train import scores_to_probs
+            race_ids_for_probs = features_df["race_id"].values
+            reg_probs = scores_to_probs(-ensemble_reg_preds, race_ids_for_probs)
+            combined = 0.8 * combined + 0.2 * reg_probs
         
         if calibrator is not None:
             from sklearn.linear_model import LogisticRegression
@@ -197,7 +210,7 @@ def main():
     )
     parser.add_argument("--race-id", type=int, help="Single race ID to predict")
     parser.add_argument("--date", type=str, help="Predict all races for a date (YYYY-MM-DD)")
-    parser.add_argument("--version", type=str, default="retrain_20260523_2115", help="Model version")
+    parser.add_argument("--version", type=str, default="20260604_223536", help="Model version")
     parser.add_argument("--ev-threshold", type=float, default=0.30, help="Min EV (default: 30%%)")
     parser.add_argument("--max-odds", type=float, default=100.0, help="Max odds (default: 100)")
     parser.add_argument("--min-odds", type=float, default=1.5, help="Min odds (default: 1.5)")

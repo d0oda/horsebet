@@ -7,7 +7,7 @@ from sqlalchemy import text
 import pandas as pd
 import numpy as np
 
-def run_fast(date_str, fb, version="retrain_20260523_2115", ev_threshold=0.2):
+def run_fast(date_str, fb, version="20260604_223536", ev_threshold=0.2):
     with get_session() as session:
         rows = session.execute(
             text("SELECT id FROM horsebet.races WHERE date = :d ORDER BY course_id, race_number"),
@@ -46,6 +46,19 @@ def run_fast(date_str, fb, version="retrain_20260523_2115", ev_threshold=0.2):
         import xgboost as xgb
         xgb_probs = xgb_model.predict(xgb.DMatrix(X, feature_names=feature_cols))
         model_probs = ensemble_predict(lgb_probs, xgb_probs)
+        
+        # Regression blend
+        lgb_reg_model = meta.get("lgb_reg_model")
+        xgb_reg_model = meta.get("xgb_reg_model")
+        if lgb_reg_model is not None and xgb_reg_model is not None:
+            lgb_reg_preds = lgb_reg_model.predict(X)
+            xgb_reg_preds = xgb_reg_model.predict(xgb.DMatrix(X, feature_names=feature_cols))
+            ensemble_reg_preds = ensemble_predict(lgb_reg_preds, xgb_reg_preds)
+            
+            from models.train import scores_to_probs
+            race_ids_for_probs = features_df["race_id"].values
+            reg_probs = scores_to_probs(-ensemble_reg_preds, race_ids_for_probs)
+            model_probs = 0.8 * model_probs + 0.2 * reg_probs
         
         calibrator = meta.get("calibrator")
         if calibrator is not None:
@@ -108,7 +121,7 @@ def run_fast(date_str, fb, version="retrain_20260523_2115", ev_threshold=0.2):
 
 if __name__ == "__main__":
     import sys
-    version = sys.argv[1] if len(sys.argv) > 1 else "retrain_20260523_2115"
+    version = sys.argv[1] if len(sys.argv) > 1 else "20260604_223536"
     ev_threshold = float(sys.argv[2]) if len(sys.argv) > 2 else 0.30
 
     dates = [

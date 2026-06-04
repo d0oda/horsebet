@@ -2284,6 +2284,10 @@ class FeatureBuilder:
             horse_ids = None
             jockey_ids = None
             trainer_ids = None
+            if race_id is not None or race_ids is not None:
+                horse_ids = race_df["horse_id"].unique().tolist()
+                jockey_ids = race_df["jockey_id"].dropna().unique().tolist()
+                trainer_ids = race_df["trainer_id"].dropna().unique().tolist()
 
             history_df = self._load_horse_history(
                 horse_ids=horse_ids,
