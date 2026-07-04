@@ -77,5 +77,15 @@
     "n_samples": 40430,
     "calibration_error": 0.0,
     "notes": ""
+  },
+  {
+    "version": "retrain_20260704_0909",
+    "timestamp": "2026-07-04T09:09:46.313724",
+    "auc": 0.84221,
+    "log_loss": 0,
+    "brier": 0.057175,
+    "n_samples": 117382,
+    "calibration_error": 0.0,
+    "notes": ""
   }
 ]

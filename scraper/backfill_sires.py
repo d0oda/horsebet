@@ -82,10 +82,18 @@ def parse_sire_name(soup: BeautifulSoup) -> Optional[str]:
             if first_cell:
                 link = first_cell.find("a")
                 if link:
-                    return link.get_text(strip=True)
-                text_content = first_cell.get_text(strip=True)
-                if text_content:
-                    return text_content
+                    name = link.get_text(strip=True)
+                else:
+                    name = first_cell.get_text(strip=True)
+                    
+                if name:
+                    name = re.sub(r"\([^)]+\)$", "", name).strip()
+                    match = re.search(r"([A-Za-z\s\'\.-]+)$", name)
+                    if match and match.start() > 0:
+                        prefix = name[:match.start()].strip()
+                        if prefix:
+                            return prefix
+                    return name
     return None
 
 
@@ -107,6 +115,56 @@ def get_horses_missing_sire(limit: Optional[int] = None) -> list[dict]:
     return [{"id": r[0], "netkeiba_id": r[1], "name_jp": r[2]} for r in rows]
 
 
+_sire_lookup: dict[str, int] = {}
+_sire_lookup_loaded = False
+_db_lock = threading.Lock()
+
+def _load_sire_lookup():
+    global _sire_lookup, _sire_lookup_loaded
+    if _sire_lookup_loaded:
+        return
+    try:
+        with get_session() as session:
+            rows = session.execute(text("SELECT id, name_jp, name FROM horses")).fetchall()
+            for hid, name_jp, name in rows:
+                if name_jp and name_jp not in _sire_lookup:
+                    _sire_lookup[name_jp] = hid
+                if name and name not in _sire_lookup:
+                    _sire_lookup[name] = hid
+    except Exception as e:
+        log.error(f"Failed to load sire lookup: {e}")
+    _sire_lookup_loaded = True
+
+def _find_or_create_sire_horse(sire_name: str) -> Optional[int]:
+    if sire_name in _sire_lookup:
+        return _sire_lookup[sire_name]
+    try:
+        with get_session() as session:
+            row = session.execute(
+                text("SELECT id FROM horses WHERE name = :n OR name_jp = :n ORDER BY id LIMIT 1"),
+                {"n": sire_name},
+            ).fetchone()
+            if row:
+                _sire_lookup[sire_name] = row[0]
+                return row[0]
+    except Exception:
+        pass
+    try:
+        with get_session() as session:
+            result = session.execute(
+                text(
+                    "INSERT INTO horses (name, name_jp, sire_name, netkeiba_id) "
+                    "VALUES (:name, :name, :name, :nk) RETURNING id"
+                ),
+                {"name": sire_name, "nk": f"sire_{sire_name[:40]}"},
+            )
+            new_id = result.fetchone()[0]
+            _sire_lookup[sire_name] = new_id
+            return new_id
+    except Exception as e:
+        log.warning(f"  Failed to create placeholder for {sire_name}: {e}")
+        return None
+
 def _process_one_horse(horse: dict, idx: int, total: int, dry_run: bool) -> str:
     """Process a single horse. Returns 'updated', 'failed', or 'skipped'."""
     nk_id = horse["netkeiba_id"]
@@ -126,12 +184,16 @@ def _process_one_horse(horse: dict, idx: int, total: int, dry_run: bool) -> str:
         log.info(f"  [{idx}/{total}] 🔍 {horse['name_jp']} → sire: {sire_name} (dry run)")
         return "updated"
 
+    with _db_lock:
+        sire_id = _find_or_create_sire_horse(sire_name)
+
     # Update DB
-    with get_session() as session:
-        session.execute(
-            text("UPDATE horses SET sire_name = :sire WHERE id = :hid"),
-            {"sire": sire_name, "hid": horse["id"]},
-        )
+    with _db_lock:
+        with get_session() as session:
+            session.execute(
+                text("UPDATE horses SET sire_name = :sire, sire_id = :sid WHERE id = :hid"),
+                {"sire": sire_name, "sid": sire_id, "hid": horse["id"]},
+            )
     log.info(f"  [{idx}/{total}] ✅ {horse['name_jp']} → sire: {sire_name}")
     return "updated"
 
@@ -139,6 +201,7 @@ def _process_one_horse(horse: dict, idx: int, total: int, dry_run: bool) -> str:
 def backfill_sires(limit: Optional[int] = None, dry_run: bool = False,
                    workers: int = 3):
     """Main backfill function with thread-pool concurrency."""
+    _load_sire_lookup()
     horses = get_horses_missing_sire(limit)
     total = len(horses)
     log.info(f"Found {total} horses missing sire_name (using {workers} workers)")

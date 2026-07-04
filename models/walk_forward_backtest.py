@@ -61,7 +61,7 @@ def run_walk_forward_backtest(n_folds=5, ev_threshold=0.10, use_cache=False, use
         log.info(f"Filtered {before} -> {len(df)} entries.")
 
     target = "target_win"
-    exclude = {"race_id", "entry_id", "target_win", "target_place", "finish_pos", "date", "horse_name"}
+    exclude = {"race_id", "entry_id", "target_win", "target_place", "target_margin", "finish_pos", "date", "horse_name"}
     feature_cols = [c for c in df.columns if c not in exclude and df[c].dtype in [np.float64, np.float32, np.int64, float, int]]
     
     valid_cols = [c for c in feature_cols if not df[c].isna().all()]

@@ -24,7 +24,6 @@ def get_may_races():
     return all_race_ids
 
 def build_features(race_ids):
-    # Batch feature building day by day
     fb = FeatureBuilder()
     
     with get_session() as session:
@@ -93,7 +92,9 @@ def get_raw_model_probs(features_df, model_version):
         
     return prob_cls, prob_reg, prob_rnk, calibrator
 
-def apply_blend(features_df, prob_cls, prob_reg, prob_rnk, calibrator, w_c, w_r, w_k):
+def apply_blend_and_normalize(features_df, prob_cls, prob_reg, prob_rnk, calibrator):
+    # Hardcode Goldilocks blend
+    w_c, w_r, w_k = 0.7, 0.2, 0.1
     combined = w_c * prob_cls + w_r * prob_reg + w_k * prob_rnk
     
     if calibrator is not None:
@@ -130,77 +131,67 @@ def main():
     features_df = features_df.merge(entries, on="entry_id", how="left")
     features_df["odds"] = features_df["odds_win_actual"].fillna(0)
     
-    # Auto-detect latest models
-    from pathlib import Path
-    import os
-    versions = [d for d in Path("models/saved").iterdir() if d.is_dir() and d.name.startswith("202")]
-    latest_version = sorted(versions, key=lambda x: x.name)[-1].name
-    
-    print(f"Loading latest model: {latest_version}")
+    latest_version = "20260605_113654"
+    print(f"Loading model: {latest_version}")
     prob_cls, prob_reg, prob_rnk, calibrator = get_raw_model_probs(features_df, latest_version)
     
-    weights = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+    combined_probs = apply_blend_and_normalize(features_df, prob_cls, prob_reg, prob_rnk, calibrator)
+    features_df["prob"] = combined_probs
+    features_df["ev"] = (features_df["prob"] * features_df["odds"]) - 1.0
+    
+    ev_thresholds = [0.10, 0.20, 0.30, 0.40, 0.50]
+    max_odds_list = [20.0, 30.0, 40.0, 60.0, 80.0, 100.0]
+    min_odds = 1.5
+    flat_stake = 1000
+    
     results = []
     
-    from sklearn.metrics import log_loss, brier_score_loss, roc_auc_score
-    y_true = (features_df["finish_pos_actual"] == 1).astype(int)
-    
-    for w_c in weights:
-        for w_r in weights:
-            w_k = round(1.0 - w_c - w_r, 2)
-            if w_k < 0.0:
-                continue
+    for ev_t in ev_thresholds:
+        for mo in max_odds_list:
+            
+            # Identify valid bets
+            valid_mask = (features_df["ev"] >= ev_t) & (features_df["odds"] >= min_odds) & (features_df["odds"] <= mo)
+            valid_bets = features_df[valid_mask].copy()
+            
+            # Enforce max 1 bet per race
+            if not valid_bets.empty:
+                best_idx = valid_bets.groupby("race_id")["ev"].idxmax()
+                final_bets = valid_bets.loc[best_idx]
+            else:
+                final_bets = valid_bets
                 
-            combined_probs = apply_blend(features_df, prob_cls, prob_reg, prob_rnk, calibrator, w_c, w_r, w_k)
-            features_df["prob"] = combined_probs
-            
-            logloss = log_loss(y_true, combined_probs)
-            brier = brier_score_loss(y_true, combined_probs)
-            auc = roc_auc_score(y_true, combined_probs)
-            
-            # Simple ROI at EV > 0.30
-            ev_thresh = 0.30
-            mo = 100.0
-            ev = (features_df["prob"] * features_df["odds"]) - 1.0
-            bets_idx = (ev >= ev_thresh) & (features_df["odds"] >= 1.5) & (features_df["odds"] <= mo)
-            bets = features_df[bets_idx]
-            
-            n_bets = len(bets)
+            n_bets = len(final_bets)
             roi = 0.0
             profit = 0.0
+            hit_rate = 0.0
+            
             if n_bets > 0:
-                winners = bets[bets["finish_pos_actual"] == 1]
-                total_staked = n_bets * 1000
-                total_returned = winners["odds_win_actual"].sum() * 1000
+                winners = final_bets[final_bets["finish_pos_actual"] == 1]
+                n_winners = len(winners)
+                hit_rate = n_winners / n_bets
+                total_staked = n_bets * flat_stake
+                total_returned = winners["odds_win_actual"].sum() * flat_stake
                 profit = total_returned - total_staked
                 roi = profit / total_staked
                 
             results.append({
-                "W_Cls": w_c,
-                "W_Reg": w_r,
-                "W_Rnk": w_k,
-                "LogLoss": logloss,
-                "Brier": brier,
-                "AUC": auc,
-                "ROI": roi,
+                "EV_Thresh": ev_t,
+                "Max_Odds": mo,
                 "Bets": n_bets,
+                "Win%": round(hit_rate * 100, 1),
+                "ROI%": round(roi * 100, 2),
                 "Profit": profit
             })
             
     res_df = pd.DataFrame(results)
-    res_df = res_df.sort_values("LogLoss")
     
     print("\n" + "="*80)
-    print("TOP 10 BLENDS BY LOGLOSS")
+    print("GRID SEARCH: EV THRESHOLDS & MAX ODDS (1 Bet Per Race, ¥1k Flat Stake)")
     print("="*80)
-    print(res_df.head(10).to_string(index=False))
+    print(res_df.sort_values("Profit", ascending=False).to_string(index=False))
     
-    print("\n" + "="*80)
-    print("TOP 10 BLENDS BY ROI")
-    print("="*80)
-    print(res_df.sort_values("ROI", ascending=False).head(10).to_string(index=False))
-    
-    res_df.to_csv("grid_results.csv", index=False)
+    res_df.to_csv("grid_results_thresholds.csv", index=False)
+    print("\nSaved to grid_results_thresholds.csv")
     
 if __name__ == "__main__":
     main()

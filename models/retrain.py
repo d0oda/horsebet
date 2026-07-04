@@ -109,7 +109,7 @@ def run_retrain(
 
     # Step 4: Full retrain on all data
     log.info("Step 4: Training final model...")
-    X_train, y_train, X_val, y_val, feature_cols, race_ids_val = prepare_data(df)
+    X_train, y_train, X_val, y_val, feature_cols, race_ids_val, race_ids_train = prepare_data(df)
 
     lgb_model, lgb_preds = train_lightgbm(X_train, y_train, X_val, y_val, feature_cols)
     xgb_model, xgb_preds = train_xgboost(X_train, y_train, X_val, y_val, feature_cols)
@@ -124,7 +124,7 @@ def run_retrain(
         import xgboost as xgb
         # Generate raw predictions on training set for calibrator to fit
         lgb_preds_train = lgb_model.predict(X_train)
-        xgb_preds_train = xgb_model.predict(xgb.DMatrix(X_train, feature_names=feature_cols))
+        xgb_preds_train = xgb_model.predict(xgb.DMatrix(X_train, feature_names=feature_cols, enable_categorical=True))
         ensemble_preds_train = ensemble_predict(lgb_preds_train, xgb_preds_train)
 
         ensemble_preds, calibrator = calibrate_predictions(

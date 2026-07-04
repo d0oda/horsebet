@@ -237,7 +237,7 @@ def main():
         return
 
     log.info("Preparing data...")
-    X_train, y_train, X_val, y_val, feature_cols, _ = prepare_data(
+    X_train, y_train, X_val, y_val, feature_cols, _, _ = prepare_data(
         df, target="target_win", val_date="2025-01-01"
     )
 

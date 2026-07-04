@@ -409,16 +409,23 @@ def run_full_backtest(
     max_odds: float = 30.0,
     min_odds: float = 2.0,
     use_kelly: bool = True,
+    use_cache: bool = False,
 ):
     """
     Run a full backtest using saved model predictions on historical data.
     """
     from models.features import FeatureBuilder
     from models.train import predict_race, load_model
+    import os
+    import pandas as pd
 
-    log.info("Building features for all historical races...")
-    fb = FeatureBuilder()
-    features_df = fb.build_features_all()
+    if use_cache and os.path.exists("data/features.parquet"):
+        log.info("Loading features from data/features.parquet...")
+        features_df = pd.read_parquet("data/features.parquet")
+    else:
+        log.info("Building features for all historical races...")
+        fb = FeatureBuilder()
+        features_df = fb.build_features_all()
 
     if features_df.empty:
         log.error("No data to backtest. Run the scraper first.")
@@ -430,9 +437,19 @@ def run_full_backtest(
 
     import xgboost as xgb
 
-    X = features_df[feature_cols].values
+    X = features_df[feature_cols].copy()
+    
+    # Ensure correct types for models
+    categorical_features = ["draw", "surface_code", "going_code", "sire_id", "broodmare_sire_id"]
+    for col in feature_cols:
+        if col in categorical_features or X[col].dtype.name == "category" or X[col].dtype == object:
+            X[col] = X[col].fillna("Unknown").astype(str).astype("category")
+        elif X[col].dtype == bool:
+            X[col] = X[col].astype(int)
+            
+    # X_vals = X.values if hasattr(X, "values") else X
     lgb_preds = lgb_model.predict(X)
-    xgb_preds = xgb_model.predict(xgb.DMatrix(X, feature_names=feature_cols))
+    xgb_preds = xgb_model.predict(xgb.DMatrix(X, feature_names=feature_cols, enable_categorical=True))
     features_df["win_prob"] = 0.55 * lgb_preds + 0.45 * xgb_preds
 
     # Merge with odds and results
@@ -495,6 +512,8 @@ def main():
                         help="Min odds to bet on (default: 1.0)")
     parser.add_argument("--flat-stake", action="store_true",
                         help="Use flat staking instead of Kelly")
+    parser.add_argument("--use-cache", action="store_true",
+                        help="Use cached features from data/features.parquet")
     args = parser.parse_args()
 
     run_full_backtest(
@@ -505,6 +524,7 @@ def main():
         max_odds=args.max_odds,
         min_odds=args.min_odds,
         use_kelly=not args.flat_stake,
+        use_cache=args.use_cache,
     )
 
 

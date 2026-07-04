@@ -66,13 +66,16 @@ _sire_lookup_loaded = False
 _SKIP_NAMES = {"Pedigree", "Progeny", "Son/Daughter", ">> Detail", "Detail"}
 
 
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
 def _fetch(url: str, retries: int = 3) -> Optional[BeautifulSoup]:
     """Fetch a URL with retries and polite delay."""
     for attempt in range(retries):
         try:
             delay = random.uniform(0.3, 0.8)
             time.sleep(delay)
-            resp = requests.get(url, headers=HEADERS, timeout=30)
+            resp = requests.get(url, headers=HEADERS, timeout=30, verify=False)
             if resp.status_code == 200:
                 return BeautifulSoup(resp.text, "lxml")
             elif resp.status_code == 404:
@@ -132,7 +135,15 @@ def parse_broodmare_sire(soup: BeautifulSoup) -> Optional[str]:
     # horse_links should be: [Sire, Sire's sire, Sire's dam, Dam, BMS, Dam's dam]
     # Index 4 = broodmare sire
     if len(horse_links) >= 5:
-        return horse_links[4]
+        name = horse_links[4]
+        if name:
+            name = re.sub(r"\([^)]+\)$", "", name).strip()
+            match = re.search(r"([A-Za-z\s\'\.-]+)$", name)
+            if match and match.start() > 0:
+                prefix = name[:match.start()].strip()
+                if prefix:
+                    return prefix
+            return name
 
     return None
 
@@ -145,12 +156,14 @@ def _load_sire_lookup():
     try:
         with get_session() as session:
             rows = session.execute(text(
-                "SELECT id, sire_name FROM horses WHERE sire_name IS NOT NULL"
+                "SELECT id, name_jp, name FROM horses"
             )).fetchall()
-            for hid, sname in rows:
-                if sname not in _sire_lookup:
-                    _sire_lookup[sname] = hid
-        log.info(f"Loaded {len(_sire_lookup)} sire name → ID mappings")
+            for hid, name_jp, name in rows:
+                if name_jp and name_jp not in _sire_lookup:
+                    _sire_lookup[name_jp] = hid
+                if name and name not in _sire_lookup:
+                    _sire_lookup[name] = hid
+        log.info(f"Loaded {len(_sire_lookup)} name → ID mappings")
     except Exception as e:
         log.error(f"Failed to load sire lookup: {e}")
     _sire_lookup_loaded = True

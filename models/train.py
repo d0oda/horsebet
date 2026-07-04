@@ -113,7 +113,10 @@ def prepare_data(
     # --- Split first ---
     if val_date is None:
         # Default: last 20% of races by date
-        unique_races = df["race_id"].unique()
+        if "date" in df.columns:
+            unique_races = df.sort_values("date")["race_id"].unique()
+        else:
+            unique_races = df["race_id"].unique()
         split_idx = int(len(unique_races) * 0.8)
         train_races = set(unique_races[:split_idx])
         val_races = set(unique_races[split_idx:])
@@ -150,7 +153,7 @@ def prepare_data(
     log.info(f"Val:   {len(X_val)} entries ({len(val_races)} races)")
     log.info(f"Win rate — train: {y_train.mean():.3f}, val: {y_val.mean():.3f}")
 
-    return X_train, y_train, X_val, y_val, feature_cols, val_df["race_id"].values
+    return X_train, y_train, X_val, y_val, feature_cols, val_df["race_id"].values, train_df["race_id"].values
 
 
 # ---------------------------------------------------------------------------
@@ -408,9 +411,9 @@ def train_xgboost_ranker(X_train, y_train, X_val, y_val, feature_cols,
     """Train an XGBoost LambdaMART model that ranks horses within each race."""
     xgb = _get_xgb()
 
-    dtrain = xgb.DMatrix(X_train, label=y_train, feature_names=feature_cols)
+    dtrain = xgb.DMatrix(X_train, label=y_train, feature_names=feature_cols, enable_categorical=True)
     dtrain.set_group(train_groups)
-    dval = xgb.DMatrix(X_val, label=y_val, feature_names=feature_cols)
+    dval = xgb.DMatrix(X_val, label=y_val, feature_names=feature_cols, enable_categorical=True)
     dval.set_group(val_groups)
 
     params = {
@@ -674,6 +677,7 @@ def save_model(
     version=None, calibrator=None, odds_free: bool = False,
     calibration_method: str = "none",
     lgb_reg_model=None, xgb_reg_model=None,
+    lgb_rank_model=None, xgb_rank_model=None,
 ):
     """Save trained models, calibrator, and metadata."""
     if version is None:
@@ -693,6 +697,12 @@ def save_model(
         lgb_reg_model.save_model(str(model_dir / "lgb_reg_model.txt"))
     if xgb_reg_model is not None:
         xgb_reg_model.save_model(str(model_dir / "xgb_reg_model.json"))
+
+    # Save Ranker Models
+    if lgb_rank_model is not None:
+        lgb_rank_model.save_model(str(model_dir / "lgb_rank_model.txt"))
+    if xgb_rank_model is not None:
+        xgb_rank_model.save_model(str(model_dir / "xgb_rank_model.json"))
 
     # Save calibrator
     if calibrator is not None:
@@ -753,9 +763,20 @@ def load_model(version: str = "latest"):
         xgb_reg_model = xgb.Booster()
         xgb_reg_model.load_model(str(model_dir / "xgb_reg_model.json"))
 
+    # Load ranker models if they exist
+    lgb_rank_model = None
+    xgb_rank_model = None
+    if (model_dir / "lgb_rank_model.txt").exists():
+        lgb_rank_model = lgb.Booster(model_file=str(model_dir / "lgb_rank_model.txt"))
+    if (model_dir / "xgb_rank_model.json").exists():
+        xgb_rank_model = xgb.Booster()
+        xgb_rank_model.load_model(str(model_dir / "xgb_rank_model.json"))
+
     meta["calibrator"] = calibrator
     meta["lgb_reg_model"] = lgb_reg_model
     meta["xgb_reg_model"] = xgb_reg_model
+    meta["lgb_rank_model"] = lgb_rank_model
+    meta["xgb_rank_model"] = xgb_rank_model
     log.info(f"📦 Loaded model version: {meta['version']} (odds_free={meta.get('odds_free', False)})")
     return lgb_model, xgb_model, meta
 
@@ -896,20 +917,20 @@ def main():
     if args.walk_forward:
         log.info("\n--- Walk-Forward Cross-Validation ---")
         # Prepare feature cols for CV (need to compute once)
-        _, _, _, _, wf_feature_cols, _ = prepare_data(
-            df.copy(), target="target_place", val_date=args.val_date,
+        _, _, _, _, wf_feature_cols, _, _ = prepare_data(
+            df.copy(), target="target_win", val_date=args.val_date,
             exclude_features=exclude,
         )
         cv_results = walk_forward_cv(
-            df.copy(), wf_feature_cols, target="target_place",
+            df.copy(), wf_feature_cols, target="target_win",
             n_folds=args.n_folds,
         )
         if not cv_results:
             log.warning("Walk-forward CV produced no folds (not enough data)")
 
     # --- Final training ---
-    X_train, y_train, X_val, y_val, feature_cols, race_ids_val = prepare_data(
-        df, target="target_place", val_date=args.val_date, test_date=args.test_date,
+    X_train, y_train, X_val, y_val, feature_cols, race_ids_val, race_ids_train = prepare_data(
+        df, target="target_win", val_date=args.val_date, test_date=args.test_date,
         exclude_features=exclude,
     )
 
@@ -926,7 +947,7 @@ def main():
     
     # Train regression models on Beaten Lengths (target_margin)
     log.info("\n--- Training Regression Models (Beaten Lengths) ---")
-    X_train_reg, y_train_reg, X_val_reg, y_val_reg, _, race_ids_val_reg = prepare_data(
+    X_train_reg, y_train_reg, X_val_reg, y_val_reg, _, race_ids_val_reg, _ = prepare_data(
         df, target="target_margin", val_date=args.val_date, test_date=args.test_date,
         exclude_features=exclude,
     )
@@ -940,6 +961,40 @@ def main():
     else:
         log.warning("Not enough data to train regression models.")
         reg_probs = None
+
+    # Train Ranker models on finish_pos
+    log.info("\n--- Training Ranker Models (NDCG) ---")
+    X_train_rnk, y_train_rnk, X_val_rnk, y_val_rnk, _, race_ids_val_rnk, race_ids_train_rnk = prepare_data(
+        df, target="finish_pos", val_date=args.val_date, test_date=args.test_date,
+        exclude_features=exclude,
+    )
+    if len(X_train_rnk) > 50:
+        y_train_rel = _finish_to_relevance(y_train_rnk)
+        y_val_rel = _finish_to_relevance(y_val_rnk)
+        
+        # Sort by race_id for ranking groups
+        sort_train = np.argsort(race_ids_train_rnk)
+        X_train_rnk = X_train_rnk.iloc[sort_train]
+        y_train_rel = y_train_rel[sort_train]
+        race_ids_train_rnk = race_ids_train_rnk[sort_train]
+        train_groups = _make_group_array(race_ids_train_rnk)
+        
+        sort_val = np.argsort(race_ids_val_rnk)
+        X_val_rnk = X_val_rnk.iloc[sort_val]
+        y_val_rel = y_val_rel[sort_val]
+        race_ids_val_rnk = race_ids_val_rnk[sort_val]
+        val_groups = _make_group_array(race_ids_val_rnk)
+        
+        lgb_rank_model, lgb_rank_preds = train_lightgbm_ranker(
+            X_train_rnk, y_train_rel, X_val_rnk, y_val_rel, feature_cols, train_groups, val_groups
+        )
+        xgb_rank_model, xgb_rank_preds = train_xgboost_ranker(
+            X_train_rnk, y_train_rel, X_val_rnk, y_val_rel, feature_cols, train_groups, val_groups
+        )
+    else:
+        log.warning("Not enough data to train ranker models.")
+        lgb_rank_model = None
+        xgb_rank_model = None
 
     # Ensemble (Binary Classification + Regression)
     log.info("\n--- Ensemble ---")
@@ -983,8 +1038,10 @@ def main():
         calibrator=calibrator,
         odds_free=odds_free,
         calibration_method=args.calibration,
-        lgb_reg_model=lgb_reg_model_save,
-        xgb_reg_model=xgb_reg_model_save,
+        lgb_reg_model=locals().get("lgb_reg_model", None),
+        xgb_reg_model=locals().get("xgb_reg_model", None),
+        lgb_rank_model=locals().get("lgb_rank_model", None),
+        xgb_rank_model=locals().get("xgb_rank_model", None),
     )
     log.info(f"\n✅ Training complete. Model version: {version}")
 

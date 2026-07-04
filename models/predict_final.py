@@ -33,9 +33,9 @@ log = logging.getLogger("predict_final")
 
 def predict_with_filters(
     race_ids: list[int],
-    model_version: str = "20260604_223536",
-    ev_threshold: float = 0.30,
-    max_odds: float = 100.0,
+    model_version: str = "20260605_113654",
+    ev_threshold: float = 0.50,
+    max_odds: float = 60.0,
     min_odds: float = 2.0,
     bankroll: int = 100000,
     kelly_fraction: float = 0.25,
@@ -78,28 +78,47 @@ def predict_with_filters(
         # Ensure all expected feature columns exist (pre-race data may
         # be missing columns like horse_weight_z when weights aren't out).
         import xgboost as xgb_lib
+        for col in ["sire_id", "broodmare_sire_id", "going_code", "surface_code", "draw"]:
+            if col in features_df.columns:
+                features_df[col] = features_df[col].fillna("Unknown").astype(str).astype("category")
+
         for col in feature_cols:
             if col not in features_df.columns:
                 log.debug(f"Adding missing column '{col}' as NaN")
                 features_df[col] = np.nan
 
-        X = features_df[feature_cols].values
+        X = features_df[feature_cols]
         lgb_preds = lgb_model.predict(X)
-        xgb_preds = xgb_model.predict(xgb_lib.DMatrix(X, feature_names=feature_cols))
-        combined = ensemble_predict(lgb_preds, xgb_preds)
+        xgb_preds = xgb_model.predict(xgb_lib.DMatrix(X, feature_names=feature_cols, enable_categorical=True))
+        prob_cls = ensemble_predict(lgb_preds, xgb_preds)
+        
+        from models.train import scores_to_probs
+        race_ids_for_probs = features_df["race_id"].values
         
         # Regression blend
         lgb_reg_model = meta.get("lgb_reg_model")
         xgb_reg_model = meta.get("xgb_reg_model")
         if lgb_reg_model is not None and xgb_reg_model is not None:
             lgb_reg_preds = lgb_reg_model.predict(X)
-            xgb_reg_preds = xgb_reg_model.predict(xgb_lib.DMatrix(X, feature_names=feature_cols))
+            xgb_reg_preds = xgb_reg_model.predict(xgb_lib.DMatrix(X, feature_names=feature_cols, enable_categorical=True))
             ensemble_reg_preds = ensemble_predict(lgb_reg_preds, xgb_reg_preds)
+            prob_reg = scores_to_probs(-ensemble_reg_preds, race_ids_for_probs)
+        else:
+            prob_reg = np.zeros_like(prob_cls)
             
-            from models.train import scores_to_probs
-            race_ids_for_probs = features_df["race_id"].values
-            reg_probs = scores_to_probs(-ensemble_reg_preds, race_ids_for_probs)
-            combined = 0.8 * combined + 0.2 * reg_probs
+        # Ranker blend
+        lgb_rank_model = meta.get("lgb_rank_model")
+        xgb_rank_model = meta.get("xgb_rank_model")
+        if lgb_rank_model is not None and xgb_rank_model is not None:
+            lgb_rank_preds = lgb_rank_model.predict(X)
+            xgb_rank_preds = xgb_rank_model.predict(xgb_lib.DMatrix(X, feature_names=feature_cols, enable_categorical=True))
+            ensemble_rank_preds = ensemble_predict(lgb_rank_preds, xgb_rank_preds)
+            prob_rnk = scores_to_probs(ensemble_rank_preds, race_ids_for_probs)
+        else:
+            prob_rnk = np.zeros_like(prob_cls)
+            
+        # Goldilocks Blend (0.7 Cls, 0.2 Reg, 0.1 Rnk)
+        combined = 0.7 * prob_cls + 0.2 * prob_reg + 0.1 * prob_rnk
         
         if calibrator is not None:
             from sklearn.linear_model import LogisticRegression
@@ -210,9 +229,9 @@ def main():
     )
     parser.add_argument("--race-id", type=int, help="Single race ID to predict")
     parser.add_argument("--date", type=str, help="Predict all races for a date (YYYY-MM-DD)")
-    parser.add_argument("--version", type=str, default="20260604_223536", help="Model version")
-    parser.add_argument("--ev-threshold", type=float, default=0.30, help="Min EV (default: 30%%)")
-    parser.add_argument("--max-odds", type=float, default=100.0, help="Max odds (default: 100)")
+    parser.add_argument("--version", type=str, default="20260605_113654", help="Model version")
+    parser.add_argument("--ev-threshold", type=float, default=0.50, help="Min EV (default: 50%%)")
+    parser.add_argument("--max-odds", type=float, default=60.0, help="Max odds (default: 60)")
     parser.add_argument("--min-odds", type=float, default=1.5, help="Min odds (default: 1.5)")
     parser.add_argument("--bankroll", type=int, default=100000, help="Bankroll in yen")
     parser.add_argument("--kelly", type=float, default=0.25, help="Kelly fraction (default: 0.25)")

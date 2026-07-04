@@ -194,15 +194,14 @@ class AbilityRatingEngine:
         if self._par_cache:
             return
 
-        log.info("Loading par times from database...")
+        import pandas as pd
+        log.info("Loading par times from database using Pandas...")
         query = """
             SELECT
                 r.course_id,
                 r.distance,
                 r.going,
-                PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY res.time_secs) AS median_time,
-                STDDEV(res.time_secs) AS std_time,
-                COUNT(*) AS n
+                res.time_secs
             FROM races r
             JOIN entries e ON e.race_id = r.id
             JOIN results res ON res.entry_id = e.id
@@ -211,15 +210,17 @@ class AbilityRatingEngine:
               AND r.course_id IS NOT NULL
               AND r.distance IS NOT NULL
               AND r.going IS NOT NULL
-            GROUP BY r.course_id, r.distance, r.going
-            HAVING COUNT(*) >= 500
         """
         with get_session() as session:
-            rows = session.execute(text(query)).fetchall()
+            df = pd.read_sql(text(query), session.bind)
 
-        for row in rows:
-            key = (row[0], row[1], row[2])
-            self._par_cache[key] = (float(row[3]), float(row[4]) if row[4] else None)
+        grouped = df.groupby(["course_id", "distance", "going"])["time_secs"]
+        stats = grouped.agg(median_time="median", std_time="std", n="count")
+        stats = stats[stats["n"] >= 500].reset_index()
+
+        for _, row in stats.iterrows():
+            key = (int(row["course_id"]), int(row["distance"]), str(row["going"]))
+            self._par_cache[key] = (float(row["median_time"]), float(row["std_time"]) if not pd.isna(row["std_time"]) else None)
 
         log.info(f"Loaded {len(self._par_cache)} par time entries")
 
@@ -350,14 +351,12 @@ class AbilityRatingEngine:
 
     def _write_ratings(self, horse_ratings: dict, history_rows: list, batch_size: int):
         """Persist ratings to database using bulk inserts for performance."""
-        import psycopg2.extras
+        import json
         log.info(f"Writing {len(horse_ratings)} horse ratings and {len(history_rows)} history rows...")
 
-        # Get raw psycopg2 connection for execute_values
         from scraper.db import engine
         raw_conn = engine.raw_connection()
         try:
-            raw_conn.cursor().execute("SET search_path TO horsebet, public")
             cur = raw_conn.cursor()
 
             # Phase 1: Clear existing data
@@ -368,34 +367,24 @@ class AbilityRatingEngine:
 
             # Phase 2: Bulk insert horse_ratings
             rating_data = [(hid, round(r, 2)) for hid, r in horse_ratings.items()]
-            batch_sz = 500
-            for i in range(0, len(rating_data), batch_sz):
-                batch = rating_data[i:i + batch_sz]
-                psycopg2.extras.execute_values(
-                    cur,
-                    "INSERT INTO horse_ratings (horse_id, ability_rating) VALUES %s "
-                    "ON CONFLICT (horse_id) DO UPDATE SET ability_rating = EXCLUDED.ability_rating, updated_at = now()",
-                    batch,
-                )
-                raw_conn.commit()
-                if (i + batch_sz) % 5000 < batch_sz:
-                    log.info(f"  horse_ratings: {min(i + batch_sz, len(rating_data))}/{len(rating_data)}")
-
+            cur.executemany(
+                "INSERT INTO horse_ratings (horse_id, ability_rating) VALUES (?, ?) "
+                "ON CONFLICT(horse_id) DO UPDATE SET ability_rating = excluded.ability_rating, updated_at = CURRENT_TIMESTAMP",
+                rating_data
+            )
+            raw_conn.commit()
             log.info(f"✅ Wrote {len(rating_data)} horse ratings")
 
             # Phase 3: Bulk update horses.ability_rating via temp table
             cur.execute("CREATE TEMP TABLE _tmp_ratings (horse_id INTEGER PRIMARY KEY, rating REAL)")
-            psycopg2.extras.execute_values(
-                cur,
-                "INSERT INTO _tmp_ratings (horse_id, rating) VALUES %s",
-                rating_data,
-                page_size=5000,
+            cur.executemany(
+                "INSERT INTO _tmp_ratings (horse_id, rating) VALUES (?, ?)",
+                rating_data
             )
             cur.execute("""
-                UPDATE horses h
-                SET ability_rating = t.rating
-                FROM _tmp_ratings t
-                WHERE h.id = t.horse_id
+                UPDATE horses
+                SET ability_rating = (SELECT rating FROM _tmp_ratings WHERE _tmp_ratings.horse_id = horses.id)
+                WHERE EXISTS (SELECT 1 FROM _tmp_ratings WHERE _tmp_ratings.horse_id = horses.id)
             """)
             cur.execute("DROP TABLE _tmp_ratings")
             raw_conn.commit()
@@ -403,23 +392,17 @@ class AbilityRatingEngine:
 
             # Phase 4: Bulk insert history
             history_data = [
-                (r["horse_id"], r["race_id"], r["race_date"],
-                 r["rating_before"], r["race_score"], r["rating_after"], r["components"])
+                (r["horse_id"], r["race_id"], str(r["race_date"]),
+                 r["rating_before"], r["race_score"], r["rating_after"], json.dumps(r["components"]))
                 for r in history_rows
             ]
-            for i in range(0, len(history_data), batch_sz):
-                batch = history_data[i:i + batch_sz]
-                psycopg2.extras.execute_values(
-                    cur,
-                    """INSERT INTO horse_rating_history
-                        (horse_id, race_id, race_date, rating_before, race_score, rating_after, components)
-                    VALUES %s""",
-                    batch,
-                    template="(%s, %s, %s, %s, %s, %s, %s::jsonb)",
-                )
-                raw_conn.commit()
-                if (i + batch_sz) % 10000 < batch_sz:
-                    log.info(f"  history: {min(i + batch_sz, len(history_data))}/{len(history_data)}")
+            cur.executemany(
+                "INSERT INTO horse_rating_history "
+                "(horse_id, race_id, race_date, rating_before, race_score, rating_after, components) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                history_data
+            )
+            raw_conn.commit()
 
             log.info("✅ Database write complete")
         finally:

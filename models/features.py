@@ -2027,8 +2027,15 @@ class FeatureBuilder:
 
         # Weight
         features["weight_carried"] = row.get("weight_carried", np.nan)
-        features["horse_weight"] = row.get("horse_weight", np.nan)
-        features["horse_weight_change"] = row.get("horse_weight_change", 0) or 0
+        try:
+            features["horse_weight"] = float(row.get("horse_weight"))
+        except (ValueError, TypeError):
+            features["horse_weight"] = np.nan
+            
+        try:
+            features["horse_weight_change"] = float(row.get("horse_weight_change"))
+        except (ValueError, TypeError):
+            features["horse_weight_change"] = 0.0
 
         # Odds (market signal)
         odds = row.get("odds_win", np.nan)
@@ -2269,83 +2276,9 @@ class FeatureBuilder:
         """Build feature vectors for all races in the database."""
         return self._build(race_id=None)
 
-    def _build(self, race_id: Optional[int] = None, race_ids: Optional[list[int]] = None) -> pd.DataFrame:
-        """Core feature building logic."""
-        t0 = time.time()
-        log.info("Loading race data...")
-        race_df = self._load_race_data(race_id=race_id, race_ids=race_ids)
-        if race_df.empty:
-            return pd.DataFrame()
-
-        if not hasattr(self, '_horse_groups'):
-            log.info("Loading full history for rolling features...")
-            
-            # If we're only building for a few races, restrict the history loaded to save memory
-            horse_ids = None
-            jockey_ids = None
-            trainer_ids = None
-            if race_id is not None or race_ids is not None:
-                horse_ids = race_df["horse_id"].unique().tolist()
-                jockey_ids = race_df["jockey_id"].dropna().unique().tolist()
-                trainer_ids = race_df["trainer_id"].dropna().unique().tolist()
-
-            history_df = self._load_horse_history(
-                horse_ids=horse_ids,
-                jockey_ids=jockey_ids,
-                trainer_ids=trainer_ids
-            )
-            history_df = history_df.sort_values("date", ascending=True)
-
-            log.info("Loading odds snapshots for movement features...")
-            odds_df = self._load_odds_snapshots()
-            self._odds_snapshots_cache = dict(tuple(odds_df.groupby("race_id")))
-
-            # Pre-index history by entity for O(1) lookups (major speedup)
-            log.info("Pre-indexing history for fast lookups...")
-            self._horse_groups = dict(list(history_df.groupby("horse_id")))
-            self._jockey_groups = (
-                dict(list(history_df.groupby("jockey_id")))
-                if "jockey_id" in history_df.columns else {}
-            )
-            self._trainer_groups = (
-                dict(list(history_df.groupby("trainer_id")))
-                if "trainer_id" in history_df.columns else {}
-            )
-            self._course_groups = (
-                dict(list(history_df.groupby("course_id")))
-                if "course_id" in history_df.columns else {}
-            )
-            log.info(
-                f"Indexed: {len(self._horse_groups)} horses, "
-                f"{len(self._jockey_groups)} jockeys, "
-                f"{len(self._trainer_groups)} trainers, "
-                f"{len(self._course_groups)} courses"
-            )
-        else:
-            history_df = pd.DataFrame(columns=["horse_id", "date", "jockey_id", "trainer_id", "course_id"])
-
-        # Precompute winner times and second-place times for target_margin regression
-        # Winner time is the min time. Second place time is the 2nd min time.
-        winner_times = race_df[race_df["finish_pos"] == 1].groupby("race_id")["time_secs"].min()
-        winner_times_dict = winner_times.to_dict()
-        
-        second_times = race_df[race_df["finish_pos"] == 2].groupby("race_id")["time_secs"].min()
-        second_times_dict = second_times.to_dict()
-
-        total = len(race_df)
-        log.info(f"Building features for {total} entries...")
+    def _process_chunk(self, chunk_df: pd.DataFrame, race_df: pd.DataFrame, history_df: pd.DataFrame, winner_times_dict: dict, second_times_dict: dict) -> list:
         feature_rows = []
-        t_loop = time.time()
-
-        for i, (idx, row) in enumerate(race_df.iterrows()):
-            if i > 0 and i % 1000 == 0:
-                elapsed = time.time() - t_loop
-                rate = i / elapsed
-                eta = (total - i) / rate
-                log.info(
-                    f"  [{i:,}/{total:,}] {i/total*100:.0f}% | "
-                    f"{rate:.0f} entries/s | ETA {eta:.0f}s"
-                )
+        for idx, row in chunk_df.iterrows():
             features = {
                 "race_id": row["race_id"],
                 "entry_id": row["entry_id"],
@@ -2634,6 +2567,153 @@ class FeatureBuilder:
 
             feature_rows.append(features)
 
+        return feature_rows
+
+    def _preload_caches(self):
+        """Preload SQLite-backed caches in the main thread to prevent concurrency locks/errors in joblib workers."""
+        log.info("Pre-loading SQLite caches to avoid multiprocessing locks...")
+        if not hasattr(self, "_bms_name_cache"):
+            self._bms_name_cache = {}
+            try:
+                with get_session() as session:
+                    rows = session.execute(text("SELECT h.id, bms.sire_name FROM horses h JOIN horses bms ON bms.id = h.broodmare_sire_id WHERE h.broodmare_sire_id IS NOT NULL AND bms.sire_name IS NOT NULL")).fetchall()
+                    self._bms_name_cache = {r[0]: r[1] for r in rows}
+            except Exception:
+                pass
+                
+        if not hasattr(self, "_bms_offspring_cache"):
+            self._bms_offspring_cache = {}
+            try:
+                with get_session() as session:
+                    rows = session.execute(text("SELECT h.id, bms.sire_name FROM horses h JOIN horses bms ON bms.id = h.broodmare_sire_id WHERE h.broodmare_sire_id IS NOT NULL AND bms.sire_name IS NOT NULL")).fetchall()
+                    for hid, sname in rows:
+                        self._bms_offspring_cache.setdefault(sname, []).append(hid)
+            except Exception:
+                pass
+                
+        if not hasattr(self, "_sire_cache"):
+            self._sire_cache = {}
+            try:
+                with get_session() as session:
+                    rows = session.execute(text("SELECT id, sire_name FROM horses WHERE sire_name IS NOT NULL")).fetchall()
+                    self._sire_cache = {r[0]: r[1] for r in rows}
+            except Exception:
+                pass
+                
+        if not hasattr(self, "_offspring_cache"):
+            self._offspring_cache = {}
+            try:
+                with get_session() as session:
+                    rows = session.execute(text("SELECT id, sire_name FROM horses WHERE sire_name IS NOT NULL")).fetchall()
+                    for hid, sname in rows:
+                        self._offspring_cache.setdefault(sname, []).append(hid)
+            except Exception:
+                pass
+
+        if not hasattr(self, "_ability_history_cache"):
+            self._ability_history_cache = {}
+            try:
+                with get_session() as session:
+                    rows = session.execute(text("SELECT horse_id, race_date, rating_after FROM horse_rating_history ORDER BY race_date")).fetchall()
+                for r in rows:
+                    self._ability_history_cache.setdefault(r[0], []).append((str(r[1]), r[2]))
+                log.info(f"Loaded history for {len(self._ability_history_cache)} horses for point-in-time ratings")
+            except Exception as e:
+                log.warning(f"Could not load ability ratings (preload): {e}")
+
+    def _build(self, race_id: Optional[int] = None, race_ids: Optional[list[int]] = None) -> pd.DataFrame:
+        """Core feature building logic."""
+        t0 = time.time()
+        log.info("Loading race data...")
+        race_df = self._load_race_data(race_id=race_id, race_ids=race_ids)
+        if race_df.empty:
+            return pd.DataFrame()
+
+        if not hasattr(self, '_horse_groups'):
+            log.info("Loading full history for rolling features...")
+            
+            # If we're only building for a few races, restrict the history loaded to save memory
+            horse_ids = None
+            jockey_ids = None
+            trainer_ids = None
+            if race_id is not None or race_ids is not None:
+                horse_ids = race_df["horse_id"].unique().tolist()
+                jockey_ids = race_df["jockey_id"].dropna().unique().tolist()
+                trainer_ids = race_df["trainer_id"].dropna().unique().tolist()
+
+            history_df = self._load_horse_history(
+                horse_ids=horse_ids,
+                jockey_ids=jockey_ids,
+                trainer_ids=trainer_ids
+            )
+            history_df = history_df.sort_values("date", ascending=True)
+
+            log.info("Loading odds snapshots for movement features...")
+            odds_df = self._load_odds_snapshots()
+            self._odds_snapshots_cache = dict(tuple(odds_df.groupby("race_id")))
+
+            # Pre-index history by entity for O(1) lookups (major speedup)
+            log.info("Pre-indexing history for fast lookups...")
+            self._horse_groups = dict(list(history_df.groupby("horse_id")))
+            self._jockey_groups = (
+                dict(list(history_df.groupby("jockey_id")))
+                if "jockey_id" in history_df.columns else {}
+            )
+            self._trainer_groups = (
+                dict(list(history_df.groupby("trainer_id")))
+                if "trainer_id" in history_df.columns else {}
+            )
+            self._course_groups = (
+                dict(list(history_df.groupby("course_id")))
+                if "course_id" in history_df.columns else {}
+            )
+            log.info(
+                f"Indexed: {len(self._horse_groups)} horses, "
+                f"{len(self._jockey_groups)} jockeys, "
+                f"{len(self._trainer_groups)} trainers, "
+                f"{len(self._course_groups)} courses"
+            )
+        else:
+            history_df = pd.DataFrame(columns=["horse_id", "date", "jockey_id", "trainer_id", "course_id"])
+
+        # Precompute winner times and second-place times for target_margin regression
+        # Winner time is the min time. Second place time is the 2nd min time.
+        winner_times = race_df[race_df["finish_pos"] == 1].groupby("race_id")["time_secs"].min()
+        winner_times_dict = winner_times.to_dict()
+        
+        second_times = race_df[race_df["finish_pos"] == 2].groupby("race_id")["time_secs"].min()
+        second_times_dict = second_times.to_dict()
+
+        total = len(race_df)
+        log.info(f'Building features for {total} entries...')
+        t_loop = time.time()
+        
+        race_ids = race_df['race_id'].unique()
+        import multiprocessing
+        from joblib import Parallel, delayed
+        n_jobs = max(1, multiprocessing.cpu_count() // 2)
+        race_id_chunks = np.array_split(race_ids, min(n_jobs * 2, len(race_ids)))
+        chunk_dfs = [race_df[race_df['race_id'].isin(chunk)] for chunk in race_id_chunks]
+        
+        log.info(f'Starting joblib pool with {n_jobs} workers across {len(chunk_dfs)} chunks...')
+        
+        # Pre-build heavy/database-backed indices in the main thread so workers inherit them
+        self._preload_caches()
+        self._build_speed_baseline_index()
+        
+        results = Parallel(n_jobs=n_jobs)(
+            delayed(self._process_chunk)(chunk_df, race_df, history_df, winner_times_dict, second_times_dict)
+            for chunk_df in chunk_dfs
+        )
+        
+        feature_rows = []
+        for res in results:
+            feature_rows.extend(res)
+        
+        elapsed = time.time() - t_loop
+        rate = total / elapsed if elapsed > 0 else 0
+        log.info(f'Completed {total} entries | {rate:.0f} entries/s | Total Time {elapsed:.0f}s')
+        
         df = pd.DataFrame(feature_rows)
 
         # Per-race z-score normalisation

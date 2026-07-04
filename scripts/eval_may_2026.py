@@ -26,9 +26,9 @@ def main():
         # Predict all horses for this day
         df = predict_with_filters(
             race_ids=race_ids,
-            model_version="20260604_223536",
-            ev_threshold=0.30,  
-            max_odds=100.0,      
+            model_version="20260605_113654",
+            ev_threshold=0.50,  
+            max_odds=60.0,      
             min_odds=1.5,         
             bankroll=100000,
             kelly_fraction=0.0,

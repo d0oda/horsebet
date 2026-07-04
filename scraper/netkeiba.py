@@ -30,6 +30,7 @@ import requests
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from sqlalchemy import text
+import threading
 
 from scraper.db import get_session
 
@@ -111,6 +112,7 @@ class EntryData:
     horse_weight_change: Optional[int] = None
     odds_win: Optional[float] = None
     popularity: Optional[int] = None
+    u_index: Optional[float] = None
     # Result fields (filled after race)
     finish_pos: Optional[int] = None
     margin: Optional[str] = None
@@ -398,7 +400,10 @@ def parse_shutuba_page(soup: BeautifulSoup, race_id: str) -> Optional[RaceData]:
         log.warning(f"No race header found for shutuba {race_id}")
         return None
 
-    rows = soup.select("tr.HorseList")
+    rows = soup.select("table.RaceTable01 tr.HorseList")
+    if not rows:
+        rows = soup.select("tr.HorseList")
+    
     if not rows:
         log.warning(f"No HorseList rows in shutuba {race_id}")
         return race
@@ -533,7 +538,10 @@ def parse_result_page(soup: BeautifulSoup, race_id: str) -> Optional[RaceData]:
         log.warning(f"No race header found for result {race_id}")
         return None
 
-    rows = soup.select("tr.HorseList")
+    rows = soup.select("table.RaceTable01 tr.HorseList")
+    if not rows:
+        rows = soup.select("tr.HorseList")
+    
     if not rows:
         log.warning(f"No HorseList rows in result {race_id}")
         return race
@@ -833,9 +841,14 @@ def _parse_legacy_race_page(soup: BeautifulSoup, race_id: str) -> Optional[RaceD
 # Database Insert
 # ---------------------------------------------------------------------------
 
+DB_LOCK = threading.Lock()
+CACHE_LOCK = threading.Lock()
+TRAINER_CACHE = {}
+JOCKEY_CACHE = {}
+
 def save_race_to_db(race: RaceData) -> bool:
     """Insert a parsed race and all its entries/results into the database."""
-    with get_session() as session:
+    with DB_LOCK, get_session() as session:
         # Check if race already exists
         existing = session.execute(
             text("SELECT id FROM races WHERE netkeiba_id = :nid"),
@@ -900,29 +913,35 @@ def save_race_to_db(race: RaceData) -> bool:
             },
         )
         race_db_id = race_result.fetchone()[0]
+        session.commit()
 
         # Insert entries + results
         for entry in race.entries:
             # Upsert trainer
             trainer_db_id = None
             if entry.trainer_name_jp:
-                trainer_result = session.execute(
-                    text("""
-                        INSERT INTO trainers (name, name_jp)
-                        VALUES (:name, :name_jp)
-                        ON CONFLICT (name_jp) DO NOTHING
-                        RETURNING id
-                    """),
-                    {"name": entry.trainer_name_jp, "name_jp": entry.trainer_name_jp},
-                ).fetchone()
+                with CACHE_LOCK:
+                    trainer_db_id = TRAINER_CACHE.get(entry.trainer_name_jp)
+                if not trainer_db_id:
+                    trainer_result = session.execute(
+                        text("""
+                            INSERT INTO trainers (name, name_jp)
+                            VALUES (:name, :name_jp)
+                            ON CONFLICT (name_jp) DO NOTHING
+                            RETURNING id
+                        """),
+                        {"name": entry.trainer_name_jp, "name_jp": entry.trainer_name_jp},
+                    ).fetchone()
 
-                if trainer_result:
-                    trainer_db_id = trainer_result[0]
-                else:
-                    trainer_db_id = session.execute(
-                        text("SELECT id FROM trainers WHERE name_jp = :name_jp"),
-                        {"name_jp": entry.trainer_name_jp},
-                    ).scalar()
+                    if trainer_result:
+                        trainer_db_id = trainer_result[0]
+                    else:
+                        trainer_db_id = session.execute(
+                            text("SELECT id FROM trainers WHERE name_jp = :name_jp"),
+                            {"name_jp": entry.trainer_name_jp},
+                        ).scalar()
+                    with CACHE_LOCK:
+                        TRAINER_CACHE[entry.trainer_name_jp] = trainer_db_id
 
             # Upsert horse (with trainer_id)
             horse = entry.horse
@@ -952,23 +971,28 @@ def save_race_to_db(race: RaceData) -> bool:
             # Upsert jockey
             jockey_db_id = None
             if entry.jockey_name_jp:
-                jockey_result = session.execute(
-                    text("""
-                        INSERT INTO jockeys (name, name_jp)
-                        VALUES (:name, :name_jp)
-                        ON CONFLICT (name_jp) DO NOTHING
-                        RETURNING id
-                    """),
-                    {"name": entry.jockey_name_jp, "name_jp": entry.jockey_name_jp},
-                ).fetchone()
+                with CACHE_LOCK:
+                    jockey_db_id = JOCKEY_CACHE.get(entry.jockey_name_jp)
+                if not jockey_db_id:
+                    jockey_result = session.execute(
+                        text("""
+                            INSERT INTO jockeys (name, name_jp)
+                            VALUES (:name, :name_jp)
+                            ON CONFLICT (name_jp) DO NOTHING
+                            RETURNING id
+                        """),
+                        {"name": entry.jockey_name_jp, "name_jp": entry.jockey_name_jp},
+                    ).fetchone()
 
-                if jockey_result:
-                    jockey_db_id = jockey_result[0]
-                else:
-                    jockey_db_id = session.execute(
-                        text("SELECT id FROM jockeys WHERE name_jp = :name_jp"),
-                        {"name_jp": entry.jockey_name_jp},
-                    ).scalar()
+                    if jockey_result:
+                        jockey_db_id = jockey_result[0]
+                    else:
+                        jockey_db_id = session.execute(
+                            text("SELECT id FROM jockeys WHERE name_jp = :name_jp"),
+                            {"name_jp": entry.jockey_name_jp},
+                        ).scalar()
+                    with CACHE_LOCK:
+                        JOCKEY_CACHE[entry.jockey_name_jp] = jockey_db_id
 
             # Insert entry
             entry_result = session.execute(
@@ -976,13 +1000,16 @@ def save_race_to_db(race: RaceData) -> bool:
                     INSERT INTO entries (
                         race_id, horse_id, jockey_id, draw, post_position,
                         weight_carried, horse_weight, horse_weight_change,
-                        odds_win, popularity
+                        odds_win, popularity, u_index
                     ) VALUES (
                         :race_id, :horse_id, :jockey_id, :draw, :post_position,
                         :weight_carried, :horse_weight, :horse_weight_change,
-                        :odds_win, :popularity
+                        :odds_win, :popularity, :u_index
                     )
-                    ON CONFLICT (race_id, horse_id) DO NOTHING
+                    ON CONFLICT (race_id, horse_id) DO UPDATE SET
+                        u_index = COALESCE(EXCLUDED.u_index, entries.u_index),
+                        odds_win = COALESCE(EXCLUDED.odds_win, entries.odds_win),
+                        popularity = COALESCE(EXCLUDED.popularity, entries.popularity)
                     RETURNING id
                 """),
                 {
@@ -996,6 +1023,7 @@ def save_race_to_db(race: RaceData) -> bool:
                     "horse_weight_change": entry.horse_weight_change,
                     "odds_win": entry.odds_win,
                     "popularity": entry.popularity,
+                    "u_index": getattr(entry, "u_index", None),
                 },
             )
             entry_row = entry_result.fetchone()
@@ -1025,6 +1053,7 @@ def save_race_to_db(race: RaceData) -> bool:
                         "corners": entry.corner_positions,
                     },
                 )
+            session.commit()
 
         log.info(
             f"✅ Saved race {race.netkeiba_id} "
@@ -1041,15 +1070,14 @@ def save_race_to_db(race: RaceData) -> bool:
 def scrape_race(race_id: str) -> Optional[RaceData]:
     """
     Scrape a single race by its netkeiba ID and save to DB.
-    Tries result page first (for finished races), then shutuba (pre-race).
+    Tries result page first, then legacy archive, then shutuba (pre-race).
     """
     log.info(f"Scraping race {race_id}...")
 
-    # Try result page first
+    # 1. Try modern result page
     url = RESULT_URL.format(race_id=race_id)
     soup = _fetch(url)
     if soup:
-        # Check if the result page actually has data (vs redirect to shutuba)
         has_results = soup.select_one("td.Result_Num") is not None
         if has_results:
             race = parse_result_page(soup, race_id)
@@ -1057,7 +1085,17 @@ def scrape_race(race_id: str) -> Optional[RaceData]:
                 save_race_to_db(race)
                 return race
 
-    # Try shutuba page (pre-race entry list)
+    # 2. Try legacy archive page (db.netkeiba.com)
+    url = LEGACY_RACE_URL.format(race_id=race_id)
+    soup = _fetch(url)
+    if soup:
+        race = _parse_legacy_race_page(soup, race_id)
+        # Check if legacy parsed successfully and has finish positions
+        if race and race.entries and any(e.finish_pos is not None for e in race.entries):
+            save_race_to_db(race)
+            return race
+
+    # 3. Try shutuba page (pre-race entry list) as last resort
     url = SHUTUBA_URL.format(race_id=race_id)
     soup = _fetch(url)
     if soup:

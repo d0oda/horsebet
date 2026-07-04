@@ -279,6 +279,15 @@ def _parse_entries(soup: BeautifulSoup, race: RaceData) -> list[EntryData]:
             pp_text = cells[1].get_text(strip=True)
             post_pos = int(pp_text) if pp_text.isdigit() else idx  # fallback to sequential
 
+            # U-Index (U指数) - cell 3
+            u_index = None
+            if len(cells) > 3:
+                u_idx_text = cells[3].get_text(strip=True)
+                try:
+                    u_index = float(u_idx_text)
+                except ValueError:
+                    pass
+
             # Horse name + code - find via link
             horse_link = row.select_one("a[href*='horse_top.php']")
             horse_name_jp = horse_link.get_text(strip=True) if horse_link else '?'
@@ -326,7 +335,7 @@ def _parse_entries(soup: BeautifulSoup, race: RaceData) -> list[EntryData]:
                 name_jp=horse_name_jp,
                 sex=sex,
                 birth_year=birth_year,
-                netkeiba_id=horse_id or f"uma_{entry_idx}",
+                netkeiba_id=horse_id or f"uma_{idx}",
             )
 
             entry = EntryData(
@@ -336,11 +345,12 @@ def _parse_entries(soup: BeautifulSoup, race: RaceData) -> list[EntryData]:
                 jockey_name_jp=jockey_name_jp,
                 trainer_name_jp=trainer_name_jp,
                 weight_carried=weight_carried,
+                u_index=u_index,
             )
             entries.append(entry)
 
         except Exception as e:
-            log.warning(f"Error parsing entry row {entry_idx} in {race.netkeiba_id}: {e}")
+            log.warning(f"Error parsing entry row {idx} in {race.netkeiba_id}: {e}")
             continue
 
     return entries
@@ -393,7 +403,7 @@ def _fetch_pedigree(code: str, entries: list[EntryData]):
 # Main Scraping Functions
 # ---------------------------------------------------------------------------
 
-def scrape_umanity_race(code: str, fetch_pedigree: bool = True) -> Optional[RaceData]:
+def scrape_umanity_race(code: str, fetch_pedigree: bool = True, force: bool = False) -> Optional[RaceData]:
     """
     Scrape a single race from Umanity.
 
@@ -407,14 +417,15 @@ def scrape_umanity_race(code: str, fetch_pedigree: bool = True) -> Optional[Race
     netkeiba_id = umanity_code_to_netkeiba_id(code)
 
     # Check if already in DB
-    with get_session() as session:
-        existing = session.execute(
-            text("SELECT id FROM races WHERE netkeiba_id = :nid"),
-            {"nid": netkeiba_id},
-        ).fetchone()
-        if existing:
-            log.info(f"Race {netkeiba_id} already in DB (id={existing[0]}), skipping")
-            return None
+    if not force:
+        with get_session() as session:
+            existing = session.execute(
+                text("SELECT id FROM races WHERE netkeiba_id = :nid"),
+                {"nid": netkeiba_id},
+            ).fetchone()
+            if existing:
+                log.info(f"Race {netkeiba_id} already in DB (id={existing[0]}), skipping")
+                return None
 
     # Fetch race card page (race_8_1.php has inline entry table)
     url = RACE_CARD_URL.format(code=code)
@@ -504,7 +515,7 @@ def scrape_umanity_race_list(date_str: str) -> list[str]:
     return codes
 
 
-def scrape_date(date: str, dry_run: bool = False, skip_pedigree: bool = False) -> dict:
+def scrape_date(date: str, dry_run: bool = False, skip_pedigree: bool = False, force: bool = False) -> dict:
     """
     Scrape all JRA races for a given date.
 
@@ -532,7 +543,7 @@ def scrape_date(date: str, dry_run: bool = False, skip_pedigree: bool = False) -
 
     for i, code in enumerate(codes, 1):
         try:
-            result = scrape_umanity_race(code, fetch_pedigree=not skip_pedigree)
+            result = scrape_umanity_race(code, fetch_pedigree=not skip_pedigree, force=force)
             if result:
                 stats["saved"] += 1
             else:
@@ -560,10 +571,11 @@ def main():
     parser.add_argument("--code", help="Single Umanity race code (16 digits)")
     parser.add_argument("--dry-run", action="store_true", help="List races without scraping")
     parser.add_argument("--skip-pedigree", action="store_true", help="Skip pedigree fetch")
+    parser.add_argument("--force", action="store_true", help="Force scrape even if race exists in DB")
     args = parser.parse_args()
 
     if args.code:
-        result = scrape_umanity_race(args.code, fetch_pedigree=not args.skip_pedigree)
+        result = scrape_umanity_race(args.code, fetch_pedigree=not args.skip_pedigree, force=args.force)
         if result:
             print(f"\nRace: {result.race_name_jp}")
             print(f"Date: {result.date}, Surface: {result.surface}, Distance: {result.distance}m")
@@ -573,7 +585,7 @@ def main():
                 print(f"  #{e.post_position}: {e.horse.name_jp} ({e.horse.sex}{e.horse.birth_year and (int(result.date[:4]) - e.horse.birth_year) or '?'}) "
                       f"J:{e.jockey_name_jp} T:{e.trainer_name_jp} sire:{sire}")
     elif args.date:
-        scrape_date(args.date, dry_run=args.dry_run, skip_pedigree=args.skip_pedigree)
+        scrape_date(args.date, dry_run=args.dry_run, skip_pedigree=args.skip_pedigree, force=args.force)
     else:
         parser.print_help()
 

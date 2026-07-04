@@ -27,21 +27,22 @@ if not DATABASE_URL:
         "DATABASE_URL not set. Copy .env.example to .env and fill in your Supabase credentials."
     )
 
+from sqlalchemy.pool import NullPool
+
 engine = create_engine(
     DATABASE_URL,
-    pool_size=5,
-    max_overflow=10,
-    pool_pre_ping=True,
+    poolclass=NullPool,
 )
 
 
 @event.listens_for(engine, "connect")
 def _set_search_path(dbapi_conn, connection_record):
     """Set search_path on every new raw connection (works through poolers)."""
-    cursor = dbapi_conn.cursor()
-    cursor.execute("SET search_path TO horsebet, public")
-    cursor.close()
-    dbapi_conn.commit()
+    if "postgres" in DATABASE_URL:
+        cursor = dbapi_conn.cursor()
+        cursor.execute("SET search_path TO horsebet, public")
+        cursor.close()
+        dbapi_conn.commit()
 
 
 SessionLocal = sessionmaker(bind=engine)
