@@ -1,17 +1,16 @@
 name: Seed DB Cache
 
-# Run this ONCE manually after setting up the repo to upload horsebet.db
-# into the GitHub Actions cache so race day runs have historical data.
+# Downloads horsebet.db.gz from the db-seed-latest GitHub release,
+# decompresses it, and saves it to the GitHub Actions cache so race
+# day runs have full historical data from the start.
 #
-# Usage: GitHub → Actions → "Seed DB Cache" → Run workflow
-# The DB is uploaded from the repo artifacts (uploaded by this workflow).
-# Subsequent race day runs will restore from cache automatically.
+# Usage: GitHub → Actions → "Seed DB Cache" → Run workflow → type "seed"
 
 on:
   workflow_dispatch:
     inputs:
       confirm:
-        description: 'Type "seed" to confirm uploading horsebet.db to cache'
+        description: 'Type "seed" to confirm'
         required: true
         type: string
 
@@ -32,49 +31,45 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: pip
-
-      - name: Install dependencies
+      - name: Download horsebet.db.gz from release
         run: |
-          pip install --upgrade pip
-          pip install -r requirements.txt
+          echo "⬇️  Downloading horsebet.db.gz from db-seed-latest release..."
+          gh release download db-seed-latest \
+            --repo ${{ github.repository }} \
+            --pattern "horsebet.db.gz" \
+            --output horsebet.db.gz
+          ls -lh horsebet.db.gz
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Download horsebet.db artifact (latest)
-        uses: dawidd6/action-download-artifact@v6
-        with:
-          workflow: raceday.yml
-          name: horsebet-db-snapshot
-          if_no_artifact_found: ignore
-          path: .
-
-      - name: Bootstrap empty DB if no artifact found
+      - name: Decompress
         run: |
-          if [ ! -f horsebet.db ]; then
-            echo "No existing DB artifact found — bootstrapping from migrations..."
-            alembic upgrade head
-            echo "✅ Empty schema created. Historical form features will be absent until DB is seeded."
-          else
-            echo "✅ Loaded horsebet.db from artifact"
-            python3 -c "import sqlite3; c=sqlite3.connect('horsebet.db'); print(f'DB loaded: {c.execute(\"SELECT COUNT(*) FROM races\").fetchone()[0]:,} races')"
-          fi
+          echo "📦 Decompressing..."
+          gunzip horsebet.db.gz
+          ls -lh horsebet.db
+
+      - name: Verify DB
+        run: |
+          python3 -c "
+          import sqlite3
+          con = sqlite3.connect('horsebet.db')
+          races = con.execute('SELECT COUNT(*) FROM races').fetchone()[0]
+          entries = con.execute('SELECT COUNT(*) FROM entries').fetchone()[0]
+          print(f'✅ DB verified: {races:,} races, {entries:,} entries')
+          con.close()
+          "
+
+      - name: Get today's date for cache key
+        id: date
+        run: echo "date=$(TZ=Asia/Tokyo date +%Y-%m-%d)" >> $GITHUB_OUTPUT
 
       - name: Save horsebet.db to cache
         uses: actions/cache/save@v4
         with:
           path: horsebet.db
-          key: horsebet-db-seed-${{ github.run_id }}
-
-      - name: Also save with generic key for race day workflow to find
-        uses: actions/cache/save@v4
-        with:
-          path: horsebet.db
-          key: horsebet-db-${{ github.run_id }}
+          key: horsebet-db-${{ steps.date.outputs.date }}
 
       - name: Done
         run: |
-          echo "✅ horsebet.db is now cached under key: horsebet-db-${{ github.run_id }}"
-          echo "The next race day pipeline run will restore it automatically."
+          echo "✅ horsebet.db is now in cache under key: horsebet-db-${{ steps.date.outputs.date }}"
+          echo "The race day pipeline will restore it automatically on the next run."
