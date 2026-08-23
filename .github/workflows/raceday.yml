@@ -162,12 +162,24 @@ jobs:
           retention-days: 30
           overwrite: true
 
-      # ── Step 6: Deploy to GitHub Pages ──
-      - name: Deploy to GitHub Pages
-        if: steps.check.outputs.is_race_day == 'true'
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./results
-          destination_dir: results
-          keep_files: true
+      # ── Step 6: Publish results to frontend (triggers Vercel redeploy) ──
+      - name: Publish results to frontend
+        if: steps.check.outputs.is_race_day == 'true' && always()
+        run: |
+          DATE="${{ steps.date.outputs.date }}"
+          if [ ! -f results/data.json ]; then
+            echo "⚠️  No data.json found, skipping publish"
+            exit 0
+          fi
+          mkdir -p frontend/data
+          cp results/data.json frontend/data/data.json
+          git config user.name "UmaEdge Bot"
+          git config user.email "actions@github.com"
+          git add frontend/data/data.json
+          if git diff --staged --quiet; then
+            echo "ℹ️  No changes to data.json, skipping commit"
+          else
+            git commit -m "📊 Results: $DATE [skip ci]"
+            git push
+            echo "✅ Published results for $DATE → Vercel redeploy triggered"
+          fi
