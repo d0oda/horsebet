@@ -2,7 +2,7 @@
 UmaEdge — Netkeiba Race Scraper.
 
 Scrapes race results and horse data from netkeiba.com.
-Stores parsed data into the horsebet schema on Supabase.
+Stores parsed data into the horsebet schema on SQLite.
 
 Usage:
     # Scrape a single race by netkeiba race ID
@@ -156,7 +156,10 @@ def _fetch(url: str, retries: int = 3) -> Optional[BeautifulSoup]:
         try:
             _sleep()
             resp = requests.get(url, headers=HEADERS, timeout=(10.0, 20.0))
-            resp.encoding = "EUC-JP"  # netkeiba uses EUC-JP
+            if "db.netkeiba.com" in url:
+                resp.encoding = "EUC-JP"  # Legacy DB pages use EUC-JP
+            else:
+                resp.encoding = "utf-8"   # All live netkeiba pages are UTF-8
             if resp.status_code == 200:
                 return BeautifulSoup(resp.text, "lxml")
             elif resp.status_code == 404:
