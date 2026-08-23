@@ -33,3 +33,4 @@ Thumbs.db
 node_modules/
 .next/
 data/features.parquet
+horsebet.db
