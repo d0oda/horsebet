@@ -725,8 +725,12 @@ Examples:
 
     # Step 3: Predict
     pred_path = f"results/predictions_{args.date}.json"
-    if args.skip_predict and Path(pred_path).exists():
-        log.info(f"━━━ Step 3: Predict → SKIPPED (using {pred_path}) ━━━")
+    if args.skip_predict:
+        if Path(pred_path).exists():
+            log.info(f"━━━ Step 3: Predict → SKIPPED (using {pred_path}) ━━━")
+        else:
+            log.info(f"━━━ Step 3: Predict → SKIPPED (no existing JSON, scrape-only mode) ━━━")
+            pred_path = None
     elif args.force_predict or not Path(pred_path).exists():
         # First run or forced: predict all
         pred_path = step_predict(args.date, args.version, args.ev_threshold,
@@ -741,7 +745,10 @@ Examples:
         log.info(f"━━━ Step 3: No odds updates, using existing predictions ━━━")
 
     # Step 4: Frontend
-    step_frontend(pred_path, args.date)
+    if pred_path:
+        step_frontend(pred_path, args.date)
+    else:
+        log.info("━━━ Step 4: Frontend → SKIPPED (no predictions yet) ━━━")
 
     # Step 5: Collect results for finished races
     step_results(args.date, race_ids)

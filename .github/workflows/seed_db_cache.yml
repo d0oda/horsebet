@@ -59,6 +59,20 @@ jobs:
           con.close()
           "
 
+      - name: Download model files from release
+        run: |
+          echo "⬇️  Downloading models_saved_current.tar.gz..."
+          gh release download db-seed-latest \
+            --repo ${{ github.repository }} \
+            --pattern "models_saved_current.tar.gz" \
+            --output models_saved_current.tar.gz
+          mkdir -p models/saved
+          tar -xzf models_saved_current.tar.gz -C models/saved
+          echo "✅ Model files extracted:"
+          ls models/saved/
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Get today's date for cache key
         id: date
         run: echo "date=$(TZ=Asia/Tokyo date +%Y-%m-%d)" >> $GITHUB_OUTPUT
@@ -69,7 +83,14 @@ jobs:
           path: horsebet.db
           key: horsebet-db-${{ steps.date.outputs.date }}
 
+      - name: Save model files to cache
+        uses: actions/cache/save@v4
+        with:
+          path: models/saved
+          key: models-saved-retrain_20260822_2143
+
       - name: Done
         run: |
-          echo "✅ horsebet.db is now in cache under key: horsebet-db-${{ steps.date.outputs.date }}"
-          echo "The race day pipeline will restore it automatically on the next run."
+          echo "✅ horsebet.db cached: horsebet-db-${{ steps.date.outputs.date }}"
+          echo "✅ Model cached: models-saved-retrain_20260822_2143"
+          echo "The race day pipeline will restore both automatically on the next run."

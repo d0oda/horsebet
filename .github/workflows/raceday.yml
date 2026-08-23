@@ -80,6 +80,16 @@ jobs:
           restore-keys: |
             horsebet-db-
 
+      - name: Restore model files from cache
+        if: steps.check.outputs.is_race_day == 'true'
+        id: model_cache
+        uses: actions/cache/restore@v4
+        with:
+          path: models/saved
+          key: models-saved-${{ env.MODEL_VERSION }}
+          restore-keys: |
+            models-saved-
+
       - name: Bootstrap empty DB if cache miss
         if: steps.check.outputs.is_race_day == 'true' && steps.db_cache.outputs.cache-hit != 'true'
         run: |
@@ -112,13 +122,20 @@ jobs:
           DATE="${{ steps.date.outputs.date }}"
           python race_watcher.py --date "$DATE" --once --lead-time 15
 
-      # ── Step 4: Save updated DB to cache ──
+      # ── Step 4: Save updated DB and models to cache ──
       - name: Save horsebet.db to cache
         if: steps.check.outputs.is_race_day == 'true' && always()
         uses: actions/cache/save@v4
         with:
           path: horsebet.db
           key: horsebet-db-${{ steps.date.outputs.date }}
+
+      - name: Save model files to cache
+        if: steps.check.outputs.is_race_day == 'true' && steps.model_cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: models/saved
+          key: models-saved-${{ env.MODEL_VERSION }}
 
       # ── Step 4b: Upload DB snapshot as artifact (enables seeding / recovery) ──
       - name: Upload DB snapshot
