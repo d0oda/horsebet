@@ -86,7 +86,15 @@ def is_active_racing_window(date: str) -> bool:
                 text("SELECT MIN(post_time) as min_t, MAX(post_time) as max_t FROM races WHERE date = :d"),
                 {"d": date}
             ).fetchone()
-            return result.min_t, result.max_t
+            min_t, max_t = result.min_t, result.max_t
+            # SQLite returns time columns as strings on some platforms; parse if needed
+            if isinstance(min_t, str):
+                from datetime import time as dt_time
+                min_t = dt_time.fromisoformat(min_t) if min_t else None
+            if isinstance(max_t, str):
+                from datetime import time as dt_time
+                max_t = dt_time.fromisoformat(max_t) if max_t else None
+            return min_t, max_t
 
     min_t, max_t = get_bounds()
     if min_t is None:
