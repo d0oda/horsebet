@@ -120,6 +120,16 @@ jobs:
           path: horsebet.db
           key: horsebet-db-${{ steps.date.outputs.date }}
 
+      # ── Step 4b: Upload DB snapshot as artifact (enables seeding / recovery) ──
+      - name: Upload DB snapshot
+        if: steps.check.outputs.is_race_day == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: horsebet-db-snapshot
+          path: horsebet.db
+          retention-days: 90
+          overwrite: true
+
       # ── Step 5: Upload artifacts ──
       - name: Upload artifacts
         if: steps.check.outputs.is_race_day == 'true'
