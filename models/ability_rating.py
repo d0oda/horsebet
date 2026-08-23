@@ -135,9 +135,21 @@ class AbilityRatingEngine:
                 base = class_val + ((par_time - time_secs) / par_time) * 1000.0
             components["base_speed"] = round(base, 2)
         else:
-            # No timing data — approximate from class + position
-            pos_penalty = max(0, (finish_pos - 1) * 2) if finish_pos else 10
-            base = class_val - pos_penalty
+            # No timing data — approximate ability relative to class par using finish
+            # position converted to a z-score-equivalent unit so this stays on the same
+            # ±10-pt scale as the timed path (where 1 SD ≈ 10 pts).
+            # Linear interpolation: winner ≈ +1 SD, last in field ≈ -1 SD.
+            if finish_pos and field_size and field_size > 1:
+                # rank percentile from top (winner = 1.0, last = 0.0)
+                rank_pct = 1.0 - (finish_pos - 1) / (field_size - 1)
+                # convert to z-score-like: winner→+1, last→-1, mid→0
+                z_approx = 2.0 * rank_pct - 1.0
+            elif finish_pos:
+                # Unknown field size — use a simple winner/non-winner split
+                z_approx = 1.0 if finish_pos == 1 else -0.5
+            else:
+                z_approx = -1.0  # no position data: conservative
+            base = class_val + z_approx * 10.0
             components["base_speed"] = round(base, 2)
 
         # 2. Class adjustment
@@ -189,45 +201,77 @@ class AbilityRatingEngine:
     # Par Time Lookup
     # ------------------------------------------------------------------
 
-    def _load_par_times(self):
-        """Load median and std of race times by (course, distance, going)."""
-        if self._par_cache:
+    def _load_par_times(self, cutoff_date: Optional[str] = None):
+        """Load median and std of race times by (course, distance, going).
+
+        Args:
+            cutoff_date: If given, only races strictly before this date are
+                used (point-in-time baseline, no look-ahead bias). If None,
+                uses all data (only safe for forward-only live inference
+                where the entire DB is already in the past).
+        """
+        # Cache key includes the cutoff so different cutoffs don't share stale data
+        cache_key = cutoff_date or "_all_"
+        if cache_key in self._par_cache:
             return
 
         import pandas as pd
-        log.info("Loading par times from database using Pandas...")
-        query = """
-            SELECT
-                r.course_id,
-                r.distance,
-                r.going,
-                res.time_secs
-            FROM races r
-            JOIN entries e ON e.race_id = r.id
-            JOIN results res ON res.entry_id = e.id
-            WHERE res.time_secs IS NOT NULL
-              AND res.time_secs > 0
-              AND r.course_id IS NOT NULL
-              AND r.distance IS NOT NULL
-              AND r.going IS NOT NULL
-        """
-        with get_session() as session:
-            df = pd.read_sql(text(query), session.bind)
+        log.info(f"Loading par times from database (cutoff={cutoff_date or 'all'})...")
+        if cutoff_date:
+            query = """
+                SELECT
+                    r.course_id,
+                    r.distance,
+                    r.going,
+                    res.time_secs
+                FROM races r
+                JOIN entries e ON e.race_id = r.id
+                JOIN results res ON res.entry_id = e.id
+                WHERE res.time_secs IS NOT NULL
+                  AND res.time_secs > 0
+                  AND r.course_id IS NOT NULL
+                  AND r.distance IS NOT NULL
+                  AND r.going IS NOT NULL
+                  AND r.date < :cutoff
+            """
+            with get_session() as session:
+                df = pd.read_sql(text(query), session.bind, params={"cutoff": cutoff_date})
+        else:
+            query = """
+                SELECT
+                    r.course_id,
+                    r.distance,
+                    r.going,
+                    res.time_secs
+                FROM races r
+                JOIN entries e ON e.race_id = r.id
+                JOIN results res ON res.entry_id = e.id
+                WHERE res.time_secs IS NOT NULL
+                  AND res.time_secs > 0
+                  AND r.course_id IS NOT NULL
+                  AND r.distance IS NOT NULL
+                  AND r.going IS NOT NULL
+            """
+            with get_session() as session:
+                df = pd.read_sql(text(query), session.bind)
 
         grouped = df.groupby(["course_id", "distance", "going"])["time_secs"]
         stats = grouped.agg(median_time="median", std_time="std", n="count")
         stats = stats[stats["n"] >= 500].reset_index()
 
+        par_data = {}
         for _, row in stats.iterrows():
             key = (int(row["course_id"]), int(row["distance"]), str(row["going"]))
-            self._par_cache[key] = (float(row["median_time"]), float(row["std_time"]) if not pd.isna(row["std_time"]) else None)
+            par_data[key] = (float(row["median_time"]), float(row["std_time"]) if not pd.isna(row["std_time"]) else None)
 
-        log.info(f"Loaded {len(self._par_cache)} par time entries")
+        self._par_cache[cache_key] = par_data
+        log.info(f"Loaded {len(par_data)} par time entries (cutoff={cutoff_date or 'all'})")
 
-    def _get_par(self, course_id, distance, going):
+    def _get_par(self, course_id, distance, going, cutoff_date: Optional[str] = None):
         """Get (median_time, std_time) for a course/distance/going combo."""
-        self._load_par_times()
-        return self._par_cache.get((course_id, distance, going), (None, None))
+        self._load_par_times(cutoff_date)
+        cache_key = cutoff_date or "_all_"
+        return self._par_cache.get(cache_key, {}).get((course_id, distance, going), (None, None))
 
     # ------------------------------------------------------------------
     # Backfill All Historical Ratings
@@ -237,9 +281,12 @@ class AbilityRatingEngine:
         """
         Process ALL historical results chronologically and compute ratings.
         This is the one-time backfill job.
+
+        Par times for each race use only races strictly before that race's date
+        (point-in-time baseline — no look-ahead bias).
         """
         log.info("Starting full ability rating backfill...")
-        self._load_par_times()
+        # Note: par times are loaded per-race-date inside the loop for PIT correctness.
 
         # Load all results with needed data, sorted by date
         query = """
@@ -293,8 +340,11 @@ class AbilityRatingEngine:
 
             for _, row in race_df.iterrows():
                 horse_id = row["horse_id"]
+                race_date_str = str(row["date"])
+                # Pass race date as cutoff so par times only use prior races (A12 fix)
                 par_time, par_std = self._get_par(
-                    row["course_id"], row["distance"], row["going"]
+                    row["course_id"], row["distance"], row["going"],
+                    cutoff_date=race_date_str
                 )
 
                 components = self.compute_race_score(
@@ -455,7 +505,10 @@ class AbilityRatingEngine:
         updated = 0
         with get_session() as session:
             for _, row in df.iterrows():
-                par_time, par_std = self._get_par(row["course_id"], row["distance"], row["going"])
+                par_time, par_std = self._get_par(
+                    row["course_id"], row["distance"], row["going"],
+                    cutoff_date=str(row.get("race_date", "") or race_date)
+                )
                 field_avg_wt = field_avg_weights.get(row["race_id"], 55.0)
 
                 components = self.compute_race_score(
@@ -487,22 +540,19 @@ class AbilityRatingEngine:
                             VALUES (:hid, :rating)
                             ON CONFLICT (horse_id) DO UPDATE SET
                                 ability_rating = EXCLUDED.ability_rating,
-                                updated_at = now()"""),
+                                updated_at = CURRENT_TIMESTAMP"""),
                     {"hid": row["horse_id"], "rating": round(new_rating, 2)},
                 )
 
-                # Insert history (upsert)
+                # Insert history (idempotent ON CONFLICT DO NOTHING — A13 fix:
+                # prevents double-EWMA if update_for_date is re-run on same date).
                 session.execute(
                     text("""
                         INSERT INTO horse_rating_history
                             (horse_id, race_id, race_date, rating_before, race_score, rating_after, components)
                         VALUES
                             (:horse_id, :race_id, :race_date, :rating_before, :race_score, :rating_after, CAST(:components AS jsonb))
-                        ON CONFLICT (horse_id, race_id) DO UPDATE SET
-                            rating_before = EXCLUDED.rating_before,
-                            race_score = EXCLUDED.race_score,
-                            rating_after = EXCLUDED.rating_after,
-                            components = EXCLUDED.components
+                        ON CONFLICT (horse_id, race_id) DO NOTHING
                     """),
                     {
                         "horse_id": row["horse_id"],

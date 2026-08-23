@@ -40,7 +40,7 @@ def get_races_with_bad_dates() -> list[dict]:
     with get_session() as session:
         # Bad dates: dates that have way too many races (>36 = more than 3 venues)
         bad_dates = session.execute(text("""
-            SELECT date FROM horsebet.races
+            SELECT date FROM races
             GROUP BY date
             HAVING COUNT(*) > 36
         """)).fetchall()
@@ -50,9 +50,9 @@ def get_races_with_bad_dates() -> list[dict]:
             return []
 
         races = session.execute(text("""
-            SELECT id, netkeiba_id, date::text, race_name_jp
-            FROM horsebet.races
-            WHERE date IN (SELECT date FROM horsebet.races
+            SELECT id, netkeiba_id, CAST(date AS TEXT), race_name_jp
+            FROM races
+            WHERE date IN (SELECT date FROM races
                            GROUP BY date HAVING COUNT(*) > 36)
             ORDER BY netkeiba_id
         """)).fetchall()
@@ -102,7 +102,7 @@ def process_one(race: dict, idx: int, total: int, dry_run: bool) -> dict:
 
     with get_session() as session:
         session.execute(
-            text("UPDATE horsebet.races SET date = :new_date WHERE id = :rid"),
+            text("UPDATE races SET date = :new_date WHERE id = :rid"),
             {"new_date": actual_date, "rid": race["id"]},
         )
 

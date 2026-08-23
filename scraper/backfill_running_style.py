@@ -82,9 +82,9 @@ def main():
         results = session.execute(text("""
             SELECT r.id, r.corner_positions, r.finish_pos,
                    ra.field_size
-            FROM horsebet.results r
-            JOIN horsebet.entries e ON e.id = r.entry_id
-            JOIN horsebet.races ra ON ra.id = e.race_id
+            FROM results r
+            JOIN entries e ON e.id = r.entry_id
+            JOIN races ra ON ra.id = e.race_id
             WHERE r.running_style IS NULL
               AND r.corner_positions IS NOT NULL
               AND r.corner_positions != ''
@@ -127,7 +127,7 @@ def main():
             batch = updates[i:i + BATCH_SIZE]
             for result_id, style in batch:
                 session.execute(
-                    text("UPDATE horsebet.results SET running_style = :style WHERE id = :rid"),
+                    text("UPDATE results SET running_style = :style WHERE id = :rid"),
                     {"style": style, "rid": result_id},
                 )
             updated += len(batch)

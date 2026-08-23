@@ -50,7 +50,7 @@ def build_data_json(predictions_paths: list, output: str = None):
             races = session.execute(text('''
                 SELECT r.id, r.race_name_jp, r.race_number, r.distance, r.surface,
                        r.going, r.course_id, r.date
-                FROM horsebet.races r
+                FROM races r
                 WHERE r.date = :date
                 ORDER BY r.course_id, r.race_number
             '''), {'date': date}).fetchall()
@@ -59,9 +59,9 @@ def build_data_json(predictions_paths: list, output: str = None):
                 SELECT e.id, e.race_id, e.post_position, e.draw, e.odds_win,
                        e.popularity, h.name_jp,
                        e.finish_pos, e.time_secs, e.last_3f_secs
-                FROM horsebet.entries e
-                JOIN horsebet.horses h ON h.id = e.horse_id
-                WHERE e.race_id IN (SELECT id FROM horsebet.races WHERE date = :date)
+                FROM entries e
+                JOIN horses h ON h.id = e.horse_id
+                WHERE e.race_id IN (SELECT id FROM races WHERE date = :date)
                 ORDER BY e.race_id, e.post_position
             '''), {'date': date}).fetchall()
 

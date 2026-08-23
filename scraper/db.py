@@ -1,30 +1,26 @@
 """
 UmaEdge — Database connection utility.
 
-Provides SQLAlchemy engine and session for the Supabase database.
-All tables live in the 'horsebet' schema (NOT public).
-The search_path is set automatically on every connection.
+Provides a SQLAlchemy engine and session for the local SQLite database.
+All UmaEdge tables (races, entries, horses, etc.) are stored in horsebet.db.
 
-Project: utadojvegaohlgqchsdy (eu-west-1)
-Schema:  horsebet
+DATABASE_URL is read from .env, e.g.:
+    DATABASE_URL=sqlite:///horsebet.db
 """
 
 import os
 from contextlib import contextmanager
 from dotenv import load_dotenv
-from sqlalchemy import create_engine, event, text
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, Session
 
 load_dotenv()
-
-# All UmaEdge tables (races, entries, horses, etc.) live in this schema.
-SCHEMA = "horsebet"
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 if not DATABASE_URL:
     raise RuntimeError(
-        "DATABASE_URL not set. Copy .env.example to .env and fill in your Supabase credentials."
+        "DATABASE_URL not set. Add DATABASE_URL=sqlite:///horsebet.db to your .env file."
     )
 
 from sqlalchemy.pool import NullPool
@@ -32,18 +28,8 @@ from sqlalchemy.pool import NullPool
 engine = create_engine(
     DATABASE_URL,
     poolclass=NullPool,
+    connect_args={"check_same_thread": False},
 )
-
-
-@event.listens_for(engine, "connect")
-def _set_search_path(dbapi_conn, connection_record):
-    """Set search_path on every new raw connection (works through poolers)."""
-    if "postgres" in DATABASE_URL:
-        cursor = dbapi_conn.cursor()
-        cursor.execute("SET search_path TO horsebet, public")
-        cursor.close()
-        dbapi_conn.commit()
-
 
 SessionLocal = sessionmaker(bind=engine)
 
@@ -63,13 +49,10 @@ def get_session() -> Session:
 
 
 def test_connection():
-    """Quick test to verify DB connectivity and schema access."""
+    """Quick test to verify DB connectivity."""
     with get_session() as session:
-        result = session.execute(
-            text("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'horsebet'")
-        )
-        count = result.scalar()
-        print(f"✅ Connected to Supabase. Found {count} tables in horsebet schema.")
+        count = session.execute(text("SELECT COUNT(*) FROM races")).scalar()
+        print(f"✅ Connected to SQLite. Found {count:,} races.")
         return count
 
 

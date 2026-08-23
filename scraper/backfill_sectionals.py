@@ -43,9 +43,9 @@ def get_races_missing_sectionals(year: Optional[int] = None, limit: Optional[int
         SELECT DISTINCT r.id AS race_id, r.netkeiba_id, r.date, r.race_name_jp,
             COUNT(res.id) AS total_results,
             SUM(CASE WHEN res.last_3f_secs IS NULL THEN 1 ELSE 0 END) AS missing_last3f
-        FROM horsebet.races r
-        JOIN horsebet.entries e ON e.race_id = r.id
-        JOIN horsebet.results res ON res.entry_id = e.id
+        FROM races r
+        JOIN entries e ON e.race_id = r.id
+        JOIN results res ON res.entry_id = e.id
         WHERE res.last_3f_secs IS NULL
           AND res.time_secs IS NOT NULL
     """
@@ -122,11 +122,11 @@ def _process_one_race(race: dict, idx: int, total: int, dry_run: bool) -> dict:
             # Update existing result row via entry match
             result = session.execute(
                 text("""
-                    UPDATE horsebet.results res
+                    UPDATE results res
                     SET last_3f_secs = COALESCE(:last_3f, res.last_3f_secs),
                         first_3f_secs = COALESCE(:first_3f, res.first_3f_secs),
                         corner_positions = COALESCE(:corners, res.corner_positions)
-                    FROM horsebet.entries e
+                    FROM entries e
                     WHERE res.entry_id = e.id
                       AND e.race_id = :race_id
                       AND e.post_position = :pp

@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-from sqlalchemy import text
+from sqlalchemy import text, bindparam
 from scraper.db import get_session
 
 def check_winners():
@@ -21,7 +21,7 @@ def check_winners():
             race_ids.extend([r[0] for r in rows])
             
         entries = pd.read_sql(
-            text("SELECT id as entry_id, race_id, finish_pos as finish_pos_actual, odds_win as odds_win_actual FROM entries WHERE race_id = ANY(:rids)"),
+            text("SELECT id as entry_id, race_id, finish_pos as finish_pos_actual, odds_win as odds_win_actual FROM entries WHERE race_id IN :rids").bindparams(bindparam("rids", expanding=True)),
             session.bind,
             params={"rids": race_ids}
         )

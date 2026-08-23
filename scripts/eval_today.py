@@ -1,5 +1,5 @@
 import pandas as pd
-from sqlalchemy import text
+from sqlalchemy import text, bindparam
 from scraper.db import get_session
 from models.predict_final import predict_with_filters
 
@@ -27,7 +27,7 @@ def main():
     # Fetch actual finish positions
     with get_session() as session:
         entries = pd.read_sql(
-            text("SELECT id as entry_id, finish_pos FROM entries WHERE race_id = ANY(:rids)"),
+            text("SELECT id as entry_id, finish_pos FROM entries WHERE race_id IN :rids").bindparams(bindparam("rids", expanding=True)),
             session.bind,
             params={"rids": race_ids}
         )

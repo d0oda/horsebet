@@ -377,7 +377,7 @@ def store_paddock_score(
         with get_session() as session:
             result = session.execute(
                 text("""
-                    INSERT INTO horsebet.paddock_comments
+                    INSERT INTO paddock_comments
                         (entry_id, source, comment_text,
                          score_build, score_temperament, score_gait,
                          score_coat, score_overall)
@@ -415,7 +415,7 @@ def get_paddock_score(entry_id: int) -> Optional[PaddockScore]:
                 text("""
                     SELECT score_build, score_temperament, score_gait,
                            score_coat, score_overall
-                    FROM horsebet.paddock_comments
+                    FROM paddock_comments
                     WHERE entry_id = :entry_id
                     ORDER BY scored_at DESC
                     LIMIT 1

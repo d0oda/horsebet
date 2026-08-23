@@ -43,9 +43,9 @@ def get_races_missing_results(date: Optional[str] = None) -> list[dict]:
         SELECT DISTINCT r.id AS race_id, r.netkeiba_id, r.date, r.race_name_jp,
             COUNT(e.id) AS total_entries,
             COUNT(res.id) AS results_found
-        FROM horsebet.races r
-        JOIN horsebet.entries e ON e.race_id = r.id
-        LEFT JOIN horsebet.results res ON res.entry_id = e.id
+        FROM races r
+        JOIN entries e ON e.race_id = r.id
+        LEFT JOIN results res ON res.entry_id = e.id
     """
     params = {}
     if date:
@@ -111,7 +111,7 @@ def _process_one_race(race: dict, idx: int, total: int, dry_run: bool) -> dict:
             # Find the entry_id in DB by matching race_id + post_position
             entry_row = session.execute(
                 text("""
-                    SELECT e.id FROM horsebet.entries e
+                    SELECT e.id FROM entries e
                     WHERE e.race_id = :race_id AND e.post_position = :pp
                 """),
                 {"race_id": race["race_id"], "pp": entry.post_position},
@@ -124,7 +124,7 @@ def _process_one_race(race: dict, idx: int, total: int, dry_run: bool) -> dict:
             # Insert into results table (ON CONFLICT skip)
             result = session.execute(
                 text("""
-                    INSERT INTO horsebet.results (
+                    INSERT INTO results (
                         entry_id, finish_pos, margin, time_secs,
                         last_3f_secs, corner_positions
                     ) VALUES (
@@ -148,7 +148,7 @@ def _process_one_race(race: dict, idx: int, total: int, dry_run: bool) -> dict:
             # Also update entries table with result data
             session.execute(
                 text("""
-                    UPDATE horsebet.entries
+                    UPDATE entries
                     SET finish_pos = COALESCE(:fp, finish_pos),
                         time_secs = COALESCE(:ts, time_secs),
                         last_3f_secs = COALESCE(:l3f, last_3f_secs),

@@ -4,31 +4,45 @@ description: How to query the UmaEdge database
 
 # Database Access
 
-All UmaEdge tables live in the **`horsebet` schema** on Supabase, NOT `public`.
+All UmaEdge data lives in a **local SQLite** database file: `horsebet.db`.
 
-## When using Supabase MCP tools (`execute_sql`, `apply_migration`, etc.)
+## Connection
 
-Always qualify table names:
-```sql
--- ✅ Correct
-SELECT * FROM horsebet.races;
-SELECT * FROM horsebet.entries;
-SELECT * FROM horsebet.horses;
-
--- ❌ Wrong (will fail with "relation does not exist")
-SELECT * FROM races;
+Set in `.env`:
+```
+DATABASE_URL=sqlite:///horsebet.db
 ```
 
-## Project details
+`scraper/db.py` loads this automatically via `python-dotenv`. All Python code uses `get_session()` from there — no schema prefix needed.
 
-- **Project ID**: `utadojvegaohlgqchsdy`
-- **Region**: `eu-west-1`
-- **Schema**: `horsebet`
+## When using Python / SQLAlchemy
+
+```python
+from scraper.db import get_session
+from sqlalchemy import text
+
+with get_session() as s:
+    rows = s.execute(text("SELECT * FROM races WHERE date = :d"), {"d": "2026-08-22"}).fetchall()
+```
 
 ## Tables
 
 Core tables: `races`, `entries`, `horses`, `jockeys`, `trainers`, `courses`, `results`, `odds_snapshots`
 
-## When using Python / SQLAlchemy
+## Common queries
 
-The `scraper/db.py` module sets `search_path TO horsebet, public` automatically on every connection, so Python code does NOT need to qualify table names.
+```sql
+-- All races on a date
+SELECT * FROM races WHERE date = '2026-08-22' ORDER BY course_id, race_number;
+
+-- Entries with odds and results
+SELECT e.id, h.name_jp, e.odds_win, r.finish_pos
+FROM entries e
+JOIN horses h ON h.id = e.horse_id
+LEFT JOIN results r ON r.entry_id = e.id
+WHERE e.race_id = 5503;
+```
+
+## Notes
+- Never use `horsebet.` schema prefix in SQL — it's plain SQLite, not Postgres
+- Table names are unqualified: `races`, `entries`, etc.

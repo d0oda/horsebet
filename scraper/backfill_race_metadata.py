@@ -44,15 +44,15 @@ def get_races_needing_backfill() -> list[dict]:
             r.going IS NULL AS missing_going,
             r.weather IS NULL AS missing_weather,
             r.field_size,
-            (SELECT COUNT(*) FROM horsebet.entries e2
-             JOIN horsebet.results res2 ON res2.entry_id = e2.id
+            (SELECT COUNT(*) FROM entries e2
+             JOIN results res2 ON res2.entry_id = e2.id
              WHERE e2.race_id = r.id AND res2.running_style IS NULL) AS missing_styles
-        FROM horsebet.races r
+        FROM races r
         WHERE r.going IS NULL
            OR r.weather IS NULL
            OR EXISTS (
-               SELECT 1 FROM horsebet.entries e
-               JOIN horsebet.results res ON res.entry_id = e.id
+               SELECT 1 FROM entries e
+               JOIN results res ON res.entry_id = e.id
                WHERE e.race_id = r.id AND res.running_style IS NULL
            )
         ORDER BY r.date, r.id
@@ -133,7 +133,7 @@ def _process_one_race(race: dict, idx: int, total: int, dry_run: bool) -> dict:
             set_clauses = ", ".join(f"{k} = :{k}" for k in updates)
             updates["race_id"] = race["race_id"]
             session.execute(
-                text(f"UPDATE horsebet.races SET {set_clauses} WHERE id = :race_id"),
+                text(f"UPDATE races SET {set_clauses} WHERE id = :race_id"),
                 updates,
             )
 
@@ -147,10 +147,10 @@ def _process_one_race(race: dict, idx: int, total: int, dry_run: bool) -> dict:
 
             result = session.execute(
                 text("""
-                    UPDATE horsebet.results res
+                    UPDATE results res
                     SET corner_positions = COALESCE(:corners, res.corner_positions),
                         running_style = COALESCE(:style, res.running_style)
-                    FROM horsebet.entries e
+                    FROM entries e
                     WHERE res.entry_id = e.id
                       AND e.race_id = :race_id
                       AND e.post_position = :pp

@@ -1,6 +1,5 @@
 import argparse
 import sys
-from models.predict import _store_predictions, _store_value_bets
 from models.features import FeatureBuilder
 from scraper.db import get_session
 from sqlalchemy import text
@@ -10,7 +9,7 @@ import numpy as np
 def run_fast(date_str, fb, version="20260604_223536", ev_threshold=0.2):
     with get_session() as session:
         rows = session.execute(
-            text("SELECT id FROM horsebet.races WHERE date = :d ORDER BY course_id, race_number"),
+            text("SELECT id FROM races WHERE date = :d ORDER BY course_id, race_number"),
             {"d": date_str},
         ).fetchall()
     race_ids = [r.id for r in rows]
@@ -25,13 +24,13 @@ def run_fast(date_str, fb, version="20260604_223536", ev_threshold=0.2):
         return
 
     from models.train import MODELS_DIR, load_model, ensemble_predict
-    from models.ensemble import HybridEnsemble
     import json
     meta_path = MODELS_DIR / version / "metadata.json"
     with open(meta_path) as f:
         meta = json.load(f)
 
     if meta.get("type") == "hybrid":
+        from models.ensemble import HybridEnsemble
         hybrid = HybridEnsemble.load(version)
         model_probs = hybrid.predict(features_df)["combined"]
     else:
@@ -41,10 +40,28 @@ def run_fast(date_str, fb, version="20260604_223536", ev_threshold=0.2):
             if col not in features_df.columns:
                 features_df[col] = np.nan
 
-        X = features_df[feature_cols].values
+        # Enforce categorical dtypes to match training — same logic as predict_final.py.
+        # Without this, LightGBM raises "categorical_feature do not match" because the
+        # FeatureBuilder may produce different category codes than what the model saw.
+        cat_cols_list = ["sire_id", "broodmare_sire_id", "going_code", "surface_code", "draw"]
+        categories_map = meta.get("categories", {})
+        for col in cat_cols_list:
+            if col in features_df.columns:
+                val = features_df[col].fillna("Unknown").astype(str)
+                saved_cats = categories_map.get(col)
+                if saved_cats:
+                    features_df[col] = pd.Categorical(val, categories=saved_cats)
+                else:
+                    features_df[col] = val.astype("category")
+
+        for col in feature_cols:
+            if col not in features_df.columns:
+                features_df[col] = np.nan
+
+        X = features_df[feature_cols].copy()
         lgb_probs = lgb_model.predict(X)
         import xgboost as xgb
-        xgb_probs = xgb_model.predict(xgb.DMatrix(X, feature_names=feature_cols))
+        xgb_probs = xgb_model.predict(xgb.DMatrix(X, feature_names=feature_cols, enable_categorical=True))
         model_probs = ensemble_predict(lgb_probs, xgb_probs)
         
         # Regression blend
@@ -52,11 +69,14 @@ def run_fast(date_str, fb, version="20260604_223536", ev_threshold=0.2):
         xgb_reg_model = meta.get("xgb_reg_model")
         if lgb_reg_model is not None and xgb_reg_model is not None:
             lgb_reg_preds = lgb_reg_model.predict(X)
-            xgb_reg_preds = xgb_reg_model.predict(xgb.DMatrix(X, feature_names=feature_cols))
+            xgb_reg_preds = xgb_reg_model.predict(xgb.DMatrix(X, feature_names=feature_cols, enable_categorical=True))
             ensemble_reg_preds = ensemble_predict(lgb_reg_preds, xgb_reg_preds)
-            
+
             from models.train import scores_to_probs
             race_ids_for_probs = features_df["race_id"].values
+            # Normalise binary-classifier probs per-race before blending so both
+            # components are on the same scale (proper per-race probability distributions).
+            model_probs = scores_to_probs(model_probs, race_ids_for_probs)
             reg_probs = scores_to_probs(-ensemble_reg_preds, race_ids_for_probs)
             model_probs = 0.8 * model_probs + 0.2 * reg_probs
         
@@ -66,8 +86,11 @@ def run_fast(date_str, fb, version="20260604_223536", ev_threshold=0.2):
 
     entry_ids = features_df["entry_id"].tolist()
     with get_session() as session:
+        from sqlalchemy import bindparam
         entry_rows = session.execute(
-            text("SELECT id, horse_id, odds_win FROM entries WHERE id = ANY(:ids)"),
+            text("SELECT id, horse_id, odds_win FROM entries WHERE id IN :ids").bindparams(
+                bindparam("ids", expanding=True)
+            ),
             {"ids": entry_ids}
         ).fetchall()
     entry_map = {r.id: (r.horse_id, r.odds_win or 0) for r in entry_rows}
@@ -115,7 +138,9 @@ def run_fast(date_str, fb, version="20260604_223536", ev_threshold=0.2):
     
     # Save JSON just for analyze_april.py to work
     import json
-    out = {"predictions": df.to_dict(orient="records")}
+    import os
+    os.makedirs("results", exist_ok=True)
+    out = {"model": version, "date": date_str, "predictions": df.to_dict(orient="records")}
     with open(f"results/predictions_{date_str}.json", "w") as f:
         json.dump(out, f, indent=2)
 

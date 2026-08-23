@@ -49,10 +49,10 @@ def get_bad_date_combos(year_filter: int = None) -> list[dict]:
                 SUBSTRING(netkeiba_id FROM 1 FOR 10) as combo_prefix,
                 COUNT(*) as race_count,
                 MIN(netkeiba_id) as sample_id,
-                date::text as bad_date
-            FROM horsebet.races
+                CAST(date AS TEXT) as bad_date
+            FROM races
             WHERE date IN (
-                SELECT date FROM horsebet.races
+                SELECT date FROM races
                 GROUP BY date HAVING COUNT(*) > 36
             )
         """
@@ -110,7 +110,7 @@ def update_races_for_combo(prefix: str, new_date: str, dry_run: bool = False):
     with get_session() as session:
         session.execute(
             text("""
-                UPDATE horsebet.races 
+                UPDATE races 
                 SET date = :new_date 
                 WHERE SUBSTRING(netkeiba_id FROM 1 FOR 10) = :prefix
             """),

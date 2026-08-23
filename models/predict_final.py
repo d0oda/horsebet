@@ -78,23 +78,66 @@ def predict_with_filters(
         # Ensure all expected feature columns exist (pre-race data may
         # be missing columns like horse_weight_z when weights aren't out).
         import xgboost as xgb_lib
-        for col in ["sire_id", "broodmare_sire_id", "going_code", "surface_code", "draw"]:
+        cat_cols_list = ["sire_id", "broodmare_sire_id", "going_code", "surface_code", "draw"]
+        categories_map = meta.get("categories", {})
+        for col in cat_cols_list:
             if col in features_df.columns:
-                features_df[col] = features_df[col].fillna("Unknown").astype(str).astype("category")
+                val = features_df[col].fillna("Unknown").astype(str)
+                saved_cats = categories_map.get(col)
+                if saved_cats:
+                    # Enforce training category mapping so integer codes match the model
+                    features_df[col] = pd.Categorical(val, categories=saved_cats)
+                else:
+                    features_df[col] = val.astype("category")
 
         for col in feature_cols:
             if col not in features_df.columns:
                 log.debug(f"Adding missing column '{col}' as NaN")
                 features_df[col] = np.nan
 
-        X = features_df[feature_cols]
+        X = features_df[feature_cols].copy()
         lgb_preds = lgb_model.predict(X)
-        xgb_preds = xgb_model.predict(xgb_lib.DMatrix(X, feature_names=feature_cols, enable_categorical=True))
+        import re
+        import xgboost.core as xgb_core
+        
+        # Robustly predict, stripping out unknown categories if XGBoost complains
+        while True:
+            try:
+                dtest = xgb_lib.DMatrix(X, feature_names=feature_cols, enable_categorical=True)
+                xgb_preds = xgb_model.predict(dtest)
+                break
+            except xgb_core.XGBoostError as e:
+                err = str(e)
+                m = re.search(r"for the (\d+)th \(0-based\) column: `(.+?)`", err)
+                if m:
+                    col_idx = int(m.group(1))
+                    bad_cat = m.group(2)
+                    col_name = feature_cols[col_idx]
+                    log.warning(f"Removing unknown category '{bad_cat}' from {col_name}")
+                    if bad_cat in X[col_name].cat.categories:
+                        X[col_name] = X[col_name].cat.remove_categories([bad_cat])
+                        if len(X[col_name].cat.categories) == 0:
+                            cat_cols = [c for c in feature_cols if X[c].dtype.name == "category"]
+                            try:
+                                col_cat_idx = cat_cols.index(col_name)
+                                valid_cat = lgb_model.pandas_categorical[col_cat_idx][0]
+                                X[col_name] = X[col_name].cat.add_categories([valid_cat])
+                            except Exception as e:
+                                log.warning(f"Failed to add valid fallback category: {e}")
+                    else:
+                        raise e
+                else:
+                    raise e
         prob_cls = ensemble_predict(lgb_preds, xgb_preds)
-        
-        from models.train import scores_to_probs
+
+        from models.train import scores_to_probs, cls_to_probs
         race_ids_for_probs = features_df["race_id"].values
-        
+
+        # Normalise binary-classifier probs per race using L1 (divide by sum).
+        # Softmax would flatten calibrated probabilities; L1 correctly rescales
+        # to sum-to-1 without distorting the relative magnitudes.
+        prob_cls = cls_to_probs(prob_cls, race_ids_for_probs)
+
         # Regression blend
         lgb_reg_model = meta.get("lgb_reg_model")
         xgb_reg_model = meta.get("xgb_reg_model")
@@ -102,7 +145,12 @@ def predict_with_filters(
             lgb_reg_preds = lgb_reg_model.predict(X)
             xgb_reg_preds = xgb_reg_model.predict(xgb_lib.DMatrix(X, feature_names=feature_cols, enable_categorical=True))
             ensemble_reg_preds = ensemble_predict(lgb_reg_preds, xgb_reg_preds)
-            prob_reg = scores_to_probs(-ensemble_reg_preds, race_ids_for_probs)
+            # target_margin = 1/finish_pos: higher prediction → better horse.
+            # Clamp to 0 to prevent any edge-case negative predictions from reg:squarederror
+            # from inverting rankings (a negative prediction would rank a horse lower than
+            # a correctly predicted 0.0 horse despite being near the winner).
+            ensemble_reg_preds = np.maximum(ensemble_reg_preds, 0.0)
+            prob_reg = scores_to_probs(ensemble_reg_preds, race_ids_for_probs)
         else:
             prob_reg = np.zeros_like(prob_cls)
             
@@ -145,13 +193,6 @@ def predict_with_filters(
 
         entry_map = {e[0]: {"odds": e[1], "name": e[2]} for e in entries}
 
-        for i, (_, row) in enumerate(features_df.iterrows()):
-            entry_id = row["entry_id"]
-            info = entry_map.get(entry_id, {})
-            combined_p = float(combined[i])
-            fund_p = float(fundamental[i])
-            mkt_p = float(market[i])
-            
         # Normalize probabilities to sum to 1.0 for the race
         comb_sum = sum(float(c) for c in combined)
         fund_sum = sum(float(f) for f in fundamental)

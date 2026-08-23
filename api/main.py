@@ -445,7 +445,7 @@ def refresh_race(race_id: int):
     # 1. Look up netkeiba_id
     with get_session() as session:
         race_row = session.execute(
-            text("SELECT netkeiba_id FROM horsebet.races WHERE id = :id"),
+            text("SELECT netkeiba_id FROM races WHERE id = :id"),
             {"id": race_id}
         ).fetchone()
         
@@ -462,7 +462,7 @@ def refresh_race(race_id: int):
             for o in odds:
                 session.execute(
                     text("""
-                        UPDATE horsebet.entries
+                        UPDATE entries
                         SET odds_win = :odds
                         WHERE race_id = :race_id AND post_position = :pp
                     """),

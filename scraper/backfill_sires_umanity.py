@@ -118,7 +118,7 @@ def get_horses_missing_sire(limit: Optional[int] = None) -> list[dict]:
     """Get horses missing sire_name with valid netkeiba IDs."""
     query = """
         SELECT id, netkeiba_id, name_jp
-        FROM horsebet.horses
+        FROM horses
         WHERE sire_name IS NULL
           AND netkeiba_id IS NOT NULL
           AND netkeiba_id NOT LIKE 'unknown_%'
@@ -155,7 +155,7 @@ def _process_one_horse(horse: dict, idx: int, total: int, dry_run: bool) -> str:
     # Update DB
     with get_session() as session:
         session.execute(
-            text("UPDATE horsebet.horses SET sire_name = :sire WHERE id = :hid"),
+            text("UPDATE horses SET sire_name = :sire WHERE id = :hid"),
             {"sire": sire_name, "hid": horse["id"]},
         )
     log.debug(f"  [{idx}/{total}] ✅ {horse['name_jp']} → sire: {sire_name}")

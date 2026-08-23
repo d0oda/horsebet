@@ -376,7 +376,8 @@ class FeatureBuilder:
                 (course_hist["finish_pos"] == 1).mean() if len(course_hist) > 0 else np.nan
             )
         else:
-            features["runs_at_course"] = 0
+            # course_id is None (unknown venue) — distinguish from "zero runs at this venue"
+            features["runs_at_course"] = np.nan
             features["win_pct_at_course"] = np.nan
 
         # --- Class level ---
@@ -387,21 +388,22 @@ class FeatureBuilder:
         )
 
         # --- Class change features (Research Backlog #1) ---
-        current_class_rank = CLASS_RANK.get(row.get("race_class") if hasattr(row, 'get') else None, 10) if 'row' in dir() else 10
+        # hist is newest-first. CLASS_RANK: lower number = higher class (G1=1, maiden=9).
+        # class_change = newest_rank - second_newest_rank.
+        #   Positive → newer rank is higher number → dropped to easier class.
+        #   Negative → newer rank is lower number → rose to harder class.
+        # diff(-1) on a newest-first series = ranks[i] - ranks[i+1] = newer - older.
+        #   Positive diff → newer rank > older rank → horse dropped (easier).
+        #   Negative diff → newer rank < older rank → horse rose (harder).
         class_ranks = hist["race_class"].map(CLASS_RANK).dropna()
         if not class_ranks.empty:
-            last_class_rank = class_ranks.iloc[0]
-            current_rank = CLASS_RANK.get(
-                hist.iloc[0]["race_class"] if pd.notna(hist.iloc[0].get("race_class")) else None, 10
-            )
-            # Negative = dropped in class (easier race), positive = rising
-            features["class_change"] = current_rank - last_class_rank if len(class_ranks) >= 2 else 0
             if len(class_ranks) >= 2:
-                diffs = class_ranks.diff(-1).dropna()  # sorted desc, so diff(-1) = newer - older
+                diffs = class_ranks.diff(-1).dropna()  # diff(-1) = newer_rank - older_rank
                 recent_diffs = diffs.head(5)
                 features["class_change"] = float(class_ranks.iloc[0] - class_ranks.iloc[1]) if len(class_ranks) >= 2 else 0.0
-                features["class_drops_last5"] = int((recent_diffs < 0).sum())  # dropped = lower rank number = stronger
-                features["class_rises_last5"] = int((recent_diffs > 0).sum())  # risen = higher rank number = weaker
+                # Positive diff → dropped class (easier). Negative diff → rose class (harder).
+                features["class_drops_last5"] = int((recent_diffs > 0).sum())  # dropped = rank went up = easier
+                features["class_rises_last5"] = int((recent_diffs < 0).sum())  # risen = rank went down = harder
             else:
                 features["class_change"] = 0.0
                 features["class_drops_last5"] = 0
@@ -458,7 +460,10 @@ class FeatureBuilder:
             parsed_margins = hist["margin"].apply(_parse_margin_to_lengths)
             valid_mask = parsed_margins.notna()
             if valid_mask.any():
-                weighted = parsed_margins[valid_mask] * (10.0 / class_weights[valid_mask])
+                # Lower class_rank = stronger race → scale margin DOWN so losses in G1
+                # look smaller than the same margin in a maiden.
+                # Correct: multiply by class_rank/10 (G1: 1/10=0.1x, maiden: 10/10=1.0x)
+                weighted = parsed_margins[valid_mask] * (class_weights[valid_mask] / 10.0)
                 features["class_adjusted_margin"] = weighted.head(3).mean()
             else:
                 features["class_adjusted_margin"] = np.nan
@@ -621,12 +626,15 @@ class FeatureBuilder:
             features[f"jockey_win_pct_{n}"] = (recent["finish_pos"] == 1).mean()
             features[f"jockey_place_pct_{n}"] = (recent["finish_pos"] <= 3).mean()
 
-        # ROI for last 10 (sum of 1/odds when win, divided by N, minus 1)
+        # ROI for last 10 (flat-stake: sum of returns on wins minus total staked, divided by total staked)
+        # IMPORTANT: wins with null odds_win are treated as 0 return (not silently dropped)
+        # to avoid biasing the denominator.
         recent10 = hist.head(10)
         wins = recent10[recent10["finish_pos"] == 1]
         if len(recent10) > 0:
-            odds_payoff = wins["odds_win"].dropna().sum()
-            features["jockey_roi_10"] = (odds_payoff / len(recent10)) - 1.0
+            # Fill null winning odds with 0 (missing return) so N is consistent
+            win_returns = wins["odds_win"].fillna(0.0).sum()
+            features["jockey_roi_10"] = (win_returns / len(recent10)) - 1.0
         else:
             features["jockey_roi_10"] = np.nan
 
@@ -672,9 +680,11 @@ class FeatureBuilder:
         features["trainer_place_pct_10"] = (recent["finish_pos"] <= 3).mean()
 
         # ROI
+        # IMPORTANT: wins with null odds_win are treated as 0 return (not silently dropped)
+        # to avoid biasing the denominator.
         wins = recent[recent["finish_pos"] == 1]
-        odds_payoff = wins["odds_win"].dropna().sum()
-        features["trainer_roi_10"] = (odds_payoff / len(recent)) - 1.0
+        win_returns = wins["odds_win"].fillna(0.0).sum()
+        features["trainer_roi_10"] = (win_returns / len(recent)) - 1.0
 
         # --- Trainer last-14-day form (Research Backlog #2) ---
         try:
@@ -902,8 +912,7 @@ class FeatureBuilder:
             "shape_closer_ratio": np.nan,
             "shape_pace_pressure": np.nan,
             "shape_style_advantage": np.nan,
-            "shape_speed_rank": np.nan,
-            "shape_speed_rank_pct": np.nan,
+            # shape_speed_rank / shape_speed_rank_pct removed — dead features
             "shape_speed_vs_field_avg": np.nan,
             "shape_speed_vs_field_best": np.nan,
             "shape_class_vs_field_avg": np.nan,
@@ -934,14 +943,15 @@ class FeatureBuilder:
                 spd_best = np.nan
                 if group is not None and not group.empty:
                     idx = group["date"].searchsorted(race_date, side="left")
-                    hist = group.iloc[:idx]
+                    hist = group.iloc[:idx].iloc[::-1]  # reverse to newest-first (matches _horse_rolling_features)
                     if not hist.empty and "time_secs" in hist.columns:
                         # Use the speed baseline calculation (simplified)
                         times = hist["time_secs"].dropna()
                         if len(times) >= 1:
                             # Simple proxy: faster time = higher speed figure
                             # (actual speed figures are computed elsewhere, we just need relative ranking)
-                            spd_last = -times.iloc[-1] if len(times) > 0 else np.nan
+                            # hist is newest-first so iloc[-1] is the oldest, iloc[0] is most recent
+                            spd_last = -times.iloc[0]    # most recent race time
                             spd_best = -times.min() if len(times) > 0 else np.nan
 
                 # Get running style from pace cache
@@ -996,21 +1006,13 @@ class FeatureBuilder:
         lone_speed = 1 if my_style == STYLE_FRONT and n_front == 1 else 0
 
         # --- Speed figure rank within field ---
-        # Use the horse_speed_last/best passed from the already-computed features
-        speed_rank = np.nan
-        speed_rank_pct = np.nan
+        # NOTE: shape_speed_rank and shape_speed_rank_pct are omitted here because
+        # per-horse feature computation does not have access to all other horses'
+        # speed figures at the time of computation. The z-scored speed_figure_last_z
+        # already captures relative field standing via per-race normalisation.
         speed_vs_avg = np.nan
         speed_vs_best = np.nan
         is_speed_best = 0
-
-        if not np.isnan(horse_speed_last):
-            # We need to compare against field, but other horses' speed figures
-            # aren't stored in the cache. Use the features already computed.
-            # Since we compute features per-horse, we defer field-level speed
-            # ranking to the post-hoc normalisation (z-scores already handle this).
-            # Instead, pass through the raw values for z-scoring.
-            speed_rank = np.nan  # Will be filled by z-score normalisation
-            speed_rank_pct = np.nan
 
         # --- Class rank within field ---
         class_ranks = [d["class_rank"] for d in race_data.values()]
@@ -1031,8 +1033,8 @@ class FeatureBuilder:
             "shape_closer_ratio": closer_ratio,
             "shape_pace_pressure": pace_pressure,
             "shape_style_advantage": style_advantage,
-            "shape_speed_rank": speed_rank,
-            "shape_speed_rank_pct": speed_rank_pct,
+            # shape_speed_rank / shape_speed_rank_pct removed — always NaN at
+            # per-horse computation time; use z-scored speed_figure_last_z instead.
             "shape_speed_vs_field_avg": speed_vs_avg,
             "shape_speed_vs_field_best": speed_vs_best,
             "shape_class_vs_field_avg": class_vs_avg,
@@ -1203,8 +1205,11 @@ class FeatureBuilder:
         if cache is None:
             return null_feats
 
-        # Rank: 1 = shortest odds (favourite)
-        rank = int((cache["sorted"] <= odds_win).sum())
+        # Rank: 1 = shortest odds (favourite).
+        # Use strict < to avoid double-counting ties: rank = #horses with strictly
+        # shorter odds + 1.  If two horses share odds 5.0 in [2.0, 5.0, 5.0, 8.0],
+        # both correctly get rank 2 (one horse is shorter at 2.0).
+        rank = int((cache["sorted"] < odds_win).sum()) + 1
         features = {
             "odds_rank": rank,
             "odds_ratio_to_fav": odds_win / cache["fav_odds"] if cache["fav_odds"] > 0 else np.nan,
@@ -1240,16 +1245,21 @@ class FeatureBuilder:
         # Interaction: going × surface (dirt handles rain differently)
         going_code = GOING_MAP.get(going, np.nan)
         surface_code = SURFACE_MAP.get(surface, np.nan)
+        # Use offset encoding: (going_code + 1) * 10 + (surface_code + 1) so that
+        # the most common condition (good turf: 0,0) no longer maps to 0, giving
+        # each going/surface combination a unique non-zero integer.
         features["going_x_surface"] = (
-            going_code * surface_code
+            (going_code + 1) * 10 + (surface_code + 1)
             if not (np.isnan(going_code) if isinstance(going_code, float) else False)
             and not (np.isnan(surface_code) if isinstance(surface_code, float) else False)
             else np.nan
         )
 
-        # Interaction: going × distance (heavy going hurts more in long races)
+        # Interaction: going × distance (heavy going hurts more in long races).
+        # Use (going_code + 1) to avoid zero for the most-common "良" (good) condition,
+        # consistent with the offset encoding already applied to going_x_surface.
         features["going_x_distance"] = (
-            going_code * (distance / 1000.0)
+            (going_code + 1) * (distance / 1000.0)
             if not (np.isnan(going_code) if isinstance(going_code, float) else False)
             and distance > 0
             else np.nan
@@ -1278,19 +1288,31 @@ class FeatureBuilder:
                 if len(going_hist) > 0 else np.nan
             )
 
-            # Wet track advantage: win% on heavy/bad − win% on good
+            # Wet track advantage: win% on genuine heavy/bad − win% on good.
+            # 稍重 (slightly heavy) is EXCLUDED here — it has materially different
+            # performance characteristics from 重 (heavy) / 不良 (very bad).
             good = hist[hist["going"] == "良"]
-            wet = hist[hist["going"].isin(["重", "不良", "稍重"])]
+            wet = hist[hist["going"].isin(["重", "不良"])]       # genuine heavy/bad only
+            slightly_wet = hist[hist["going"] == "稍重"]         # slightly heavy (separate signal)
+
             good_wr = (good["finish_pos"] == 1).mean() if len(good) >= 2 else np.nan
             wet_wr = (wet["finish_pos"] == 1).mean() if len(wet) >= 2 else np.nan
+            soft_wr = (slightly_wet["finish_pos"] == 1).mean() if len(slightly_wet) >= 2 else np.nan
+
             features["horse_wet_track_advantage"] = (
                 wet_wr - good_wr
                 if not np.isnan(wet_wr) and not np.isnan(good_wr)
                 else np.nan
             )
+            # New: specialist signal for slightly heavy going (稍重 vs 良)
+            features["horse_soft_track_advantage"] = (
+                soft_wr - good_wr
+                if not np.isnan(soft_wr) and not np.isnan(good_wr)
+                else np.nan
+            )
 
             # --- Weather refinement (Research Backlog #5) ---
-            # Speed differential on heavy vs good ground
+            # Speed differential on heavy vs good ground (genuine heavy only)
             good_times = good["time_secs"].dropna()
             wet_times = wet["time_secs"].dropna()
             if len(good_times) >= 2 and len(wet_times) >= 2:
@@ -1300,11 +1322,14 @@ class FeatureBuilder:
         else:
             features["horse_going_win_pct"] = np.nan
             features["horse_wet_track_advantage"] = np.nan
+            features["horse_soft_track_advantage"] = np.nan
             features["horse_heavy_speed_diff"] = np.nan
 
-        # Three-way interaction: going × distance × surface
+        # Three-way interaction: going × distance × surface.
+        # Both going_code and surface_code are offset by +1 so that the most-common
+        # combination (good/turf: 0,0) produces a non-zero feature value.
         features["going_x_dist_x_surface"] = (
-            going_code * (distance / 1000.0) * surface_code
+            (going_code + 1) * (distance / 1000.0) * (surface_code + 1)
             if not (np.isnan(going_code) if isinstance(going_code, float) else False)
             and not (np.isnan(surface_code) if isinstance(surface_code, float) else False)
             and distance > 0
@@ -1362,11 +1387,12 @@ class FeatureBuilder:
             features["course_month_bias"] = np.nan
             return features
 
-        # Avg finish position for this draw at this course
+        # Avg finish position for this draw at this course.
+        # NEGATED so that higher = better draw (lower avg finish pos = better).
         if draw is not None:
             draw_hist = course_hist[course_hist["draw"] == draw]
             features["draw_bias_at_course"] = (
-                draw_hist["finish_pos"].mean() if len(draw_hist) >= 3 else np.nan
+                -draw_hist["finish_pos"].mean() if len(draw_hist) >= 3 else np.nan
             )
         else:
             features["draw_bias_at_course"] = np.nan
@@ -1390,7 +1416,8 @@ class FeatureBuilder:
         else:
             features["draw_bias_score"] = np.nan
 
-        # Seasonal bias: avg finish for this draw in this calendar month
+        # Seasonal bias: avg finish for this draw in this calendar month.
+        # NEGATED for consistent polarity (higher = better draw).
         if draw is not None and race_month is not None:
             month_draw_hist = course_hist[
                 (course_hist["draw"] == draw)
@@ -1401,7 +1428,7 @@ class FeatureBuilder:
                     months = month_draw_hist["date"].str[5:7].astype(int)
                     same_month = month_draw_hist[months == race_month]
                     features["course_month_bias"] = (
-                        same_month["finish_pos"].mean()
+                        -same_month["finish_pos"].mean()
                         if len(same_month) >= 3 else np.nan
                     )
                 except Exception:
@@ -1412,6 +1439,7 @@ class FeatureBuilder:
             features["course_month_bias"] = np.nan
 
         # --- Rolling 90-day draw bias (Sprint 9.4) ---
+        # NEGATED for consistent polarity (higher = better draw).
         if draw is not None and race_date and not course_hist.empty:
             try:
                 cutoff = str(pd.to_datetime(race_date) - pd.Timedelta(days=90))[:10]
@@ -1419,7 +1447,7 @@ class FeatureBuilder:
                 if not recent_90d.empty and "draw" in recent_90d.columns:
                     draw_90d = recent_90d[recent_90d["draw"] == draw]
                     features["draw_bias_90d"] = (
-                        draw_90d["finish_pos"].mean()
+                        -draw_90d["finish_pos"].mean()
                         if len(draw_90d) >= 3 else np.nan
                     )
                 else:
@@ -1480,8 +1508,14 @@ class FeatureBuilder:
                 if not sib_hist.empty:
                     has_sire = True
                     features["sire_runners"] = len(sib_hist)
-                    features["sire_win_pct"] = (sib_hist["finish_pos"] == 1).mean()
-                    features["sire_avg_finish"] = sib_hist["finish_pos"].mean()
+                    # Require at least 3 runners for statistical stability,
+                    # consistent with the surface/distance guards below.
+                    features["sire_win_pct"] = (
+                        (sib_hist["finish_pos"] == 1).mean() if len(sib_hist) >= 3 else np.nan
+                    )
+                    features["sire_avg_finish"] = (
+                        sib_hist["finish_pos"].mean() if len(sib_hist) >= 3 else np.nan
+                    )
 
                     # Sire × surface affinity
                     surf_hist = sib_hist[sib_hist["surface"] == surface]
@@ -1756,16 +1790,20 @@ class FeatureBuilder:
                 dates = sub_sorted["date"].values
                 times = sub_sorted["time_secs"].values
 
-                # Build cumulative median at each date boundary
-                # We store unique dates and the running median at each cutoff
-                unique_dates = sorted(set(dates))
+                # Build cumulative median of *winner times* at each date boundary.
+                # Winner time per race = min(time_secs) across all finishers for that race.
+                # Using the field median would be biased toward the middle finisher's
+                # time; the winner time gives the true competitive pace baseline.
+                race_winner_times = sub_sorted.groupby("date")["time_secs"].min()
+
+                unique_dates = sorted(race_winner_times.index)
                 cutoff_dates = []
                 cutoff_medians = []
                 for cutoff in unique_dates:
-                    prior_times = times[dates < cutoff]
-                    if len(prior_times) >= 5:
+                    prior_winner_times = race_winner_times[race_winner_times.index < cutoff].values
+                    if len(prior_winner_times) >= 5:
                         cutoff_dates.append(cutoff)
-                        cutoff_medians.append(float(np.median(prior_times)))
+                        cutoff_medians.append(float(np.median(prior_winner_times)))
 
                 if cutoff_dates:
                     index[(course_id, dist, going)] = (
@@ -2061,7 +2099,7 @@ class FeatureBuilder:
         features["sire_id"] = row.get("sire_id", np.nan)
         features["broodmare_sire_id"] = row.get("broodmare_sire_id", np.nan)
 
-        # Age
+        # Age (JRA convention: calendar-year based, same as January 1 reckoning)
         if row.get("birth_year") and row.get("date"):
             try:
                 race_year = int(str(row["date"])[:4])
@@ -2070,6 +2108,28 @@ class FeatureBuilder:
                 features["age"] = np.nan
         else:
             features["age"] = np.nan
+
+        # Birth month — important for 2yo/juvenile races where within-year age
+        # maturity matters significantly (January foal vs December foal).
+        birth_year_raw = row.get("birth_year")
+        birth_month_raw = row.get("birth_month")
+        if birth_month_raw is not None:
+            try:
+                features["birth_month"] = int(birth_month_raw)
+            except (ValueError, TypeError):
+                features["birth_month"] = np.nan
+        elif birth_year_raw is not None and row.get("date"):
+            # Fallback: parse month from foaling_date if available, else NaN
+            foaling_date = row.get("foaling_date")
+            if foaling_date:
+                try:
+                    features["birth_month"] = int(str(foaling_date)[5:7])
+                except (ValueError, TypeError, IndexError):
+                    features["birth_month"] = np.nan
+            else:
+                features["birth_month"] = np.nan
+        else:
+            features["birth_month"] = np.nan
 
         return features
 
@@ -2123,7 +2183,11 @@ class FeatureBuilder:
         def _get_pit_rating(h_id, r_date):
             history = self._ability_history_cache.get(h_id, [])
             prior = [r for d, r in history if d < r_date]
-            return prior[-1] if prior else 55.0
+            if prior:
+                return prior[-1]
+            # Fallback: static baseline — never compute from the full cache
+            # because the cache contains future ratings (data leakage).
+            return 55.0
 
         horse_rating = _get_pit_rating(horse_id, race_date)
         feats["horse_ability_rating"] = horse_rating
@@ -2171,7 +2235,14 @@ class FeatureBuilder:
             lo, hi = bands[band]
             br = prior[(prior["distance"] >= lo) & (prior["distance"] <= hi)]
             owr = (prior["finish_pos"] == 1).mean()
-            comps["distance_fit"] = min(max((br["finish_pos"] == 1).mean() / owr * 100, 60), 115) if len(br) >= 2 and owr > 0 else 75
+            if len(br) >= 2:
+                if owr > 0:
+                    comps["distance_fit"] = min(max((br["finish_pos"] == 1).mean() / owr * 100, 60), 115)
+                else:
+                    # Has runs in this distance band but never won — penalise
+                    comps["distance_fit"] = 60
+            else:
+                comps["distance_fit"] = 75  # Genuinely no prior data — neutral
         else:
             comps["distance_fit"] = 75
 
@@ -2179,7 +2250,14 @@ class FeatureBuilder:
         if not prior.empty and "going" in prior.columns and going and "finish_pos" in prior.columns:
             gr = prior[prior["going"] == going]
             owr = (prior["finish_pos"] == 1).mean()
-            comps["going_fit"] = min(max((gr["finish_pos"] == 1).mean() / owr * 100, 60), 115) if len(gr) >= 2 and owr > 0 else 75
+            if len(gr) >= 2:
+                if owr > 0:
+                    comps["going_fit"] = min(max((gr["finish_pos"] == 1).mean() / owr * 100, 60), 115)
+                else:
+                    # Has runs on this going but never won overall — penalise
+                    comps["going_fit"] = 60
+            else:
+                comps["going_fit"] = 75  # No prior data — neutral
         else:
             comps["going_fit"] = 75
 
@@ -2187,7 +2265,14 @@ class FeatureBuilder:
         if not prior.empty and "surface" in prior.columns and surface and "finish_pos" in prior.columns:
             sr = prior[prior["surface"] == surface]
             owr = (prior["finish_pos"] == 1).mean()
-            comps["surface_fit"] = min(max((sr["finish_pos"] == 1).mean() / owr * 100, 60), 115) if len(sr) >= 2 and owr > 0 else 75
+            if len(sr) >= 2:
+                if owr > 0:
+                    comps["surface_fit"] = min(max((sr["finish_pos"] == 1).mean() / owr * 100, 60), 115)
+                else:
+                    # Has runs on this surface but never won overall — penalise
+                    comps["surface_fit"] = 60
+            else:
+                comps["surface_fit"] = 75  # No prior data — neutral
         else:
             comps["surface_fit"] = 75
 
@@ -2199,8 +2284,12 @@ class FeatureBuilder:
             comps["track_fit"] = 75
 
         # Class fit
+        # class_change = newest_rank - second_newest_rank.
+        # Positive → dropped to easier class (horse gets a relief) → score 90.
+        # Zero    → same class                                       → score 80.
+        # Negative → rose to harder class (tougher ask)             → score 65.
         if not pd.isna(class_change):
-            comps["class_fit"] = 90 if class_change < 0 else (80 if class_change == 0 else 65)
+            comps["class_fit"] = 90 if class_change > 0 else (80 if class_change == 0 else 65)
         else:
             comps["class_fit"] = 75
 
@@ -2214,10 +2303,13 @@ class FeatureBuilder:
         else:
             comps["rest_fit"] = 70
 
-        score = (0.25 * comps["distance_fit"] + 0.20 * comps["going_fit"]
-                 + 0.15 * comps["surface_fit"] + 0.10 * comps["track_fit"]
-                 + 0.10 * 75 + 0.08 * 75  # pace_fit and draw_fit defaults
-                 + 0.07 * comps["class_fit"] + 0.05 * comps["rest_fit"])
+        # Removed constant pace_fit (0.10*75) and draw_fit (0.08*75) terms.
+        # They contributed a fixed 13.5 pts to every horse (zero information).
+        # Remaining weights rescaled to sum to 1.0:
+        # original: 0.25+0.20+0.15+0.10+0.07+0.05 = 0.82 → scaled up by /0.82
+        score = (0.305 * comps["distance_fit"] + 0.244 * comps["going_fit"]
+                 + 0.183 * comps["surface_fit"] + 0.122 * comps["track_fit"]
+                 + 0.085 * comps["class_fit"] + 0.061 * comps["rest_fit"])
         return {"condition_fit_score": round(score, 2)}
 
     # ------------------------------------------------------------------
@@ -2227,7 +2319,7 @@ class FeatureBuilder:
     def _form_trajectory_features(self, horse_id, race_date):
         """Bounce risk, second/third up flags, new peak, consistency."""
         feats = {"bounce_risk_flag": 0, "second_up_flag": 0, "third_up_flag": 0,
-                 "new_peak_flag": 0, "ability_consistency": np.nan}
+                 "fourth_up_plus_flag": 0, "new_peak_flag": 0, "ability_consistency": np.nan}
 
         if not hasattr(self, "_ability_history_cache"):
             return feats
@@ -2240,8 +2332,14 @@ class FeatureBuilder:
 
         if len(scores) >= 2:
             if scores[-1] > max(scores[:-1]) + 8:
+                # Horse just ran well above its prior peak — bounce risk.
+                # Mutually exclusive with new_peak_flag: a bounce-risk horse
+                # is at a new peak by definition, so new_peak_flag is redundant
+                # and contradictory when both are set simultaneously.
                 feats["bounce_risk_flag"] = 1
-            if scores[-1] >= max(scores):
+                feats["new_peak_flag"] = 0
+            elif scores[-1] >= max(scores):
+                # At new peak but NOT 8+ pts above prior best — no bounce risk.
                 feats["new_peak_flag"] = 1
         if len(scores) >= 3:
             feats["ability_consistency"] = round(np.std(scores[-5:]), 2)
@@ -2250,14 +2348,24 @@ class FeatureBuilder:
         h_hist = self._horse_groups.get(horse_id, pd.DataFrame())
         if isinstance(h_hist, pd.DataFrame) and not h_hist.empty:
             pr = h_hist[h_hist["date"].astype(str) < race_date].sort_values("date")
-            if len(pr) >= 2:
-                dates = pd.to_datetime(pr["date"]).values
-                gaps = np.diff(dates).astype("timedelta64[D]").astype(int)
-                spells = np.where(gaps > 60)[0]
-                if len(spells) > 0:
-                    runs_since = len(pr) - spells[-1] - 1
-                    if runs_since == 1: feats["second_up_flag"] = 1
-                    elif runs_since == 2: feats["third_up_flag"] = 1
+            if not pr.empty:
+                # CRITICAL: first check the gap between the last PRIOR race and TODAY.
+                # If > 60 days, the horse is first-up today — no spell-up flags apply,
+                # regardless of older spell breaks in its history.
+                last_prior_date = pd.to_datetime(pr["date"].iloc[-1])
+                gap_to_today = (pd.to_datetime(race_date) - last_prior_date).days
+                if gap_to_today > 60:
+                    # First-up today — all flags remain 0
+                    pass
+                elif len(pr) >= 2:
+                    dates = pd.to_datetime(pr["date"]).values
+                    gaps = np.diff(dates).astype("timedelta64[D]").astype(int)
+                    spells = np.where(gaps > 60)[0]
+                    if len(spells) > 0:
+                        runs_since = len(pr) - spells[-1] - 1
+                        if runs_since == 1: feats["second_up_flag"] = 1
+                        elif runs_since == 2: feats["third_up_flag"] = 1
+                        elif runs_since >= 3: feats["fourth_up_plus_flag"] = 1  # 4th+ run since spell break
         return feats
 
     # ------------------------------------------------------------------
@@ -2292,22 +2400,15 @@ class FeatureBuilder:
                 features["target_place"] = 1 if row["finish_pos"] <= 3 else 0
                 features["finish_pos"] = row["finish_pos"]
                 
-                # Regression target for Beaten Lengths
-                if row.get("time_secs") is not None and row["time_secs"] > 0:
-                    rid = row["race_id"]
-                    # If horse is winner, margin is relative to 2nd place (negative). Otherwise relative to winner (positive).
-                    if row["finish_pos"] == 1:
-                        second_time = second_times_dict.get(rid)
-                        if second_time and second_time > 0:
-                            features["target_margin"] = (row["time_secs"] - second_time) * 6
-                        else:
-                            features["target_margin"] = 0.0 # Fallback if no 2nd place
-                    else:
-                        winner_time = winner_times_dict.get(rid)
-                        if winner_time and winner_time > 0:
-                            features["target_margin"] = (row["time_secs"] - winner_time) * 6
-                        else:
-                            features["target_margin"] = np.nan
+                # Regression target: 1/finish_pos
+                # Winner → 1.0, 2nd → 0.5, 3rd → 0.333, etc.
+                # This is a monotone bounded target with no structural outlier at 0
+                # (unlike beaten lengths where the winner alone has value 0 and all
+                # losers have positive values, creating a pathological MSE distribution).
+                # Higher value = better finishing position.
+                # At inference, pass +reg_preds (not negated) to scores_to_probs.
+                if row.get("finish_pos") is not None and row["finish_pos"] > 0:
+                    features["target_margin"] = 1.0 / row["finish_pos"]
                 else:
                     features["target_margin"] = np.nan
 
@@ -2553,7 +2654,7 @@ class FeatureBuilder:
                     going=row.get("going") or "",
                     course_id=row.get("course_id"),
                     class_change=features.get("class_change", np.nan),
-                    days_since_last=features.get("days_since_last_run", np.nan),
+                    days_since_last=features.get("days_since_last", np.nan),  # key was "days_since_last_run" (bug)
                 )
             )
 
@@ -2716,10 +2817,27 @@ class FeatureBuilder:
         
         df = pd.DataFrame(feature_rows)
 
-        # Per-race z-score normalisation
+        # Per-race z-score normalisation.
+        # EXCLUDED from z-scoring: race-constant features (same value for every horse
+        # in the same race → within-race std = 0 → z-score always = 0, dead feature).
+        # These include: going×distance, going×surface, and multi-way interaction
+        # encodings. The raw values are already informative; the z-scored variants
+        # carry zero information.
+        _RACE_CONSTANT_FEATURES = {
+            "going_code", "surface_code", "draw",
+            # Going×distance/surface interaction encodings — race-constant
+            "going_x_distance", "going_x_dist_x_surface", "going_x_surface",
+            "going_x_dist", "surface_x_dist",
+            # Month/seasonal bias — same for all horses in the same race
+            "course_month_bias",
+        }
         numeric_cols = [
             c for c in df.columns
-            if c not in ["race_id", "entry_id", "target_win", "target_place", "target_margin", "finish_pos", "date", "horse_name", "sire_id", "broodmare_sire_id", "going_code", "surface_code", "draw"]
+            if c not in {
+                "race_id", "entry_id", "target_win", "target_place", "target_margin",
+                "finish_pos", "date", "horse_name", "sire_id", "broodmare_sire_id",
+            }
+            and c not in _RACE_CONSTANT_FEATURES
             and df[c].dtype in [np.float64, np.float32, np.int64, float, int]
         ]
         df = self.normalise_per_race(df, numeric_cols)

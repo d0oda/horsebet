@@ -187,9 +187,9 @@ def get_horses_missing_weight(limit: Optional[int] = None,
     """
     query = """
         SELECT DISTINCT h.id, h.netkeiba_id, h.name_jp
-        FROM horsebet.horses h
-        JOIN horsebet.entries e ON e.horse_id = h.id
-        JOIN horsebet.races r ON r.id = e.race_id
+        FROM horses h
+        JOIN entries e ON e.horse_id = h.id
+        JOIN races r ON r.id = e.race_id
         WHERE e.horse_weight IS NULL
           AND h.netkeiba_id IS NOT NULL
           AND h.netkeiba_id NOT LIKE 'unknown_%%'
@@ -240,9 +240,9 @@ def _process_one_horse(horse: dict, idx: int, total: int,
     with get_session() as session:
         for rw in race_weights:
             res = session.execute(text("""
-                UPDATE horsebet.entries e
+                UPDATE entries e
                 SET horse_weight = :weight
-                FROM horsebet.races r
+                FROM races r
                 WHERE e.race_id = r.id
                   AND e.horse_id = :horse_id
                   AND r.date = :race_date

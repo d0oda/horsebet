@@ -127,16 +127,19 @@ class Backtester:
         balance = self.config.initial_bankroll
         peak_balance = balance
         max_dd = 0
+        max_dd_pct = 0.0  # track continuous percentage drawdown
 
         # Sort by date/race
         if "date" in predictions_df.columns:
             predictions_df = predictions_df.sort_values(["date", "race_id", "entry_id"])
 
-        # Group by race
-        races = predictions_df.groupby("race_id")
+        # Group by race — sort=False preserves the chronological sort above.
+        # Default sort=True would re-order by race_id integer, causing time-travel.
+        races = predictions_df.groupby("race_id", sort=False)
         result.total_races = len(races)
 
         daily_pnl = {}
+        daily_start_balance = {}  # balance at the start of each race day (for daily return denominator)
 
         for race_id, race_df in races:
             # --- Find the single best bet per race (max 1) ---
@@ -245,9 +248,16 @@ class Backtester:
             peak_balance = max(peak_balance, balance)
             dd = peak_balance - balance
             max_dd = max(max_dd, dd)
+            # Continuous percentage drawdown (relative to peak at that moment)
+            if peak_balance > 0:
+                dd_pct = dd / peak_balance
+                max_dd_pct = max(max_dd_pct, dd_pct)
 
             # Daily P&L
             date_str = str(row.get("date", "unknown"))
+            if date_str not in daily_start_balance:
+                # Record balance at the start of this day (before today's bet)
+                daily_start_balance[date_str] = balance - profit
             daily_pnl[date_str] = daily_pnl.get(date_str, 0) + profit
 
             if won:
@@ -261,7 +271,9 @@ class Backtester:
         result.roi_pct = (result.total_profit / result.total_staked * 100) if result.total_staked > 0 else 0
         result.hit_rate = (result.winning_bets / result.total_bets * 100) if result.total_bets > 0 else 0
         result.max_drawdown = max_dd
-        result.max_drawdown_pct = (max_dd / peak_balance * 100) if peak_balance > 0 else 0
+        # Use the continuously-tracked percentage (correct) rather than dividing
+        # the absolute max drawdown by the final global peak (understates early drawdowns).
+        result.max_drawdown_pct = max_dd_pct * 100
         result.avg_ev = np.mean([b.ev for b in result.bets]) if result.bets else 0
         result.avg_odds = np.mean([b.odds for b in result.bets]) if result.bets else 0
 
@@ -284,12 +296,14 @@ class Backtester:
         else:
             result.sharpe = 0  # insufficient data
 
-        # Daily Sharpe — annualised, computed from daily P&L as % of initial bankroll
-        # This is the standard metric used by quant betting funds.
+        # Daily Sharpe — annualised, computed from daily P&L as % of start-of-day balance.
+        # Uses the actual balance at the beginning of each race day so that the denominator
+        # tracks the compounding bankroll correctly (a true daily return on capital).
+        # Previously used a fixed initial_bankroll which understates later returns.
         # Annualisation factor: JRA runs ~104 race days/year (2 per weekend).
         JRA_RACE_DAYS_PER_YEAR = 104
-        
-        # FIX: Pad daily_pnl with zeros for all unique racing days in the dataset
+
+        # Pad daily_pnl with zeros for all unique racing days in the dataset
         # to prevent artificially inflating the mean daily return when bets are rare.
         if predictions_df is not None and "date" in predictions_df.columns:
             all_dates = predictions_df["date"].astype(str).unique()
@@ -298,10 +312,14 @@ class Backtester:
                     daily_pnl[d] = 0.0
 
         if daily_pnl and len(daily_pnl) >= 5:
-            daily_returns = np.array([
-                pnl / self.config.initial_bankroll
-                for _, pnl in daily_pnl.items()
-            ])
+            daily_returns = []
+            for date_str, pnl in daily_pnl.items():
+                # Use the recorded start-of-day balance; fall back to initial_bankroll
+                # for zero-bet days (which are padded in) or the very first day.
+                denom = daily_start_balance.get(date_str, self.config.initial_bankroll)
+                denom = denom if denom > 0 else self.config.initial_bankroll
+                daily_returns.append(pnl / denom)
+            daily_returns = np.array(daily_returns)
             if daily_returns.std() > 0:
                 result.daily_sharpe = (
                     daily_returns.mean() / daily_returns.std()

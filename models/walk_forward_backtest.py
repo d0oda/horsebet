@@ -62,8 +62,25 @@ def run_walk_forward_backtest(n_folds=5, ev_threshold=0.10, use_cache=False, use
 
     target = "target_win"
     exclude = {"race_id", "entry_id", "target_win", "target_place", "target_margin", "finish_pos", "date", "horse_name"}
-    feature_cols = [c for c in df.columns if c not in exclude and df[c].dtype in [np.float64, np.float32, np.int64, float, int]]
-    
+    # Include both numeric AND category-typed columns so the backtest trains the
+    # same feature set as the final model.  Previously, category columns
+    # (sire_id, broodmare_sire_id, going_code, surface_code, draw) were silently
+    # dropped because the dtype filter only passed float/int dtypes.
+    CATEGORICAL_COLS = {"sire_id", "broodmare_sire_id", "going_code", "surface_code", "draw"}
+    feature_cols = [
+        c for c in df.columns
+        if c not in exclude
+        and (
+            df[c].dtype in [np.float64, np.float32, np.int64, float, int]
+            or (c in CATEGORICAL_COLS and c in df.columns)
+        )
+    ]
+
+    # Convert expected categoricals to category dtype so LightGBM/XGBoost handle them correctly
+    for col in CATEGORICAL_COLS:
+        if col in df.columns:
+            df[col] = df[col].fillna("Unknown").astype(str).astype("category")
+
     valid_cols = [c for c in feature_cols if not df[c].isna().all()]
     feature_cols = valid_cols
 
@@ -140,19 +157,20 @@ def run_walk_forward_backtest(n_folds=5, ev_threshold=0.10, use_cache=False, use
                 train_groups, val_groups,
             )
             
-            # Get raw scores on train set to fit calibrator
+            # Get raw scores on val set to fit calibrator (NOT training set — training
+            # predictions are overfit and fitting on them causes leakage).
             import xgboost as xgb_lib
-            lgb_scores_train = lgb_model.predict(X_train)
-            xgb_scores_train = xgb_model.predict(xgb_lib.DMatrix(X_train, feature_names=feature_cols))
-            ensemble_scores_train = ensemble_predict(lgb_scores_train, xgb_scores_train)
+            lgb_scores_val = lgb_model.predict(X_val)
+            xgb_scores_val = xgb_model.predict(xgb_lib.DMatrix(X_val, feature_names=feature_cols))
+            ensemble_scores_val = ensemble_predict(lgb_scores_val, xgb_scores_val)
             
-            # Convert train scores to softmax probs
-            ensemble_probs_train = scores_to_probs(ensemble_scores_train, train_df["race_id"].values)
+            # Convert val scores to per-race softmax probs
+            ensemble_probs_val = scores_to_probs(ensemble_scores_val, val_df["race_id"].values)
             
-            # Fit isotonic calibrator using true binary labels
+            # Fit isotonic calibrator using val labels against val predictions
             from sklearn.isotonic import IsotonicRegression
             calibrator = IsotonicRegression(y_min=0, y_max=1, out_of_bounds="clip")
-            calibrator.fit(ensemble_probs_train, y_train)
+            calibrator.fit(ensemble_probs_val, y_val)
 
             # Raw ranking scores on test set
             lgb_scores = lgb_model.predict(X_test)
@@ -178,9 +196,14 @@ def run_walk_forward_backtest(n_folds=5, ev_threshold=0.10, use_cache=False, use
         pred_df = test_df[["race_id", "entry_id", "date", "horse_name", "finish_pos"]].copy()
         pred_df["win_prob"] = ensemble_preds
 
-        # Normalize probabilities per race so they sum to 1.0
-        # This is critical because IsotonicRegression distorts the marginals
-        pred_df["win_prob"] = pred_df.groupby("race_id")["win_prob"].transform(lambda x: x / x.sum() if x.sum() > 0 else x)
+        # Normalise ranker/softmax predictions per race so they sum to 1.0.
+        # Binary-classifier calibrated probabilities are absolute estimates and must NOT
+        # be normalised — doing so distorts them when the field size causes them to
+        # sum to values other than 1.0.  Only normalise for the ranker path.
+        if use_ranker:
+            pred_df["win_prob"] = pred_df.groupby("race_id")["win_prob"].transform(
+                lambda x: x / x.sum() if x.sum() > 0 else x
+            )
 
         # Ensure we have odds available
         if "odds_win" in test_df.columns:

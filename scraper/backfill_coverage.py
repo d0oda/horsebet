@@ -65,7 +65,7 @@ def get_dates_already_scraped() -> set[str]:
     """Return set of dates (YYYY-MM-DD strings) already in the database."""
     with get_session() as session:
         rows = session.execute(
-            text("SELECT DISTINCT date::text FROM horsebet.races ORDER BY date")
+            text("SELECT DISTINCT CAST(date AS TEXT) FROM races ORDER BY date")
         ).fetchall()
     return {r[0] for r in rows}
 

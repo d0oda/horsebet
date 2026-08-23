@@ -4,7 +4,7 @@ from pathlib import Path
 import pandas as pd
 import numpy as np
 import xgboost as xgb_lib
-from sqlalchemy import text
+from sqlalchemy import text, bindparam
 from scraper.db import get_session
 from models.features import FeatureBuilder
 from models.train import load_model, ensemble_predict, scores_to_probs
@@ -31,7 +31,7 @@ def build_features(race_ids):
     
     with get_session() as session:
         dates = session.execute(
-            text("SELECT DISTINCT date FROM races WHERE id = ANY(:rids) ORDER BY date"),
+            text("SELECT DISTINCT date FROM races WHERE id IN :rids ORDER BY date"),
             {"rids": race_ids}
         ).fetchall()
         dates = [d[0] for d in dates]
@@ -118,7 +118,7 @@ def main():
     print("Fetching actual results...")
     with get_session() as session:
         entries = pd.read_sql(
-            text("SELECT id as entry_id, finish_pos as finish_pos_actual, odds_win as odds_win_actual FROM entries WHERE race_id = ANY(:rids)"),
+            text("SELECT id as entry_id, finish_pos as finish_pos_actual, odds_win as odds_win_actual FROM entries WHERE race_id IN :rids").bindparams(bindparam("rids", expanding=True)),
             session.bind,
             params={"rids": race_ids}
         )

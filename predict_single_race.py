@@ -13,7 +13,7 @@ def run(race_netkeiba_id):
     # Get race_id
     with get_session() as session:
         race_row = session.execute(
-            text("SELECT id FROM horsebet.races WHERE netkeiba_id = :nid"),
+            text("SELECT id FROM races WHERE netkeiba_id = :nid"),
             {"nid": race_netkeiba_id}
         ).fetchone()
         
@@ -30,7 +30,7 @@ def run(race_netkeiba_id):
             for o in odds:
                 session.execute(
                     text("""
-                        UPDATE horsebet.entries
+                        UPDATE entries
                         SET odds_win = :odds
                         WHERE race_id = :race_id AND post_position = :pp
                     """),
@@ -89,8 +89,11 @@ def run(race_netkeiba_id):
     
     entry_ids = features_df["entry_id"].tolist()
     with get_session() as session:
+        from sqlalchemy import bindparam
         entry_rows = session.execute(
-            text("SELECT id, horse_id, odds_win FROM entries WHERE id = ANY(:ids)"),
+            text("SELECT id, horse_id, odds_win FROM entries WHERE id IN :ids").bindparams(
+                bindparam("ids", expanding=True)
+            ),
             {"ids": entry_ids}
         ).fetchall()
     entry_map = {r.id: (r.horse_id, r.odds_win or 0) for r in entry_rows}

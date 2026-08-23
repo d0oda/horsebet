@@ -219,7 +219,7 @@ class BankrollManager:
             prob = row.get("combined_win_prob", row.get("model_prob", 0))
             odds = row.get("odds", 0)
             market_prob = row.get("market_prob", 0)
-            ev = row.get("ev", prob - market_prob)
+            ev = row.get("ev", prob * odds - 1.0)
             entry_id = row.get("entry_id", 0)
             horse_name = str(row.get("horse_name", "Unknown"))
 
@@ -421,9 +421,14 @@ class BankrollManager:
         entry_id: int,
         payout: int,
     ):
-        """Update a bet with its result/payout."""
+        """Update a bet with its result/payout.
+
+        Inserts a SETTLEMENT credit row rather than retroactively patching the
+        historical bet row's running_balance — which would sever the chronological
+        ledger chain for all subsequent rows.
+        """
         with get_session() as session:
-            # Find the bet
+            # Find the original bet to get stake and original balance
             row = session.execute(text("""
                 SELECT id, stake, running_balance
                 FROM bankroll_log
@@ -436,14 +441,35 @@ class BankrollManager:
                 log.error(f"No bet found for race {race_id}, entry {entry_id}")
                 return
 
-            bet_id, stake, old_balance = row
-            new_balance = (old_balance or 0) + payout
+            bet_id, stake, _ = row
 
+            # Record the payout on the original row (the payout field is safe to set—
+            # it's zero by default and only set once when result arrives).
             session.execute(text("""
                 UPDATE bankroll_log
-                SET payout = :payout, running_balance = :balance
+                SET payout = :payout
                 WHERE id = :id
-            """), {"payout": payout, "balance": new_balance, "id": bet_id})
+            """), {"payout": payout, "id": bet_id})
+
+            # Insert a SETTLEMENT credit entry so the running_balance chain is
+            # maintained correctly. The credit amount is payout (positive = win).
+            current_balance = self.get_current_balance()
+            new_balance = current_balance + payout
+            session.execute(text("""
+                INSERT INTO bankroll_log
+                    (date, race_id, bet_type, combination, stake, odds_at_bet,
+                     payout, running_balance, notes)
+                VALUES
+                    (:dt, :race_id, 'settlement', :combo, 0, 0,
+                     :payout, :balance, :notes)
+            """), {
+                "dt": date.today(),
+                "race_id": race_id,
+                "combo": str(entry_id),
+                "payout": payout,
+                "balance": new_balance,
+                "notes": f"Settlement for bet id={bet_id}",
+            })
 
         profit = payout - (stake or 0)
         emoji = "🎉" if profit > 0 else "📉"

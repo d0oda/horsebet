@@ -378,7 +378,9 @@ def train_lightgbm_ranker(X_train, y_train, X_val, y_val, feature_cols,
         "lambda_l2": 1.0,
         "verbose": -1,
         "seed": 42,
-        "label_gain": [0, 1, 2, 3, 4, 31],  # Exponential gain for 1st place
+        "label_gain": [0, 1, 2, 4, 8, 16],  # Geometric progression: 1st=16, 2nd=8, 3rd=4, 4th=2, 5th=1, 6th=0
+        # Previously [0,1,2,3,4,31] — the gain(2^31)≈2.1B for 1st vs gain(2^4)≈15 for 2nd caused
+        # LambdaRank to ignore 2nd-5th ranking entirely (ranker collapsed to binary win classifier).
     }
 
     train_set = lgb.Dataset(X_train, label=y_train, group=train_groups,
@@ -444,21 +446,21 @@ def train_xgboost_ranker(X_train, y_train, X_val, y_val, feature_cols,
 
 
 def scores_to_probs(scores: np.ndarray, race_ids: np.ndarray) -> np.ndarray:
-    """Convert raw ranking scores to per-race probabilities via softmax.
-    
-    For each race, applies softmax(scores) so that probabilities sum to 1.0
-    within each race. This is the correct way to derive calibrated P(win)
-    from a ranking model.
-    
+    """Convert raw scores to per-race probabilities via softmax normalisation.
+
+    Use for RANKER and REGRESSION outputs (raw unbounded logits/scores).
+    For CLASSIFIER outputs (already in [0,1]), use cls_to_probs() instead,
+    which applies simple L1 normalisation to preserve calibrated magnitudes.
+
     Args:
-        scores: Raw ranking scores from the model.
+        scores: Raw scores from the ranker or regression model.
         race_ids: Corresponding race IDs (same length as scores).
-    
+
     Returns:
-        Array of probabilities (same length as scores), summing to 1.0 per race.
+        Array of per-race probabilities summing to 1.0 per race.
     """
     probs = np.zeros_like(scores, dtype=np.float64)
-    
+
     for rid in np.unique(race_ids):
         mask = race_ids == rid
         race_scores = scores[mask]
@@ -466,8 +468,32 @@ def scores_to_probs(scores: np.ndarray, race_ids: np.ndarray) -> np.ndarray:
         shifted = race_scores - race_scores.max()
         exp_scores = np.exp(shifted)
         probs[mask] = exp_scores / exp_scores.sum()
-    
+
     return probs
+
+
+def cls_to_probs(probs_in: np.ndarray, race_ids: np.ndarray) -> np.ndarray:
+    """L1-normalise per-race binary-classifier probabilities.
+
+    Classifier outputs are already calibrated probabilities in [0,1].
+    Softmax would flatten the distribution; simple proportional rescaling
+    (divide each horse's prob by the race sum) is the correct operation here.
+
+    Args:
+        probs_in: Classifier probabilities for each horse.
+        race_ids: Corresponding race IDs (same length as probs_in).
+
+    Returns:
+        Array of per-race probabilities summing to 1.0 per race.
+    """
+    probs = probs_in.copy().astype(np.float64)
+    for rid in np.unique(race_ids):
+        mask = race_ids == rid
+        s = probs[mask].sum()
+        if s > 0:
+            probs[mask] /= s
+    return probs
+
 
 
 # ---------------------------------------------------------------------------
@@ -490,10 +516,11 @@ def calibrate_predictions(
     Calibrate model predictions using isotonic regression or Platt scaling.
 
     Args:
-        y_train: True labels for calibration fitting.
-        raw_preds_train: Raw ensemble predictions on the training set.
-        y_val: True labels for validation.
-        raw_preds_val: Raw ensemble predictions on the validation set.
+        y_train: True labels for calibration fitting (should be *validation* labels, NOT
+                 training labels — training predictions are overfit and cause leakage).
+        raw_preds_train: Ensemble predictions for calibration fitting (validation set).
+        y_val: True labels for post-calibration metric logging.
+        raw_preds_val: Ensemble predictions to transform (validation set).
         method: 'isotonic', 'platt', or 'none'.
 
     Returns:
@@ -678,6 +705,7 @@ def save_model(
     calibration_method: str = "none",
     lgb_reg_model=None, xgb_reg_model=None,
     lgb_rank_model=None, xgb_rank_model=None,
+    categories: Optional[dict] = None,
 ):
     """Save trained models, calibrator, and metadata."""
     if version is None:
@@ -709,7 +737,9 @@ def save_model(
         with open(model_dir / "calibrator.pkl", "wb") as f:
             pickle.dump(calibrator, f)
 
-    # Save metadata
+    # Save metadata — including category mappings for enforcement at inference
+    # (A2 fix: category int codes must match between training and prediction).
+    cat_cols_saved = ["sire_id", "broodmare_sire_id", "going_code", "surface_code", "draw"]
     meta = {
         "version": version,
         "feature_cols": feature_cols,
@@ -717,6 +747,7 @@ def save_model(
         "odds_free": odds_free,
         "calibration_method": calibration_method,
         "created_at": datetime.now().isoformat(),
+        "categories": categories or {},
     }
     with open(model_dir / "metadata.json", "w") as f:
         json.dump(meta, f, indent=2)
@@ -797,9 +828,17 @@ def predict_race(race_features: pd.DataFrame, version: str = "latest") -> pd.Dat
     feature_cols = meta["feature_cols"]
 
     # Align features (pass NaNs directly, models handle natively)
-    for col in ["sire_id", "broodmare_sire_id", "going_code", "surface_code", "draw"]:
+    cat_cols_meta = ["sire_id", "broodmare_sire_id", "going_code", "surface_code", "draw"]
+    categories_map = meta.get("categories", {})
+    for col in cat_cols_meta:
         if col in race_features.columns:
-            race_features[col] = race_features[col].fillna("Unknown").astype(str).astype("category")
+            val = race_features[col].fillna("Unknown").astype(str)
+            saved_cats = categories_map.get(col)
+            if saved_cats:
+                # Enforce training category mapping so integer codes match the model
+                race_features[col] = pd.Categorical(val, categories=saved_cats)
+            else:
+                race_features[col] = val.astype("category")
 
     import numpy as np
     missing_cols = set(feature_cols) - set(race_features.columns)
@@ -811,21 +850,39 @@ def predict_race(race_features: pd.DataFrame, version: str = "latest") -> pd.Dat
     lgb_probs = lgb_model.predict(X)
     xgb_probs = xgb_model.predict(xgb.DMatrix(X, feature_names=feature_cols, enable_categorical=True))
     ensemble_probs = ensemble_predict(lgb_probs, xgb_probs)
-    
+
+    # Normalise classifier probs per-race so that all blend components are on the
+    # same scale (sum to 1.0 per race) before combining. Without this, the
+    # 0.7/0.2/0.1 blend weights are misleading due to scale mismatch.
+    race_ids = race_features["race_id"].values
+    # Use L1 normalisation (not softmax) for classifier outputs: classifier probs
+    # are already in [0,1] and softmax would flatten the distribution.
+    prob_cls = cls_to_probs(ensemble_probs, race_ids)
+
     # Regression blend
     lgb_reg_model = meta.get("lgb_reg_model")
     xgb_reg_model = meta.get("xgb_reg_model")
+    prob_reg = np.zeros_like(prob_cls)
     if lgb_reg_model is not None and xgb_reg_model is not None:
         lgb_reg_preds = lgb_reg_model.predict(X)
         xgb_reg_preds = xgb_reg_model.predict(xgb.DMatrix(X, feature_names=feature_cols, enable_categorical=True))
         ensemble_reg_preds = ensemble_predict(lgb_reg_preds, xgb_reg_preds)
-        
-        # Convert margin to prob proxy (negative margin so lower is better)
-        race_ids = race_features["race_id"].values
-        # Assuming scores_to_probs is available in models.train, if not we inline a softmax
-        # But scores_to_probs is defined in models.train
-        reg_probs = scores_to_probs(-ensemble_reg_preds, race_ids)
-        ensemble_probs = 0.8 * ensemble_probs + 0.2 * reg_probs
+        # target_margin = 1/finish_pos (higher = better). Pass positive values.
+        ensemble_reg_preds = np.maximum(ensemble_reg_preds, 0.0)
+        prob_reg = scores_to_probs(ensemble_reg_preds, race_ids)
+
+    # Ranker blend (was previously ignored in predict_race, now consistent with predict_final.py)
+    lgb_rank_model = meta.get("lgb_rank_model")
+    xgb_rank_model = meta.get("xgb_rank_model")
+    prob_rnk = np.zeros_like(prob_cls)
+    if lgb_rank_model is not None and xgb_rank_model is not None:
+        lgb_rank_preds = lgb_rank_model.predict(X)
+        xgb_rank_preds = xgb_rank_model.predict(xgb.DMatrix(X, feature_names=feature_cols, enable_categorical=True))
+        ensemble_rank_preds = ensemble_predict(lgb_rank_preds, xgb_rank_preds)
+        prob_rnk = scores_to_probs(ensemble_rank_preds, race_ids)
+
+    # Goldilocks blend matching predict_final.py weights (0.7 Cls / 0.2 Reg / 0.1 Rnk)
+    ensemble_probs = 0.7 * prob_cls + 0.2 * prob_reg + 0.1 * prob_rnk
 
     calibrator = meta.get("calibrator")
     if calibrator is not None:
@@ -934,6 +991,14 @@ def main():
         exclude_features=exclude,
     )
 
+    # Capture category mappings from training df BEFORE any test-only rows are dropped.
+    # These are used at inference to assign the same integer codes the model was trained on.
+    cat_cols_for_save = ["sire_id", "broodmare_sire_id", "going_code", "surface_code", "draw"]
+    training_categories = {}
+    for col in cat_cols_for_save:
+        if col in X_train.columns and hasattr(X_train[col], "cat"):
+            training_categories[col] = X_train[col].cat.categories.tolist()
+
     if len(X_train) < 50:
         log.error(f"Not enough training data ({len(X_train)} entries). Need at least 50.")
         return
@@ -956,8 +1021,11 @@ def main():
         xgb_reg_model, xgb_reg_preds = train_xgboost_regression(X_train_reg, y_train_reg, X_val_reg, y_val_reg, feature_cols)
         ensemble_reg_preds = ensemble_predict(lgb_reg_preds, xgb_reg_preds)
         
-        # Convert regression margins to probabilities (lower margin = higher prob)
-        reg_probs = scores_to_probs(-ensemble_reg_preds, race_ids_val_reg)
+        # target_margin = 1/finish_pos: higher prediction → better horse.
+        # Clamp to 0 to prevent edge-case negative predictions from reg:squarederror
+        # from inverting the ranking when passed to scores_to_probs.
+        ensemble_reg_preds = np.maximum(ensemble_reg_preds, 0.0)
+        reg_probs = scores_to_probs(ensemble_reg_preds, race_ids_val_reg)
     else:
         log.warning("Not enough data to train regression models.")
         reg_probs = None
@@ -996,33 +1064,87 @@ def main():
         lgb_rank_model = None
         xgb_rank_model = None
 
-    # Ensemble (Binary Classification + Regression)
+    # Ensemble: align to the same 0.7/0.2/0.1 blend used in predict_final.py
+    # so the calibrator is fitted on the *exact same distribution* it will correct at inference.
     log.info("\n--- Ensemble ---")
+    # Per-race normalise the binary classifier probabilities before blending so that
+    # the 0.7/0.2/0.1 weights are meaningful (both components become proper per-race
+    # probability distributions before being combined).
     ensemble_preds = ensemble_predict(lgb_preds, xgb_preds)
-    
-    # If reg_probs is available and aligns perfectly (no rows dropped differently), blend them
+    # Use L1 normalisation for classifier probs (not softmax) so the
+    # 0.7/0.2/0.1 blend weights apply to correctly-scaled probability vectors.
+    ensemble_preds = cls_to_probs(ensemble_preds, race_ids_val)  # normalise per-race
+
+    # Regression component
+    # A3 fix: if lengths differ (caused by NaN targets being dropped in prepare_data
+    # with different target columns), fall back to zeros rather than corrupt the blend.
+    # Root fix: the caller should pre-drop rows with any missing target before splitting.
     if reg_probs is not None and len(reg_probs) == len(ensemble_preds):
-        log.info("Blending Binary classifiers (80%) and Regression probabilities (20%)")
-        ensemble_preds = 0.8 * ensemble_preds + 0.2 * reg_probs
+        blend_reg = reg_probs
+    else:
+        if reg_probs is not None:
+            log.warning(
+                f"Regression val length mismatch ({len(reg_probs)} vs {len(ensemble_preds)}). "
+                "Pre-drop rows with missing targets before calling train_models to fix this."
+            )
+        blend_reg = np.zeros_like(ensemble_preds)
+
+    # Ranker component (compute per-race softmax of ranker val scores)
+    rnk_probs = np.zeros_like(ensemble_preds)
+    try:
+        import xgboost as xgb_lib  # noqa: F811
+        lgb_rnk = locals().get("lgb_rank_model")
+        xgb_rnk = locals().get("xgb_rank_model")
+        if lgb_rnk is not None and xgb_rnk is not None:
+            lgb_rank_preds_val = lgb_rnk.predict(X_val_rnk)
+            dval_rnk = xgb_lib.DMatrix(X_val_rnk, enable_categorical=True)
+            xgb_rank_preds_val = xgb_rnk.predict(dval_rnk)
+            ens_rank_preds = ensemble_predict(lgb_rank_preds_val, xgb_rank_preds_val)
+            # Re-align to race_ids_val order (ranker data was sorted)
+            rnk_probs_sorted = scores_to_probs(ens_rank_preds, race_ids_val_rnk)
+            if len(rnk_probs_sorted) == len(ensemble_preds):
+                # Undo the ranker sort to put back into race_ids_val order
+                unsort_val = np.argsort(sort_val)
+                rnk_probs = rnk_probs_sorted[unsort_val]
+    except Exception as e:
+        log.warning(f"Could not compute ranker probs for blend: {e}")
+
+    log.info("Blending: 70% Binary Classifier + 20% Regression + 10% Ranker")
+    ensemble_preds = 0.7 * ensemble_preds + 0.2 * blend_reg + 0.1 * rnk_probs
 
 
     # Calibration
+    # The calibrator is fitted on the FIRST HALF of val races and evaluated on the
+    # SECOND HALF (held out from fitting). This avoids the isotonic regression
+    # overfit problem where fitting and evaluating on the same data produces
+    # near-perfect interpolation and a meaningless cal_logloss.
     calibrator = None
     if args.calibration != "none":
         log.info(f"\n--- Calibration ({args.calibration}) ---")
-        # Need training-set predictions for calibration fitting
-        lgb_train_preds = lgb_model.predict(X_train)
-        import xgboost as xgb_lib
-        xgb_train_preds = xgb_model.predict(
-            xgb_lib.DMatrix(X_train, feature_names=feature_cols, enable_categorical=True)
-        )
-        ensemble_train_preds = ensemble_predict(lgb_train_preds, xgb_train_preds)
+        # Split val set 50/50 by race (not by row) to avoid data leakage
+        unique_val_races = np.unique(race_ids_val)
+        n_cal = max(1, len(unique_val_races) // 2)
+        cal_races = set(unique_val_races[:n_cal])
+        hold_races = set(unique_val_races[n_cal:])
 
-        ensemble_preds, calibrator = calibrate_predictions(
-            y_train, ensemble_train_preds,
-            y_val, ensemble_preds,
-            method=args.calibration,
-        )
+        cal_mask = np.array([r in cal_races for r in race_ids_val])
+        hold_mask = np.array([r in hold_races for r in race_ids_val])
+
+        if cal_mask.sum() > 0 and hold_mask.sum() > 0:
+            ensemble_cal_preds, calibrator = calibrate_predictions(
+                y_val[cal_mask], ensemble_preds[cal_mask],   # fit on first 50% of races
+                y_val[hold_mask], ensemble_preds[hold_mask], # evaluate on held-out 50%
+                method=args.calibration,
+            )
+            # Apply calibrator to full val set for downstream metric reporting
+            if calibrator is not None:
+                from sklearn.linear_model import LogisticRegression as LR
+                if isinstance(calibrator, LR):
+                    ensemble_preds = calibrator.predict_proba(ensemble_preds.reshape(-1, 1))[:, 1]
+                else:
+                    ensemble_preds = calibrator.predict(ensemble_preds)
+        else:
+            log.warning("Val set too small to split for calibration — skipping calibration")
 
     metrics = evaluate_ensemble(y_val, ensemble_preds)
 
@@ -1042,6 +1164,7 @@ def main():
         xgb_reg_model=locals().get("xgb_reg_model", None),
         lgb_rank_model=locals().get("lgb_rank_model", None),
         xgb_rank_model=locals().get("xgb_rank_model", None),
+        categories=training_categories,
     )
     log.info(f"\n✅ Training complete. Model version: {version}")
 

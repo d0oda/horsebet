@@ -204,8 +204,8 @@ def score_race_paddock(race_id: int) -> int:
         rows = session.execute(
             text("""
                 SELECT pc.id, pc.entry_id, e.post_position, pc.comment_text
-                FROM horsebet.paddock_comments pc
-                JOIN horsebet.entries e ON e.id = pc.entry_id
+                FROM paddock_comments pc
+                JOIN entries e ON e.id = pc.entry_id
                 WHERE e.race_id = :race_id
                   AND pc.comment_text IS NOT NULL
                   AND pc.comment_text != ''
@@ -248,7 +248,7 @@ def score_race_paddock(race_id: int) -> int:
             pc_id, _ = row_map[pp]
             session.execute(
                 text("""
-                    UPDATE horsebet.paddock_comments
+                    UPDATE paddock_comments
                     SET score_build = :sb, score_temperament = :st,
                         score_gait = :sg, score_coat = :sc,
                         score_overall = :so, scored_at = NOW()
@@ -283,8 +283,8 @@ def get_paddock_scores(race_id: int) -> dict[int, float]:
         rows = session.execute(
             text("""
                 SELECT pc.entry_id, pc.score_overall
-                FROM horsebet.paddock_comments pc
-                JOIN horsebet.entries e ON e.id = pc.entry_id
+                FROM paddock_comments pc
+                JOIN entries e ON e.id = pc.entry_id
                 WHERE e.race_id = :race_id
                   AND pc.score_overall IS NOT NULL
             """),
@@ -301,7 +301,7 @@ def insert_comment(entry_id: int, comment_text: str, source: str = "manual") -> 
     with get_session() as session:
         result = session.execute(
             text("""
-                INSERT INTO horsebet.paddock_comments (entry_id, comment_text, source)
+                INSERT INTO paddock_comments (entry_id, comment_text, source)
                 VALUES (:eid, :text, :src)
                 RETURNING id
             """),

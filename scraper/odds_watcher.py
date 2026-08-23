@@ -2,7 +2,7 @@
 UmaEdge — Odds Snapshot Watcher.
 
 Periodically captures win/place odds from netkeiba for upcoming races.
-Stores snapshots as time-series in the horsebet.odds_snapshots table.
+Stores snapshots as time-series in the odds_snapshots table.
 
 Usage:
     # Watch odds for a specific race (snapshot every 5 min)
