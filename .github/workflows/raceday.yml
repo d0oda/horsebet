@@ -15,12 +15,13 @@ on:
         type: string
 
 env:
-  DATABASE_URL: ${{ secrets.DATABASE_URL }}
+  DATABASE_URL: sqlite:///horsebet.db
   GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
   WHATSAPP_PHONE: ${{ secrets.WHATSAPP_PHONE }}
   WHATSAPP_API_KEY: ${{ secrets.WHATSAPP_API_KEY }}
   PYTHON_VERSION: '3.10'
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  MODEL_VERSION: retrain_20260822_2143
 
 permissions:
   contents: write
@@ -67,16 +68,35 @@ jobs:
             echo "⏭️ Not a race day ($DATE is weekday $DOW), skipping"
           fi
 
-      # ── Step 1: Scrape races (first run only) ──
+      # ── Database: restore from cache (persisted between runs) ──
+      - name: Restore horsebet.db from cache
+        if: steps.check.outputs.is_race_day == 'true'
+        id: db_cache
+        uses: actions/cache/restore@v4
+        with:
+          path: horsebet.db
+          # Falls back to any previous horsebet-db- cache if today's isn't found
+          key: horsebet-db-${{ steps.date.outputs.date }}
+          restore-keys: |
+            horsebet-db-
+
+      - name: Bootstrap empty DB if cache miss
+        if: steps.check.outputs.is_race_day == 'true' && steps.db_cache.outputs.cache-hit != 'true'
+        run: |
+          echo "⚠️  No cached DB found — bootstrapping empty schema from alembic migrations."
+          echo "    Predictions will have no historical form data this run."
+          DATABASE_URL=sqlite:///horsebet.db alembic upgrade head
+
+      # ── Step 1: Scrape races ──
       - name: Scrape races
         if: steps.check.outputs.is_race_day == 'true'
         run: |
           DATE="${{ steps.date.outputs.date }}"
           echo "🔍 Scraping races for $DATE"
-          python pipeline.py --date "$DATE" --version retrain_20260522_2234 \
+          python pipeline.py --date "$DATE" --version ${{ env.MODEL_VERSION }} \
             --skip-odds --skip-predict --skip-paddock --skip-notify
 
-      # ── Step 2: Race Watcher (fresh odds → predict → notify) ──
+      # ── Step 2: Restore watcher state ──
       - name: Restore watcher state
         if: steps.check.outputs.is_race_day == 'true'
         run: |
@@ -85,13 +105,22 @@ jobs:
           git fetch origin gh-pages || true
           git checkout origin/gh-pages -- results/watcher_state_$DATE.json 2>/dev/null || echo "No previous state found"
 
+      # ── Step 3: Race watcher (odds → predict → notify) ──
       - name: Race watcher
         if: steps.check.outputs.is_race_day == 'true'
         run: |
           DATE="${{ steps.date.outputs.date }}"
           python race_watcher.py --date "$DATE" --once --lead-time 15
 
-      # ── Step 3: Upload + deploy ──
+      # ── Step 4: Save updated DB to cache ──
+      - name: Save horsebet.db to cache
+        if: steps.check.outputs.is_race_day == 'true' && always()
+        uses: actions/cache/save@v4
+        with:
+          path: horsebet.db
+          key: horsebet-db-${{ steps.date.outputs.date }}
+
+      # ── Step 5: Upload artifacts ──
       - name: Upload artifacts
         if: steps.check.outputs.is_race_day == 'true'
         uses: actions/upload-artifact@v4
@@ -106,6 +135,7 @@ jobs:
           retention-days: 30
           overwrite: true
 
+      # ── Step 6: Deploy to GitHub Pages ──
       - name: Deploy to GitHub Pages
         if: steps.check.outputs.is_race_day == 'true'
         uses: peaceiris/actions-gh-pages@v4

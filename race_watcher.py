@@ -45,10 +45,10 @@ log = logging.getLogger("race_watcher")
 
 JST = timezone(timedelta(hours=9))
 
-# Default model config (same as pipeline)
-MODEL_VERSION = "retrain_20260523_2115"
-EV_THRESHOLD = 0.25
-MAX_ODDS = 30.0
+# Default model config (optimal Sharpe — matches pipeline.py defaults)
+MODEL_VERSION = "retrain_20260822_2143"
+EV_THRESHOLD = 0.15
+MAX_ODDS = 20.0
 MIN_ODDS = 2.0
 
 COURSE_NAMES = {
@@ -83,7 +83,7 @@ def is_active_racing_window(date: str) -> bool:
     def get_bounds():
         with get_session() as session:
             result = session.execute(
-                text("SELECT MIN(post_time) as min_t, MAX(post_time) as max_t FROM horsebet.races WHERE date = :d"),
+                text("SELECT MIN(post_time) as min_t, MAX(post_time) as max_t FROM races WHERE date = :d"),
                 {"d": date}
             ).fetchone()
             return result.min_t, result.max_t
@@ -125,7 +125,7 @@ def refresh_pipeline(date: str) -> str:
     # Get race netkeiba_ids from DB
     with get_session() as session:
         rows = session.execute(
-            text("SELECT netkeiba_id FROM horsebet.races WHERE date = :d "
+            text("SELECT netkeiba_id FROM races WHERE date = :d "
                  "ORDER BY course_id, race_number"),
             {"d": date},
         ).fetchall()
@@ -166,7 +166,7 @@ def load_race_schedule(date: str) -> list[dict]:
             text("""
                 SELECT r.id, r.netkeiba_id, r.race_number, r.course_id,
                        r.post_time, r.distance, r.surface, r.race_name_jp
-                FROM horsebet.races r
+                FROM races r
                 WHERE r.date = :d
                 ORDER BY r.post_time, r.course_id
             """),
@@ -223,7 +223,7 @@ def check_result(race: dict) -> dict | None:
                 if entry.finish_pos is not None:
                     session.execute(
                         text("""
-                            UPDATE horsebet.entries
+                            UPDATE entries
                             SET finish_pos = :fp, time_secs = :ts,
                                 last_3f_secs = :l3f,
                                 odds_win = COALESCE(:odds, odds_win)

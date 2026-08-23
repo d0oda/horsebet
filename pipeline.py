@@ -60,7 +60,7 @@ def step_scrape(date: str) -> list[str]:
         # Fallback: check if races already exist in DB
         with get_session() as session:
             rows = session.execute(
-                text("SELECT netkeiba_id FROM horsebet.races WHERE date = :d ORDER BY course_id, race_number"),
+                text("SELECT netkeiba_id FROM races WHERE date = :d ORDER BY course_id, race_number"),
                 {"d": date},
             ).fetchall()
         if rows:
@@ -75,7 +75,7 @@ def step_scrape(date: str) -> list[str]:
     # Check which are already in DB
     with get_session() as session:
         existing = session.execute(
-            text("SELECT netkeiba_id FROM horsebet.races WHERE date = :d"),
+            text("SELECT netkeiba_id FROM races WHERE date = :d"),
             {"d": date},
         ).fetchall()
     existing_ids = {r.netkeiba_id for r in existing}
@@ -90,6 +90,9 @@ def step_scrape(date: str) -> list[str]:
             try:
                 race_data = scrape_race(rid)
                 if race_data:
+                    race_obj = race_data[0] if isinstance(race_data, tuple) else race_data
+                    if not race_obj.date:
+                        race_obj.date = str(date)
                     save_race_to_db(race_data)
             except Exception as e:
                 log.warning(f"  ⚠️ Failed: {e}")
@@ -113,7 +116,7 @@ def step_odds(date: str, race_ids: list[str]) -> list[int]:
         races = session.execute(
             text("""
                 SELECT id, netkeiba_id, race_number, post_time
-                FROM horsebet.races WHERE date = :d
+                FROM races WHERE date = :d
                 ORDER BY course_id, race_number
             """),
             {"d": date},
@@ -134,9 +137,16 @@ def step_odds(date: str, race_ids: list[str]) -> list[int]:
             no_time += 1
             continue
 
-        # post_time is a time object from DB
+        # post_time is a time object from DB or string (SQLite)
         race_date = datetime.strptime(date, "%Y-%m-%d").date()
-        post_dt = datetime.combine(race_date, info.post_time, tzinfo=JST)
+        
+        post_time_obj = info.post_time
+        if isinstance(post_time_obj, str):
+            from datetime import time as dt_time
+            parts = post_time_obj.split(':')
+            post_time_obj = dt_time(int(parts[0]), int(parts[1]), int(parts[2]) if len(parts) > 2 else 0)
+            
+        post_dt = datetime.combine(race_date, post_time_obj, tzinfo=JST)
         mins_until = (post_dt - now_jst).total_seconds() / 60
 
         if mins_until < -ODDS_FINISHED_GRACE:
@@ -168,7 +178,12 @@ def step_odds(date: str, race_ids: list[str]) -> list[int]:
             continue
 
         info = nk_to_info.get(nk_id)
-        time_str = info.post_time.strftime('%H:%M') if info and info.post_time else "??:??"
+        if info and info.post_time:
+            time_str = info.post_time if isinstance(info.post_time, str) else info.post_time.strftime('%H:%M')
+            if len(time_str) > 5:
+                time_str = time_str[:5]
+        else:
+            time_str = "??:??"
 
         odds = fetch_win_odds(nk_id)
         if not odds:
@@ -182,7 +197,7 @@ def step_odds(date: str, race_ids: list[str]) -> list[int]:
                 pp = int(o["combination"])
                 result = session.execute(
                     text("""
-                        UPDATE horsebet.entries
+                        UPDATE entries
                         SET odds_win = :odds
                         WHERE race_id = :race_id AND post_position = :pp
                     """),
@@ -214,7 +229,7 @@ def step_paddock(date: str) -> int:
 
     with get_session() as session:
         races = session.execute(
-            text("SELECT id FROM horsebet.races WHERE date = :d ORDER BY course_id, race_number"),
+            text("SELECT id FROM races WHERE date = :d ORDER BY course_id, race_number"),
             {"d": date},
         ).fetchall()
 
@@ -247,7 +262,7 @@ def step_predict(date: str, version: str, ev_threshold: float,
     # Get all race IDs from DB
     with get_session() as session:
         rows = session.execute(
-            text("SELECT id FROM horsebet.races WHERE date = :d ORDER BY course_id, race_number"),
+            text("SELECT id FROM races WHERE date = :d ORDER BY course_id, race_number"),
             {"d": date},
         ).fetchall()
     all_race_ids = [r.id for r in rows]
@@ -274,167 +289,17 @@ def step_predict(date: str, version: str, ev_threshold: float,
     with open(meta_path) as f:
         meta = json.load(f)
 
-    if meta.get("type") == "hybrid":
-        df = predict_with_filters(
-            race_ids=predict_ids,
-            model_version=version,
-            ev_threshold=ev_threshold,
-            max_odds=max_odds,
-            min_odds=min_odds,
-        )
-    else:
-        import pandas as pd
-        from models.features import FeatureBuilder
-        from models.ensemble import HybridEnsemble
-        from models.predict import _store_predictions, _store_value_bets
+    from models.predict_final import predict_with_filters
 
-        # 1. Build features for ALL races in one pass (single DB fetch)
-        log.info(f"Building features for all {len(predict_ids)} races (bulk)...")
-        fb = FeatureBuilder()
-        features_df = fb.build_features_for_races(predict_ids)
-        if features_df.empty:
-            log.error("No features could be built")
-            df = pd.DataFrame()
-        else:
-            # 2. Load metadata to determine model type
-            from models.train import MODELS_DIR
-            import json
-            meta_path = MODELS_DIR / version / "metadata.json"
-            with open(meta_path) as f:
-                meta = json.load(f)
+    df = predict_with_filters(
+        race_ids=predict_ids,
+        model_version=version,
+        ev_threshold=ev_threshold,
+        max_odds=max_odds,
+        min_odds=min_odds,
+    )
 
-            is_hybrid = "fundamental_weight" in meta or meta.get("type") == "hybrid"
 
-            if is_hybrid:
-                log.info("Running model inference (HybridEnsemble)...")
-                try:
-                    hybrid = HybridEnsemble.load(version=version)
-                except FileNotFoundError:
-                    log.error(f"Model version '{version}' not found")
-                    return output_path
-
-                all_model_cols = set(hybrid.fund_feature_cols) | set(hybrid.mkt_feature_cols)
-                for col in all_model_cols:
-                    if col not in features_df.columns:
-                        features_df[col] = np.nan
-
-                preds = hybrid.predict(features_df)
-                combined_probs = preds["combined"]
-                fund_probs = preds["fundamental"]
-                mkt_probs = preds["market"]
-            else:
-                log.info("Running model inference (Standard Ensemble)...")
-                import xgboost as xgb
-                from models.train import load_model, ensemble_predict
-                
-                lgb_model, xgb_model, meta = load_model(version)
-                feature_cols = meta["feature_cols"]
-
-                for col in feature_cols:
-                    if col not in features_df.columns:
-                        features_df[col] = np.nan
-
-                X = features_df[feature_cols].values
-                lgb_probs = lgb_model.predict(X)
-                xgb_probs = xgb_model.predict(xgb.DMatrix(X, feature_names=feature_cols))
-                model_probs = ensemble_predict(lgb_probs, xgb_probs)
-                
-                # Regression blend
-                lgb_reg_model = meta.get("lgb_reg_model")
-                xgb_reg_model = meta.get("xgb_reg_model")
-                if lgb_reg_model is not None and xgb_reg_model is not None:
-                    lgb_reg_preds = lgb_reg_model.predict(X)
-                    xgb_reg_preds = xgb_reg_model.predict(xgb.DMatrix(X, feature_names=feature_cols))
-                    ensemble_reg_preds = ensemble_predict(lgb_reg_preds, xgb_reg_preds)
-                    
-                    from models.train import scores_to_probs
-                    race_ids_for_probs = features_df["race_id"].values
-                    reg_probs = scores_to_probs(-ensemble_reg_preds, race_ids_for_probs)
-                    model_probs = 0.8 * model_probs + 0.2 * reg_probs
-
-                calibrator = meta.get("calibrator")
-                if calibrator is not None:
-                    cal_method = meta.get("calibration_method", "isotonic")
-                    if cal_method == "platt":
-                        model_probs = calibrator.predict_proba(model_probs.reshape(-1, 1))[:, 1]
-                    else:
-                        model_probs = calibrator.predict(model_probs)
-                    log.info("Applied calibrator to predictions")
-
-                # Replicate the naive 0.6/0.4 blending for non-hybrid models to maintain previous behavior
-                combined_probs = []
-                for i, (_, row) in enumerate(features_df.iterrows()):
-                    model_p = float(model_probs[i])
-                    # If odds_free, overlay pace. If not odds_free, it's an odds-aware model, use directly.
-                    if meta.get("odds_free", False):
-                        pace_p = row.get("pace_win_prob")
-                        pace_p = float(pace_p) if pd.notna(pace_p) else model_p
-                        combined_probs.append(0.6 * model_p + 0.4 * pace_p)
-                    else:
-                        combined_probs.append(model_p)
-                        
-                fund_probs = combined_probs
-                mkt_probs = combined_probs
-
-            # 4. Normalize and detect value bets
-            # Bulk-fetch entry data
-            entry_ids = features_df["entry_id"].tolist()
-            with get_session() as session:
-                entry_rows = session.execute(
-                    text("SELECT id, horse_id, odds_win FROM entries WHERE id = ANY(:ids)"),
-                    {"ids": entry_ids}
-                ).fetchall()
-            entry_map = {r.id: (r.horse_id, r.odds_win or 0) for r in entry_rows}
-
-            # Calculate unnormalized combined probabilities
-            features_df["_unnorm_combined"] = combined_probs
-            race_sums = features_df.groupby("race_id")["_unnorm_combined"].transform("sum")
-            features_df["combined_win"] = features_df["_unnorm_combined"] / race_sums.replace(0, 1)
-
-            result_rows = []
-            for i, (_, row) in enumerate(features_df.iterrows()):
-                entry_id = int(row["entry_id"])
-                race_id = int(row["race_id"])
-                horse_id, odds = entry_map.get(entry_id, (None, 0))
-
-                fund_p = float(fund_probs[i])
-                mkt_p = float(mkt_probs[i])
-                combined_win = row["combined_win"]
-                market_prob = (1.0 / odds) if odds > 0 else 0
-                
-                # Retrieve pace place probabilities
-                pace_place_p = row.get("pace_place_prob")
-                pace_place_p = float(pace_place_p) if pd.notna(pace_place_p) else None
-
-                # Proper EV calculation
-                ev = (combined_win * odds) - 1.0 if odds > 0 else 0
-                
-                # Assign 200 yen stake ONLY if it meets your criteria (as requested)
-                is_value = ev >= ev_threshold and min_odds <= odds <= max_odds
-                recommended_stake = 200 if is_value else 0
-
-                result_rows.append({
-                    "race_id": race_id,
-                    "entry_id": entry_id,
-                    "horse_name": row.get("horse_name", ""),
-                    "model_win_prob": round(fund_p, 4),
-                    "pace_win_prob": round(mkt_p, 4),  # Outputting mkt_p here for UI compatibility
-                    "combined_win_prob": round(combined_win, 4),
-                    "pace_place_prob": round(pace_place_p, 4) if pace_place_p else None,
-                    "odds": odds,
-                    "market_prob": round(market_prob, 4),
-                    "ev": round(ev, 4),
-                    "is_value": is_value,
-                    "kelly_fraction": 0,
-                    "recommended_stake": recommended_stake
-                })
-
-            df = pd.DataFrame(result_rows)
-            df = df.sort_values("combined_win_prob", ascending=False)
-
-            # 5. Store to DB
-            _store_predictions(df, version)
-            _store_value_bets(df, version, ev_threshold)
 
     if df.empty:
         log.error("No predictions generated")
@@ -565,7 +430,7 @@ def step_notify(predictions_path: str, date: str, version: str,
             text("""
                 SELECT r.id, r.race_number, r.course_id, r.distance, r.surface,
                        r.post_time, r.race_name_jp
-                FROM horsebet.races r WHERE r.date = :d
+                FROM races r WHERE r.date = :d
                 ORDER BY r.course_id, r.race_number
             """),
             {"d": date},
@@ -605,9 +470,9 @@ def step_notify(predictions_path: str, date: str, version: str,
     entry_pp_map = {}
     if entry_ids:
         with get_session() as session:
+            ids_str = ",".join(map(str, entry_ids))
             rows = session.execute(
-                text("SELECT id, post_position, draw FROM horsebet.entries WHERE id = ANY(:ids)"),
-                {"ids": entry_ids},
+                text(f"SELECT id, post_position, draw FROM entries WHERE id IN ({ids_str})")
             ).fetchall()
         entry_pp_map = {r.id: (r.post_position, r.draw) for r in rows}
 
@@ -623,7 +488,10 @@ def step_notify(predictions_path: str, date: str, version: str,
             current_race_id = race_id
             if race:
                 venue = COURSE_NAMES.get(race.course_id, "?")
-                post = race.post_time.strftime("%H:%M") if race.post_time else "--:--"
+                if race.post_time:
+                    post = race.post_time[:5] if isinstance(race.post_time, str) else race.post_time.strftime("%H:%M")
+                else:
+                    post = "--:--"
                 surface = (race.surface or "?").upper()
                 dist = race.distance or "?"
                 race_name = race.race_name_jp or ""
@@ -705,7 +573,7 @@ def step_results(date: str, race_ids: list[str]):
         races = session.execute(
             text("""
                 SELECT id, netkeiba_id, race_number, post_time
-                FROM horsebet.races WHERE date = :d
+                FROM races WHERE date = :d
                 ORDER BY course_id, race_number
             """),
             {"d": date},
@@ -716,7 +584,13 @@ def step_results(date: str, race_ids: list[str]):
         if not r.post_time:
             continue
         race_date = datetime.strptime(date, "%Y-%m-%d").date()
-        post_dt = datetime.combine(race_date, r.post_time, tzinfo=JST)
+        post_time_val = r.post_time
+        if isinstance(post_time_val, str):
+            post_time_str = post_time_val.split('.')[0]
+            if post_time_str.count(':') == 1:
+                post_time_str += ":00"
+            post_time_val = datetime.strptime(post_time_str, "%H:%M:%S").time()
+        post_dt = datetime.combine(race_date, post_time_val, tzinfo=JST)
         mins_since = (now_jst - post_dt).total_seconds() / 60
         if mins_since > 10:
             # Check if we already have COMPLETE results (all entries have finish_pos)
@@ -725,7 +599,7 @@ def step_results(date: str, race_ids: list[str]):
                     text("""
                         SELECT COUNT(*) as total,
                                COUNT(finish_pos) as has_result
-                        FROM horsebet.entries
+                        FROM entries
                         WHERE race_id = :rid
                     """),
                     {"rid": r.id},
@@ -754,7 +628,7 @@ def step_results(date: str, race_ids: list[str]):
                     if entry.finish_pos is not None:
                         session.execute(
                             text("""
-                                UPDATE horsebet.entries
+                                UPDATE entries
                                 SET finish_pos = :fp, time_secs = :ts,
                                     last_3f_secs = :l3f, corner_positions = :cp,
                                     odds_win = COALESCE(:odds, odds_win),
@@ -804,8 +678,8 @@ Examples:
     )
     parser.add_argument("--date", required=True, help="Race date (YYYY-MM-DD)")
     parser.add_argument("--version", default="20260604_223536", help="Model version (default: 20260604_223536)")
-    parser.add_argument("--ev-threshold", type=float, default=0.30, help="Min EV for value bet (default: 30%%)")
-    parser.add_argument("--max-odds", type=float, default=30.0, help="Max odds filter (default: 30)")
+    parser.add_argument("--ev-threshold", type=float, default=0.15, help="Min EV for value bet (default: 15%%)")
+    parser.add_argument("--max-odds", type=float, default=20.0, help="Max odds filter (default: 20)")
     parser.add_argument("--min-odds", type=float, default=2.0, help="Min odds filter (default: 2.0)")
     parser.add_argument("--skip-scrape", action="store_true", help="Skip race scraping (already in DB)")
     parser.add_argument("--skip-odds", action="store_true", help="Skip odds fetching")
@@ -824,7 +698,7 @@ Examples:
         log.info("━━━ Step 1: Scraping → SKIPPED ━━━")
         with get_session() as session:
             rows = session.execute(
-                text("SELECT netkeiba_id FROM horsebet.races WHERE date = :d ORDER BY course_id, race_number"),
+                text("SELECT netkeiba_id FROM races WHERE date = :d ORDER BY course_id, race_number"),
                 {"d": args.date},
             ).fetchall()
         race_ids = [r.netkeiba_id for r in rows]
@@ -847,7 +721,7 @@ Examples:
     if args.skip_paddock:
         log.info("━━━ Step 2.5: Paddock → SKIPPED ━━━")
     else:
-        step_paddock(args.date)
+        pass # step_paddock(args.date)
 
     # Step 3: Predict
     pred_path = f"results/predictions_{args.date}.json"
