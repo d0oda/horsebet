@@ -3,11 +3,11 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="description" content="UmaEdge — AI-powered Japanese horse racing predictions and results viewer" />
+  <meta name="description" content="UmaEdge — AI-powered Japanese horse racing predictions. Browse race days, view predictions, and track value bets." />
   <meta name="theme-color" content="#0f1117" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <title>UmaEdge — Race Results</title>
+  <title>UmaEdge — Race Browser</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="./style.css" />
@@ -18,18 +18,48 @@
     <div class="logo">UmaEdge</div>
     <div class="header-meta">
       <span class="badge badge-model" id="header-model">—</span>
-      <span class="badge badge-date" id="header-date">—</span>
-      <span class="badge badge-live">● Live</span>
+      <span class="badge badge-date" id="header-date">Select a date</span>
+      <span class="badge badge-live" id="header-status">● Live</span>
     </div>
   </header>
 
-  <div id="app">
-    <div class="container">
-      <div class="loading-state">
-        <div class="spinner"></div>
-        <p style="color:var(--text-muted);font-size:13px;">Loading race data…</p>
+  <div class="app-layout">
+
+    <!-- ── Left: Calendar panel ── -->
+    <aside class="calendar-panel" id="calendar-panel">
+      <div class="calendar-widget">
+        <div class="cal-header">
+          <button class="cal-nav" id="cal-prev" aria-label="Previous month">‹</button>
+          <span class="cal-month-label" id="cal-month-label">—</span>
+          <button class="cal-nav" id="cal-next" aria-label="Next month">›</button>
+        </div>
+        <div class="cal-weekdays">
+          <span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span>
+        </div>
+        <div class="cal-grid" id="cal-grid"></div>
+        <div class="cal-legend">
+          <span class="legend-dot dot-has-data"></span><span>Has predictions</span>
+          <span class="legend-dot dot-today"></span><span>Today</span>
+        </div>
       </div>
-    </div>
+
+      <div class="manifest-summary" id="manifest-summary" style="display:none">
+        <div class="manifest-title">Recent Race Days</div>
+        <div class="manifest-list" id="manifest-list"></div>
+      </div>
+    </aside>
+
+    <!-- ── Right: Race detail panel ── -->
+    <main class="race-panel" id="race-panel">
+      <div class="race-panel-inner" id="race-panel-inner">
+        <div class="empty-state">
+          <div class="empty-icon">📅</div>
+          <div class="empty-title">Select a race day</div>
+          <div class="empty-msg">Pick a date from the calendar to view races and predictions.</div>
+        </div>
+      </div>
+    </main>
+
   </div>
 
   <script src="./app.js"></script>
