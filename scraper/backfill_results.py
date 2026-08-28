@@ -53,7 +53,7 @@ def get_races_missing_results(date: Optional[str] = None) -> list[dict]:
         params["date"] = date
     query += """
         GROUP BY r.id, r.netkeiba_id, r.date, r.race_name_jp
-        HAVING COUNT(res.id) < COUNT(e.id)
+        HAVING COUNT(res.id) < COUNT(e.id) OR COUNT(e.finish_pos) < COUNT(e.id)
         ORDER BY r.date, r.id
     """
 
@@ -131,7 +131,12 @@ def _process_one_race(race: dict, idx: int, total: int, dry_run: bool) -> dict:
                         :entry_id, :finish_pos, :margin, :time_secs,
                         :last_3f, :corners
                     )
-                    ON CONFLICT (entry_id) DO NOTHING
+                    ON CONFLICT (entry_id) DO UPDATE SET
+                        finish_pos = COALESCE(EXCLUDED.finish_pos, results.finish_pos),
+                        margin = COALESCE(EXCLUDED.margin, results.margin),
+                        time_secs = COALESCE(EXCLUDED.time_secs, results.time_secs),
+                        last_3f_secs = COALESCE(EXCLUDED.last_3f_secs, results.last_3f_secs),
+                        corner_positions = COALESCE(EXCLUDED.corner_positions, results.corner_positions)
                 """),
                 {
                     "entry_id": entry_id,

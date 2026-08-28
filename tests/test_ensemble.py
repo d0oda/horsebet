@@ -124,4 +124,4 @@ class TestOddsFeatures:
 
     def test_odds_features_length(self):
         from models.features import ODDS_FEATURES
-        assert len(ODDS_FEATURES) == 16
+        assert len(ODDS_FEATURES) == 24

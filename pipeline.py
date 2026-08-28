@@ -50,10 +50,10 @@ ODDS_WINDOW_MIN = 2880   # fetch for races starting within 48 hours (temporary f
 ODDS_FINISHED_GRACE = 5  # skip races finished more than 5 min ago
 
 
-def step_scrape(date: str) -> list[str]:
-    """Step 1: Discover and scrape all races for the date."""
+def step_scrape(date: str, force: bool = False) -> list[str]:
+    """Step 1: Discover and scrape all races for the date. If force=True, re-scrapes and updates all races."""
     date_compact = date.replace("-", "")
-    log.info(f"━━━ Step 1: Scraping races for {date} ━━━")
+    log.info(f"━━━ Step 1: Scraping races for {date} (force={force}) ━━━")
 
     race_ids = scrape_race_list(date_compact)
     if not race_ids:
@@ -80,20 +80,20 @@ def step_scrape(date: str) -> list[str]:
         ).fetchall()
     existing_ids = {r.netkeiba_id for r in existing}
 
-    new_ids = [rid for rid in race_ids if rid not in existing_ids]
-    if not new_ids:
+    target_ids = race_ids if force else [rid for rid in race_ids if rid not in existing_ids]
+    if not target_ids:
         log.info(f"All {len(race_ids)} races already in DB — skipping scrape")
     else:
-        log.info(f"Scraping {len(new_ids)} new races ({len(existing_ids)} already in DB)...")
-        for i, rid in enumerate(new_ids, 1):
-            log.info(f"  [{i}/{len(new_ids)}] {rid}")
+        log.info(f"Scraping {len(target_ids)} races ({len(existing_ids)} already in DB, force={force})...")
+        for i, rid in enumerate(target_ids, 1):
+            log.info(f"  [{i}/{len(target_ids)}] {rid}")
             try:
                 race_data = scrape_race(rid)
                 if race_data:
                     race_obj = race_data[0] if isinstance(race_data, tuple) else race_data
                     if not race_obj.date:
                         race_obj.date = str(date)
-                    save_race_to_db(race_data)
+                    save_race_to_db(race_data, force=force)
             except Exception as e:
                 log.warning(f"  ⚠️ Failed: {e}")
             time.sleep(1)  # rate limit
@@ -559,16 +559,17 @@ def step_notify(predictions_path: str, date: str, version: str,
         log.info("  No notification backends configured")
 
 
-def step_results(date: str, race_ids: list[str]):
+def step_results(date: str, race_ids: list[str] = None, force: bool = False) -> list[int]:
     """
     Step 5: Scrape results for finished races.
     Updates entries with finish_pos, time, last_3f, final odds.
+    Returns list of DB race IDs that were synced.
     """
     JST = timezone(timedelta(hours=9))
     now_jst = datetime.now(JST)
-    log.info(f"━━━ Step 5: Collecting results (JST: {now_jst.strftime('%H:%M')}) ━━━")
+    log.info(f"━━━ Step 5: Collecting results for {date} (JST: {now_jst.strftime('%H:%M')}, force={force}) ━━━")
 
-    # Find races that should be finished (post_time + 10 min < now)
+    # Find races for this date
     with get_session() as session:
         races = session.execute(
             text("""
@@ -579,11 +580,36 @@ def step_results(date: str, race_ids: list[str]):
             {"d": date},
         ).fetchall()
 
+    if not races:
+        log.info(f"  No races found in DB for {date}")
+        return []
+
     finished_ids = []
+    try:
+        race_date = datetime.strptime(date, "%Y-%m-%d").date()
+        is_past_day = race_date < datetime.now(JST).date()
+    except Exception:
+        is_past_day = False
+
     for r in races:
+        if force or is_past_day:
+            # Check if missing finish positions or force
+            with get_session() as session:
+                counts = session.execute(
+                    text("""
+                        SELECT COUNT(*) as total,
+                               COUNT(finish_pos) as has_result
+                        FROM entries
+                        WHERE race_id = :rid
+                    """),
+                    {"rid": r.id},
+                ).fetchone()
+            if force or (counts and counts.has_result < counts.total):
+                finished_ids.append(r)
+            continue
+
         if not r.post_time:
             continue
-        race_date = datetime.strptime(date, "%Y-%m-%d").date()
         post_time_val = r.post_time
         if isinstance(post_time_val, str):
             post_time_str = post_time_val.split('.')[0]
@@ -609,9 +635,10 @@ def step_results(date: str, race_ids: list[str]):
 
     if not finished_ids:
         log.info("  No new results to collect")
-        return
+        return []
 
     log.info(f"  Scraping results for {len(finished_ids)} finished races")
+    synced_db_ids = []
 
     for i, race_row in enumerate(finished_ids, 1):
         log.info(f"  [{i}/{len(finished_ids)}] R{race_row.race_number} ({race_row.netkeiba_id})")
@@ -619,11 +646,12 @@ def step_results(date: str, race_ids: list[str]):
             race_data = scrape_race(race_row.netkeiba_id)
             if not race_data or not race_data.entries:
                 log.warning(f"    No result data yet")
-                time.sleep(1)
+                time.sleep(0.5)
                 continue
 
             # Update entries with results
             with get_session() as session:
+                updated_any = False
                 for entry in race_data.entries:
                     if entry.finish_pos is not None:
                         session.execute(
@@ -646,16 +674,19 @@ def step_results(date: str, race_ids: list[str]):
                                 "pp": entry.post_position,
                             },
                         )
+                        updated_any = True
                 session.commit()
+                if updated_any:
+                    synced_db_ids.append(race_row.id)
                 log.info(f"    ✅ Results saved ({len(race_data.entries)} entries)")
 
         except Exception as e:
             log.warning(f"    ⚠️ Failed: {e}")
-        time.sleep(1)
+        time.sleep(0.5)
 
-    log.info(f"✅ Collected results for {len(finished_ids)} races")
+    log.info(f"✅ Collected results for {len(synced_db_ids)} races")
 
-    if finished_ids:
+    if synced_db_ids:
         log.info("  Updating EWMA Ability Ratings (Elo) for completed races...")
         try:
             from models.ability_rating import AbilityRatingEngine
@@ -663,6 +694,8 @@ def step_results(date: str, race_ids: list[str]):
             engine.update_for_date(date)
         except Exception as e:
             log.error(f"  ⚠️ Failed to update ability ratings: {e}")
+
+    return synced_db_ids
 
 
 def main():
@@ -682,6 +715,7 @@ Examples:
     parser.add_argument("--max-odds", type=float, default=20.0, help="Max odds filter (default: 20)")
     parser.add_argument("--min-odds", type=float, default=2.0, help="Min odds filter (default: 2.0)")
     parser.add_argument("--skip-scrape", action="store_true", help="Skip race scraping (already in DB)")
+    parser.add_argument("--force-scrape", action="store_true", help="Force re-scraping and updating of all races even if already in DB")
     parser.add_argument("--skip-odds", action="store_true", help="Skip odds fetching")
     parser.add_argument("--skip-predict", action="store_true", help="Skip prediction (reuse existing)")
     parser.add_argument("--skip-paddock", action="store_true", help="Skip paddock NLP scoring")
@@ -704,7 +738,7 @@ Examples:
         race_ids = [r.netkeiba_id for r in rows]
         log.info(f"   Found {len(race_ids)} races in DB")
     else:
-        race_ids = step_scrape(args.date)
+        race_ids = step_scrape(args.date, force=args.force_scrape)
 
     if not race_ids:
         log.error("No races found — aborting")

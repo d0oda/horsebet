@@ -849,8 +849,8 @@ CACHE_LOCK = threading.Lock()
 TRAINER_CACHE = {}
 JOCKEY_CACHE = {}
 
-def save_race_to_db(race: RaceData) -> bool:
-    """Insert a parsed race and all its entries/results into the database."""
+def save_race_to_db(race: RaceData, force: bool = False) -> bool:
+    """Insert a parsed race and all its entries/results into the database. If force=True, updates existing race & entries."""
     with DB_LOCK, get_session() as session:
         # Check if race already exists
         existing = session.execute(
@@ -858,7 +858,7 @@ def save_race_to_db(race: RaceData) -> bool:
             {"nid": race.netkeiba_id},
         ).fetchone()
 
-        if existing:
+        if existing and not force:
             log.info(f"Race {race.netkeiba_id} already in DB (id={existing[0]}), skipping")
             return False
 
@@ -884,39 +884,76 @@ def save_race_to_db(race: RaceData) -> bool:
                     {"name_jp": course_info["name_jp"]},
                 ).scalar()
 
-        # Insert race
-        race_result = session.execute(
-            text("""
-                INSERT INTO races (
-                    netkeiba_id, date, course_id, race_number, distance,
-                    surface, going, class, grade, race_name, race_name_jp,
-                    weather, field_size, post_time
-                ) VALUES (
-                    :netkeiba_id, :date, :course_id, :race_number, :distance,
-                    :surface, :going, :class, :grade, :race_name, :race_name_jp,
-                    :weather, :field_size, :post_time
-                )
-                RETURNING id
-            """),
-            {
-                "netkeiba_id": race.netkeiba_id,
-                "date": race.date,
-                "course_id": course_id,
-                "race_number": race.race_number,
-                "distance": race.distance or 0,
-                "surface": race.surface,
-                "going": race.going,
-                "class": race.class_,
-                "grade": race.grade,
-                "race_name": race.race_name,
-                "race_name_jp": race.race_name_jp,
-                "weather": race.weather,
-                "field_size": race.field_size,
-                "post_time": race.post_time,
-            },
-        )
-        race_db_id = race_result.fetchone()[0]
-        session.commit()
+        if existing and force:
+            race_db_id = existing[0]
+            session.execute(
+                text("""
+                    UPDATE races SET
+                        course_id = COALESCE(:course_id, course_id),
+                        race_number = COALESCE(:race_number, race_number),
+                        distance = CASE WHEN :distance > 0 THEN :distance ELSE distance END,
+                        surface = COALESCE(:surface, surface),
+                        going = COALESCE(:going, going),
+                        class = COALESCE(:class, class),
+                        grade = COALESCE(:grade, grade),
+                        race_name = COALESCE(:race_name, race_name),
+                        race_name_jp = COALESCE(:race_name_jp, race_name_jp),
+                        weather = COALESCE(:weather, weather),
+                        field_size = COALESCE(:field_size, field_size),
+                        post_time = COALESCE(:post_time, post_time)
+                    WHERE id = :id
+                """),
+                {
+                    "id": race_db_id,
+                    "course_id": course_id,
+                    "race_number": race.race_number,
+                    "distance": race.distance or 0,
+                    "surface": race.surface,
+                    "going": race.going,
+                    "class": race.class_,
+                    "grade": race.grade,
+                    "race_name": race.race_name,
+                    "race_name_jp": race.race_name_jp,
+                    "weather": race.weather,
+                    "field_size": race.field_size,
+                    "post_time": race.post_time,
+                },
+            )
+            session.commit()
+        else:
+            # Insert race
+            race_result = session.execute(
+                text("""
+                    INSERT INTO races (
+                        netkeiba_id, date, course_id, race_number, distance,
+                        surface, going, class, grade, race_name, race_name_jp,
+                        weather, field_size, post_time
+                    ) VALUES (
+                        :netkeiba_id, :date, :course_id, :race_number, :distance,
+                        :surface, :going, :class, :grade, :race_name, :race_name_jp,
+                        :weather, :field_size, :post_time
+                    )
+                    RETURNING id
+                """),
+                {
+                    "netkeiba_id": race.netkeiba_id,
+                    "date": race.date,
+                    "course_id": course_id,
+                    "race_number": race.race_number,
+                    "distance": race.distance or 0,
+                    "surface": race.surface,
+                    "going": race.going,
+                    "class": race.class_,
+                    "grade": race.grade,
+                    "race_name": race.race_name,
+                    "race_name_jp": race.race_name_jp,
+                    "weather": race.weather,
+                    "field_size": race.field_size,
+                    "post_time": race.post_time,
+                },
+            )
+            race_db_id = race_result.fetchone()[0]
+            session.commit()
 
         # Insert entries + results
         for entry in race.entries:
@@ -1003,16 +1040,29 @@ def save_race_to_db(race: RaceData) -> bool:
                     INSERT INTO entries (
                         race_id, horse_id, jockey_id, draw, post_position,
                         weight_carried, horse_weight, horse_weight_change,
-                        odds_win, popularity, u_index
+                        odds_win, popularity, u_index,
+                        finish_pos, time_secs, last_3f_secs, corner_positions, margin
                     ) VALUES (
                         :race_id, :horse_id, :jockey_id, :draw, :post_position,
                         :weight_carried, :horse_weight, :horse_weight_change,
-                        :odds_win, :popularity, :u_index
+                        :odds_win, :popularity, :u_index,
+                        :finish_pos, :time_secs, :last_3f_secs, :corner_positions, :margin
                     )
                     ON CONFLICT (race_id, horse_id) DO UPDATE SET
+                        draw = COALESCE(EXCLUDED.draw, entries.draw),
+                        post_position = COALESCE(EXCLUDED.post_position, entries.post_position),
+                        weight_carried = COALESCE(EXCLUDED.weight_carried, entries.weight_carried),
+                        horse_weight = COALESCE(EXCLUDED.horse_weight, entries.horse_weight),
+                        horse_weight_change = COALESCE(EXCLUDED.horse_weight_change, entries.horse_weight_change),
+                        jockey_id = COALESCE(EXCLUDED.jockey_id, entries.jockey_id),
                         u_index = COALESCE(EXCLUDED.u_index, entries.u_index),
                         odds_win = COALESCE(EXCLUDED.odds_win, entries.odds_win),
-                        popularity = COALESCE(EXCLUDED.popularity, entries.popularity)
+                        popularity = COALESCE(EXCLUDED.popularity, entries.popularity),
+                        finish_pos = COALESCE(EXCLUDED.finish_pos, entries.finish_pos),
+                        time_secs = COALESCE(EXCLUDED.time_secs, entries.time_secs),
+                        last_3f_secs = COALESCE(EXCLUDED.last_3f_secs, entries.last_3f_secs),
+                        corner_positions = COALESCE(EXCLUDED.corner_positions, entries.corner_positions),
+                        margin = COALESCE(EXCLUDED.margin, entries.margin)
                     RETURNING id
                 """),
                 {
@@ -1027,6 +1077,11 @@ def save_race_to_db(race: RaceData) -> bool:
                     "odds_win": entry.odds_win,
                     "popularity": entry.popularity,
                     "u_index": getattr(entry, "u_index", None),
+                    "finish_pos": entry.finish_pos,
+                    "time_secs": entry.time_secs,
+                    "last_3f_secs": entry.last_3f_secs,
+                    "corner_positions": entry.corner_positions,
+                    "margin": getattr(entry, "margin", None),
                 },
             )
             entry_row = entry_result.fetchone()
@@ -1045,7 +1100,31 @@ def save_race_to_db(race: RaceData) -> bool:
                             :entry_id, :finish_pos, :margin, :time_secs,
                             :last_3f, :corners
                         )
-                        ON CONFLICT (entry_id) DO NOTHING
+                        ON CONFLICT (entry_id) DO UPDATE SET
+                            finish_pos = COALESCE(EXCLUDED.finish_pos, results.finish_pos),
+                            margin = COALESCE(EXCLUDED.margin, results.margin),
+                            time_secs = COALESCE(EXCLUDED.time_secs, results.time_secs),
+                            last_3f_secs = COALESCE(EXCLUDED.last_3f_secs, results.last_3f_secs),
+                            corner_positions = COALESCE(EXCLUDED.corner_positions, results.corner_positions)
+                    """),
+                    {
+                        "entry_id": entry_db_id,
+                        "finish_pos": entry.finish_pos,
+                        "margin": entry.margin,
+                        "time_secs": entry.time_secs,
+                        "last_3f": entry.last_3f_secs,
+                        "corners": entry.corner_positions,
+                    },
+                )
+                session.execute(
+                    text("""
+                        UPDATE entries
+                        SET finish_pos = COALESCE(:finish_pos, finish_pos),
+                            margin = COALESCE(:margin, margin),
+                            time_secs = COALESCE(:time_secs, time_secs),
+                            last_3f_secs = COALESCE(:last_3f, last_3f_secs),
+                            corner_positions = COALESCE(:corners, corner_positions)
+                        WHERE id = :entry_id
                     """),
                     {
                         "entry_id": entry_db_id,

@@ -25,9 +25,9 @@ class TestLongshotFeatures:
         assert "is_extreme_longshot" in ODDS_FEATURES
 
     def test_odds_features_length(self):
-        """ODDS_FEATURES has 16 features now."""
+        """ODDS_FEATURES has 24 features (expanded in Sprint 9)."""
         from models.features import ODDS_FEATURES
-        assert len(ODDS_FEATURES) == 16
+        assert len(ODDS_FEATURES) == 24
 
 
 # ---------------------------------------------------------------------------

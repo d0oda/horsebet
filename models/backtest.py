@@ -35,13 +35,46 @@ log = logging.getLogger("backtest")
 # ---------------------------------------------------------------------------
 
 JRA_TAKE_RATE = 0.25  # JRA takes ~25% of the pool
-JRA_PLACE_PAYOUT_FACTOR = 0.35  # Place pays ~35% of win odds on average
+# NOTE (Bug #10): The flat 35% place payout factor was inaccurate across all odds.
+# JRA Fukusho payouts scale heavily with win odds: ~12% for 1.5x favorites,
+# ~28% for 5x horses, ~50% for 20x+ longshots.
+# A static factor is only usable for rough estimates. Use odds-aware function below.
+
+
+def _jra_place_payout_factor(win_odds: float) -> float:
+    """Approximate JRA Fukusho payout as a fraction of win odds.
+    Based on empirical JRA pool distributions; range ~0.10 to 0.55.
+
+    Args:
+        win_odds: Win market odds (float). If None or <= 0, falls back to the
+                  minimum factor (0.12) as a conservative estimate.
+                  (Audit R9-MINOR-3): Added None guard to prevent TypeError
+                  when odds_win is NULL in the database result.
+    """
+    if win_odds is None or win_odds <= 0:
+        # (Audit R9-MINOR-3): Fallback for NULL/invalid odds — use the minimum
+        # payout factor (favorites) as a conservative, safe default.
+        return 0.12
+    if win_odds <= 2.0:
+        return 0.12
+    elif win_odds <= 5.0:
+        # Linear interpolation: 12% at 2x -> 28% at 5x
+        return 0.12 + (win_odds - 2.0) / 3.0 * 0.16
+    elif win_odds <= 15.0:
+        # 28% at 5x -> 45% at 15x
+        return 0.28 + (win_odds - 5.0) / 10.0 * 0.17
+    else:
+        # 45% at 15x -> 55% cap
+        return min(0.55, 0.45 + (win_odds - 15.0) / 30.0 * 0.10)
+
 
 
 @dataclass
 class BacktestConfig:
     """Parameters for the backtesting simulation."""
-    ev_threshold: float = 0.30       # Minimum EV to trigger a bet (30%)
+    ev_threshold: float = 0.05       # Minimum EV to trigger a bet (5%) — aligned with CLI default
+                                     # (Audit INTEGRITY-2: BacktestConfig default was 0.30 (30%) but
+                                     # CLI used 0.05, causing incomparable results when called directly.)
     flat_stake: int = 1000           # Yen per flat bet
     initial_bankroll: int = 100000   # Starting bankroll (yen)
     kelly_fraction: float = 0.25    # Quarter-Kelly
@@ -145,6 +178,30 @@ class Backtester:
             # --- Find the single best bet per race (max 1) ---
             best_candidate = None
             best_ev = -1
+            # (Audit R5-INTEGRITY-5): Count actual starters (horses with a recorded finish
+            # position) rather than all declared entries.  Scratched horses have
+            # finish_pos=None and inflate len(race_df), producing the wrong JRA Fukusho
+            # top-N cutoff (top-2 for ≤7 starters vs top-3 for ≥8).
+            # (Audit R6-MINOR-1): Use vectorised notna() — O(1) vs O(n) iterrows.
+            n_actual_starters = int(race_df["finish_pos"].notna().sum())
+
+            # (Audit R6-MINOR-3): Pre-build the per-race Harville place model ONCE per
+            # race rather than rebuilding it inside the per-row loop (O(n²) → O(n)).
+            # The JointFinishModel is identical for every entry in the same race.
+            _race_place_jfm = None
+            _race_place_top_n = 3
+            _race_place_probs = {}
+            if self.config.bet_type == "place":
+                from models.betting_engine import JointFinishModel
+                for _, r2 in race_df.iterrows():
+                    # (Audit NEW-FLAW-1): post_position absent → fall back to entry_id.
+                    _pp = int(r2.get("post_position") or r2.get("entry_id") or 0)
+                    _wp = float(r2.get("win_prob", 0) or 0)
+                    if _pp > 0 and _wp > 0:
+                        _race_place_probs[_pp] = _wp
+                if _race_place_probs:
+                    _race_place_jfm = JointFinishModel(_race_place_probs)
+                    _race_place_top_n = 2 if len(_race_place_probs) <= 7 else 3
 
             for _, row in race_df.iterrows():
                 model_prob = row.get("win_prob", 0)
@@ -160,16 +217,40 @@ class Backtester:
                 if model_prob < self.config.min_model_prob:
                     continue
 
-                # --- Odds ceiling/floor filter ---
-                if odds > self.config.max_odds or odds < self.config.min_odds:
-                    continue
-
-                # --- Place bet adjustments (Research Backlog #4) ---
+                # --- Place bet adjustments ---
+                # (Audit R4-LOGIC-1): Determine bet type BEFORE the odds filter so that
+                # for place bets the floor/ceiling runs on effective place odds, not win
+                # odds.  A 2.5x win-odds horse passes min_odds=2.0 but its effective
+                # place odds = 2.5 × 0.12 = 0.30x — far below any meaningful floor.
                 is_place = self.config.bet_type == "place"
                 if is_place:
-                    model_prob = row.get("place_prob", model_prob * 2.5)
-                    model_prob = min(model_prob, 0.99)
-                    odds = odds * JRA_PLACE_PAYOUT_FACTOR
+                    # Use JointFinishModel.place_prob() if a pre-computed race_probs dict
+                    # is available on the row; otherwise fall back to the pre-built per-race
+                    # Harville model (built once above — R6-MINOR-3).
+                    # (Audit FLAW-2: the old model_prob * 2.5 multiplier was arbitrary and
+                    # systematically under-estimated place probability for mid-range horses
+                    # by up to 12 percentage points versus Harville.)
+                    precomputed_place = row.get("place_prob")
+                    if precomputed_place is not None and precomputed_place > 0:
+                        model_prob = min(float(precomputed_place), 0.99)
+                    elif _race_place_jfm is not None:
+                        row_pp = int(row.get("post_position") or row.get("entry_id") or 0)
+                        if row_pp in _race_place_probs:
+                            model_prob = min(_race_place_jfm.place_prob(row_pp, top_n=_race_place_top_n), 0.99)
+                        else:
+                            # post_position not in race_probs: fall back to 3× win_prob cap
+                            model_prob = min(model_prob * 3.0, 0.99)
+                    else:
+                        model_prob = min(model_prob * 3.0, 0.99)
+                    # Fix #10: use odds-aware place payout factor instead of flat 0.35
+                    odds = odds * _jra_place_payout_factor(odds)
+                    # Now apply floor/ceiling to effective place odds (not raw win odds)
+                    if odds > self.config.max_odds or odds < self.config.min_odds:
+                        continue
+                else:
+                    # --- Odds ceiling/floor filter (win bets only) ---
+                    if odds > self.config.max_odds or odds < self.config.min_odds:
+                        continue
 
                 # Implied probability from market odds (after take)
                 market_prob = 1.0 / odds
@@ -191,6 +272,12 @@ class Backtester:
                 else:
                     stake = self.config.flat_stake
 
+                # (Audit R4-INTEGRITY-1): JRA minimum bet unit is ¥100.
+                # Kelly can produce sub-¥100 stakes when the bankroll shrinks —
+                # e.g. balance=¥20k, kelly_frac=0.006 → stake=¥30.  Recording such
+                # bets skews bet-count, hit-rate, and ROI stats.
+                if stake < 100:
+                    continue
                 if stake > balance:
                     continue
 
@@ -206,6 +293,10 @@ class Backtester:
                         "kelly": kelly,
                         "stake": stake,
                         "is_place": is_place,
+                        # Track field size so win condition can mirror the Harville top_n cutoff.
+                        # (Audit R3-BONUS): place bet win was hardcoded to finish<=3 even for
+                        # <=7-runner fields where JRA only pays Fukusho top-2.
+                        "n_race_runners": n_actual_starters,
                     }
 
             # --- Place the single best bet for this race ---
@@ -216,7 +307,12 @@ class Backtester:
             row = c["row"]
             finish = row.get("finish_pos")
             if c["is_place"]:
-                won = finish is not None and finish <= 3
+                # JRA Fukusho (place) pays top-2 for fields <=7 runners, top-3 for >=8.
+                # (Audit R3-BONUS): was hardcoded to finish<=3, incorrectly crediting
+                # 3rd-place finishes in small fields where only top-2 pay.
+                n_race_runners = c.get("n_race_runners", len(race_df))
+                place_cutoff = 2 if n_race_runners <= 7 else 3
+                won = finish is not None and finish <= place_cutoff
             else:
                 won = finish == 1 if finish is not None else False
             payout = int(c["stake"] * c["odds"]) if won else 0
@@ -339,7 +435,6 @@ class Backtester:
         """
         b = odds - 1
         p = prob
-        q = 1 - p
 
         if b <= 0:
             return 0
@@ -421,7 +516,7 @@ class Backtester:
 
 def run_full_backtest(
     model_version: str = "latest",
-    ev_threshold: float = 0.30,
+    ev_threshold: float = 0.05,  # (Audit R3-INTEGRITY-1): aligned with CLI default; was 0.30, which filtered almost all bets when called from Python directly
     output_path: Optional[str] = None,
     bet_type: str = "win",
     max_odds: float = 30.0,
@@ -526,8 +621,8 @@ def main():
                         help="Bet type: 'win' or 'place' (default: win)")
     parser.add_argument("--max-odds", type=float, default=30.0,
                         help="Max odds to bet on (default: 30.0)")
-    parser.add_argument("--min-odds", type=float, default=1.0,
-                        help="Min odds to bet on (default: 1.0)")
+    parser.add_argument("--min-odds", type=float, default=2.0,
+                        help="Min odds to bet on (default: 2.0, matches BacktestConfig default)")
     parser.add_argument("--flat-stake", action="store_true",
                         help="Use flat staking instead of Kelly")
     parser.add_argument("--use-cache", action="store_true",

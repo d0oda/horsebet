@@ -83,6 +83,25 @@ def fix_race(db_id: int, netkeiba_id: str) -> bool:
                         "corners": e.corner_positions,
                     }
                 )
+                session.execute(
+                    text("""
+                        UPDATE entries
+                        SET finish_pos = COALESCE(:finish_pos, finish_pos),
+                            margin = COALESCE(:margin, margin),
+                            time_secs = COALESCE(:time_secs, time_secs),
+                            last_3f_secs = COALESCE(:last_3f, last_3f_secs),
+                            corner_positions = COALESCE(:corners, corner_positions)
+                        WHERE id = :entry_id
+                    """),
+                    {
+                        "entry_id": entry_id,
+                        "finish_pos": e.finish_pos,
+                        "margin": e.margin,
+                        "time_secs": e.time_secs,
+                        "last_3f": e.last_3f_secs,
+                        "corners": e.corner_positions,
+                    }
+                )
                 inserted += 1
                 
             session.commit()

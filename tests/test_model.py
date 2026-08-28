@@ -48,7 +48,7 @@ class TestPrepareData:
 
     def test_train_val_split(self):
         df = self._make_df(n_races=10)
-        X_train, y_train, X_val, y_val, feature_cols, _ = prepare_data(df)
+        X_train, y_train, X_val, y_val, feature_cols, *_ = prepare_data(df)
 
         # Should have some data in both splits
         assert len(X_train) > 0
@@ -57,7 +57,7 @@ class TestPrepareData:
 
     def test_target_exclusion(self):
         df = self._make_df()
-        _, _, _, _, feature_cols, _ = prepare_data(df)
+        _, _, _, _, feature_cols, *_ = prepare_data(df)
 
         assert "race_id" not in feature_cols
         assert "entry_id" not in feature_cols
@@ -69,7 +69,7 @@ class TestPrepareData:
 
     def test_feature_cols_are_numeric(self):
         df = self._make_df()
-        _, _, _, _, feature_cols, _ = prepare_data(df)
+        _, _, _, _, feature_cols, *_ = prepare_data(df)
 
         for col in feature_cols:
             assert df[col].dtype in [np.float64, np.float32, np.int64, float, int]
@@ -79,7 +79,7 @@ class TestPrepareData:
         df.loc[0, "speed_z"] = np.nan
         df.loc[1, "speed_z"] = np.nan
 
-        X_train, _, X_val, _, feature_cols, _ = prepare_data(df)
+        X_train, _, X_val, _, feature_cols, *_ = prepare_data(df)
 
         # NaNs should be preserved for native tree handling
         combined = np.concatenate([X_train, X_val])
@@ -92,7 +92,7 @@ class TestPrepareData:
             mask = df["race_id"] == i + 1
             df.loc[mask, "date"] = f"2024-{i + 1:02d}-15"
 
-        _, _, _, _, _, _ = prepare_data(df, val_date="2024-08-01")
+        _ = prepare_data(df, val_date="2024-08-01")
 
 
 # ---------------------------------------------------------------------------
@@ -192,7 +192,7 @@ class TestExcludeFeatures:
         from models.features import ODDS_FEATURES
 
         df = self._make_df()
-        _, _, _, _, feature_cols, _ = prepare_data(
+        _, _, _, _, feature_cols, *_ = prepare_data(
             df, exclude_features=ODDS_FEATURES,
         )
 
@@ -203,7 +203,7 @@ class TestExcludeFeatures:
         from models.features import ODDS_FEATURES
 
         df = self._make_df()
-        _, _, _, _, feature_cols, _ = prepare_data(
+        _, _, _, _, feature_cols, *_ = prepare_data(
             df, exclude_features=ODDS_FEATURES,
         )
 
@@ -214,8 +214,8 @@ class TestExcludeFeatures:
 
     def test_exclude_none_keeps_all(self):
         df = self._make_df()
-        _, _, _, _, all_cols, _ = prepare_data(df, exclude_features=None)
-        _, _, _, _, exc_cols, _ = prepare_data(df, exclude_features=[])
+        _, _, _, _, all_cols, *_ = prepare_data(df, exclude_features=None)
+        _, _, _, _, exc_cols, *_ = prepare_data(df, exclude_features=[])
 
         assert len(all_cols) == len(exc_cols)
 
@@ -223,8 +223,8 @@ class TestExcludeFeatures:
         from models.features import ODDS_FEATURES
 
         df = self._make_df()
-        _, _, _, _, all_cols, _ = prepare_data(df, exclude_features=None)
-        _, _, _, _, odds_free_cols, _ = prepare_data(
+        _, _, _, _, all_cols, *_ = prepare_data(df, exclude_features=None)
+        _, _, _, _, odds_free_cols, *_ = prepare_data(
             df, exclude_features=ODDS_FEATURES,
         )
 

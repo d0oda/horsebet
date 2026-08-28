@@ -58,8 +58,11 @@ def build_data_json(predictions_paths: list, output: str = None):
             entries_db = session.execute(text('''
                 SELECT e.id, e.race_id, e.post_position, e.draw, e.odds_win,
                        e.popularity, h.name_jp,
-                       e.finish_pos, e.time_secs, e.last_3f_secs
+                       COALESCE(e.finish_pos, res.finish_pos) AS finish_pos,
+                       COALESCE(e.time_secs, res.time_secs) AS time_secs,
+                       COALESCE(e.last_3f_secs, res.last_3f_secs) AS last_3f_secs
                 FROM entries e
+                LEFT JOIN results res ON res.entry_id = e.id
                 JOIN horses h ON h.id = e.horse_id
                 WHERE e.race_id IN (SELECT id FROM races WHERE date = :date)
                 ORDER BY e.race_id, e.post_position

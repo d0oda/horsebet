@@ -29,7 +29,7 @@ from sqlalchemy import text
 
 from scraper.db import get_session
 from models.simulate_race import load_race_entries
-from models.pace_sim import PaceSimulator, classify_running_style, STYLE_FRONT
+from models.pace_sim import PaceSimulator, classify_running_style, STYLE_FRONT, STYLE_STALK
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("exotic_bets")
@@ -87,8 +87,8 @@ class TicketConstructor:
 
     def build_finish_distribution(
         self,
-        race_id: int,
-        win_probs: dict[int, float],
+        race_id_or_probs,
+        win_probs: dict[int, float] = None,
         n_sims: int = None,
     ) -> np.ndarray:
         """
@@ -97,8 +97,14 @@ class TicketConstructor:
         Given P(win) per horse, simulates races by sampling from
         a Dirichlet distribution anchored on win probabilities.
 
+        Can be called in two ways:
+            build_finish_distribution(race_id, win_probs, n_sims=...)
+            build_finish_distribution(win_probs, n_sims=...)  # race_id=None, no DB lookup
+
         Args:
-            win_probs: {horse_id: win_probability}
+            race_id_or_probs: Either an int race_id (full mode with pace sim)
+                              or a dict {horse_id: prob} (offline/test mode).
+            win_probs: {horse_id: win_probability} when race_id is given as first arg.
             n_sims: Number of simulations (default: self.n_simulations)
 
         Returns:
@@ -106,6 +112,16 @@ class TicketConstructor:
             simulated finish order (0=first, 1=second, ...).
             Horse IDs are in sorted order.
         """
+        # Support both calling conventions:
+        #   build_finish_distribution(race_id, win_probs)
+        #   build_finish_distribution(win_probs)  ← test/offline mode
+        if isinstance(race_id_or_probs, dict):
+            # Called with just win_probs (no race_id) — offline/test mode
+            race_id = None
+            win_probs = race_id_or_probs
+        else:
+            race_id = race_id_or_probs
+
         n_sims = n_sims or self.n_simulations
         horse_ids = sorted(win_probs.keys())
         n_horses = len(horse_ids)
@@ -114,16 +130,22 @@ class TicketConstructor:
             return np.zeros((n_sims, n_horses), dtype=int)
 
         # 1. Load running styles from db to model pace correlations
-        entries = load_race_entries(race_id)
+        # When race_id is None (test/offline mode), skip DB and use default styles
         styles = []
-        for horse_num in horse_ids:
-            entry = next((e for e in entries if e["post_position"] == horse_num), {})
-            style = classify_running_style(
-                avg_first_corner=entry.get("avg_first_corner"),
-                field_size=n_horses,
-                explicit_style=entry.get("running_style"),
-            )
-            styles.append(style)
+        if race_id is not None:
+            entries = load_race_entries(race_id)
+            for horse_num in horse_ids:
+                entry = next((e for e in entries if e["post_position"] == horse_num), {})
+                style = classify_running_style(
+                    avg_first_corner=entry.get("avg_first_corner"),
+                    field_size=n_horses,
+                    explicit_style=entry.get("running_style"),
+                )
+                styles.append(style)
+        else:
+            # No race_id — default all horses to balanced "stalker" style
+            styles = [STYLE_STALK] * n_horses
+
 
         # Determine pace scenario weights
         n_front = sum(1 for s in styles if s == STYLE_FRONT)

@@ -83,7 +83,7 @@ def prepare_data(
             (e.g. ODDS_FEATURES for odds-free model).
 
     Returns:
-        (X_train, y_train, X_val, y_val, feature_cols, race_ids_val)
+        Tuple of (X_train, y_train, X_val, y_val, feature_cols, race_ids_val, race_ids_train)
     """
     # Drop rows with no target
     df = df.dropna(subset=[target]).copy()

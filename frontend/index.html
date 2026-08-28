@@ -27,6 +27,19 @@
 
     <!-- ── Left: Calendar panel ── -->
     <aside class="calendar-panel" id="calendar-panel">
+      <!-- Quick Date Shortcuts -->
+      <div class="quick-nav-bar" id="quick-nav-bar">
+        <button class="quick-nav-btn" id="btn-quick-upcoming" onclick="jumpToUpcomingDate()" title="Jump to next upcoming race day">
+          <span>⚡ Upcoming</span>
+        </button>
+        <button class="quick-nav-btn" id="btn-quick-today" onclick="jumpToToday()" title="Jump to today's card">
+          <span>📅 Today</span>
+        </button>
+        <button class="quick-nav-btn" id="btn-quick-latest" onclick="jumpToLatestResults()" title="Jump to most recent results">
+          <span>🏆 Latest</span>
+        </button>
+      </div>
+
       <div class="calendar-widget">
         <div class="cal-header">
           <button class="cal-nav" id="cal-prev" aria-label="Previous month">‹</button>

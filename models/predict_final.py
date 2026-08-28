@@ -34,7 +34,7 @@ log = logging.getLogger("predict_final")
 def predict_with_filters(
     race_ids: list[int],
     model_version: str = "20260605_113654",
-    ev_threshold: float = 0.50,
+    ev_threshold: float = 0.08,
     max_odds: float = 60.0,
     min_odds: float = 2.0,
     bankroll: int = 100000,
@@ -94,6 +94,9 @@ def predict_with_filters(
             if col not in features_df.columns:
                 log.debug(f"Adding missing column '{col}' as NaN")
                 features_df[col] = np.nan
+            elif col not in cat_cols_list:
+                if features_df[col].dtype == "object":
+                    features_df[col] = pd.to_numeric(features_df[col], errors="coerce").astype(float)
 
         X = features_df[feature_cols].copy()
         lgb_preds = lgb_model.predict(X)
@@ -201,32 +204,36 @@ def predict_with_filters(
         for i, (_, row) in enumerate(features_df.iterrows()):
             entry_id = row["entry_id"]
             info = entry_map.get(entry_id, {})
-            odds = info.get("odds") or 0
+            raw_odds = info.get("odds")
+            odds = float(raw_odds) if (raw_odds is not None and float(raw_odds) > 0) else 0.0
             name = info.get("name", "?")
 
             combined_p = float(combined[i]) / comb_sum if comb_sum > 0 else 0
             fund_p = float(fundamental[i]) / fund_sum if fund_sum > 0 else 0
             mkt_p = float(market[i]) / mkt_sum if mkt_sum > 0 else 0
 
-            market_prob = (1.0 / odds) if odds > 0 else 0
-            ev = (combined_p * odds) - 1.0
+            market_prob = (1.0 / odds) if odds > 0 else 0.0
+            ev = ((combined_p * odds) - 1.0) if odds > 0 else None
+            fair_odds = round(1.0 / combined_p, 1) if combined_p > 0 else None
 
             # Stake sizing
             if flat:
-                kelly = 0
-                recommended_stake = 1000
+                kelly = 0.0
+                recommended_stake = 1000 if odds > 0 else 0
             else:
-                b = odds - 1
-                if b > 0 and combined_p > 0:
-                    kelly = max(0, ev / b)
+                b = odds - 1.0
+                if b > 0 and combined_p > 0 and ev is not None:
+                    kelly = max(0.0, ev / b)
                     kelly *= kelly_fraction
                 else:
-                    kelly = 0
+                    kelly = 0.0
                 recommended_stake = int(bankroll * kelly)
 
             # Value bet filters (P1 + P3)
             is_value = (
-                ev >= ev_threshold
+                ev is not None
+                and ev >= ev_threshold
+                and combined_p >= 0.04
                 and min_odds <= odds <= max_odds
                 and (flat or kelly >= 0.005)  # Min Kelly fraction if not flat
             )
@@ -238,16 +245,17 @@ def predict_with_filters(
                 "fundamental_prob": round(fund_p, 4),
                 "market_model_prob": round(mkt_p, 4),
                 "combined_prob": round(combined_p, 4),
-                "odds": odds,
-                "market_prob": round(market_prob, 4),
-                "ev": round(ev, 4),
+                "fair_odds": fair_odds,
+                "odds": odds if odds > 0 else None,
+                "market_prob": round(market_prob, 4) if odds > 0 else None,
+                "ev": round(ev, 4) if ev is not None else None,
                 "kelly_fraction": round(kelly, 4),
                 "recommended_stake": recommended_stake,
                 "is_value_bet": is_value,
             })
 
     df = pd.DataFrame(all_results)
-    if not df.empty:
+    if not df.empty and "is_value_bet" in df.columns:
         # Enforce max 1 value bet per race: keep only the highest-EV bet
         value_mask = df["is_value_bet"]
         if value_mask.any():

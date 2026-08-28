@@ -81,8 +81,12 @@ class TestWeatherInteraction:
         feats = fb._weather_interaction_features(row, history_df)
 
         assert feats["weather_code"] == 0
-        assert feats["going_x_surface"] == 0  # 良(0) × turf(0)
-        assert feats["going_x_distance"] == 0  # 良(0) × 2.0
+        # New offset encoding: (going_code + 1) * 10 + (surface_code + 1)
+        # 良(0) × turf(0) → (0+1)*10 + (0+1) = 11
+        assert feats["going_x_surface"] == 11
+        # New distance encoding: (going_code + 1) * (distance / 1000)
+        # 良(0) × 2000 → (0+1) * 2.0 = 2.0
+        assert feats["going_x_distance"] == pytest.approx(2.0)
 
     def test_heavy_going_interactions(self, fb, history_df):
         row = pd.Series({
@@ -96,8 +100,12 @@ class TestWeatherInteraction:
         feats = fb._weather_interaction_features(row, history_df)
 
         assert feats["weather_code"] == 3
-        assert feats["going_x_surface"] == 2  # 重(2) × dirt(1)
-        assert feats["going_x_distance"] == pytest.approx(3.2)  # 重(2) × 1.6
+        # New offset encoding: (going_code + 1) * 10 + (surface_code + 1)
+        # 重(2) × dirt(1) → (2+1)*10 + (1+1) = 32
+        assert feats["going_x_surface"] == 32
+        # New distance encoding: (going_code + 1) * (distance / 1000)
+        # 重(2) × 1600 → (2+1) * 1.6 = 4.8
+        assert feats["going_x_distance"] == pytest.approx(4.8)
 
     def test_horse_going_win_pct(self, fb, history_df):
         """Horse 1 has 2 runs on 良, winning 1 → 50%."""
@@ -309,8 +317,10 @@ class TestWeatherRefinement:
             "date": "2024-06-01",
         })
         feats = fb._weather_interaction_features(row, history_df)
-        # 重(2) × 1.6 × dirt(1) = 3.2
-        assert feats["going_x_dist_x_surface"] == pytest.approx(3.2, rel=0.01)
+        # New three-way offset encoding:
+        # going_x_dist_x_surface = (going_code + 1) * (distance / 1000) * (surface_code + 1)
+        # 重(2) × 1.6 × dirt(1) → (2+1) * 1.6 * (1+1) = 9.6
+        assert feats["going_x_dist_x_surface"] == pytest.approx(9.6, rel=0.01)
 
     def test_three_way_interaction_turf(self, fb, history_df):
         """going_x_dist_x_surface with turf(0) should be 0."""
@@ -323,7 +333,10 @@ class TestWeatherRefinement:
             "date": "2024-06-01",
         })
         feats = fb._weather_interaction_features(row, history_df)
-        assert feats["going_x_dist_x_surface"] == pytest.approx(0.0)
+        # New three-way offset encoding:
+        # going_x_dist_x_surface = (going_code + 1) * (distance / 1000) * (surface_code + 1)
+        # 良(0) × 2000 × turf(0) → (0+1) * 2.0 * (0+1) = 2.0
+        assert feats["going_x_dist_x_surface"] == pytest.approx(2.0)
 
     def test_no_history_heavy_speed_diff(self, fb):
         """No history should give NaN for horse_heavy_speed_diff."""

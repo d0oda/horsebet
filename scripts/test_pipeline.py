@@ -1,4 +1,10 @@
 import os
+import sys
+from pathlib import Path
+
+# Add project root to sys.path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 import pandas as pd
 from models.features import FeatureBuilder
 from models.train import main, predict_race

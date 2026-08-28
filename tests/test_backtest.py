@@ -12,7 +12,7 @@ from models.backtest import (
     Backtester,
     BacktestResult,
     JRA_TAKE_RATE,
-    JRA_PLACE_PAYOUT_FACTOR,
+    _jra_place_payout_factor,
 )
 
 
@@ -23,7 +23,9 @@ from models.backtest import (
 class TestConfig:
     def test_defaults(self):
         config = BacktestConfig()
-        assert config.ev_threshold == 0.3
+        # (Audit R8-FIX-2): ev_threshold default was updated from 0.30 to 0.05
+        # in R3-INTEGRITY-1 to align with the CLI default.  This assertion was stale.
+        assert config.ev_threshold == 0.05
         assert config.flat_stake == 1000
         assert config.initial_bankroll == 100000
         assert config.kelly_fraction == 0.25
@@ -228,5 +230,12 @@ class TestPlaceBetting:
                     assert b.payout == 0, f"Place bet on {b.finish_pos}th should not pay"
 
     def test_place_payout_factor(self):
-        """Place bets should use reduced odds (JRA_PLACE_PAYOUT_FACTOR)."""
-        assert JRA_PLACE_PAYOUT_FACTOR == 0.35  # matches expected constant
+        """Place payout factor is odds-aware, not a flat constant (R7-CRITICAL-1)."""
+        # Boundary: <=2x => 12%
+        assert _jra_place_payout_factor(2.0) == pytest.approx(0.12)
+        # Short favourite below 2x also returns 12%
+        assert _jra_place_payout_factor(1.5) == pytest.approx(0.12)
+        # Interpolation at 5x => 28%
+        assert _jra_place_payout_factor(5.0) == pytest.approx(0.28)
+        # Longshot cap: very high odds => capped at 55%
+        assert _jra_place_payout_factor(100.0) == pytest.approx(0.55)
