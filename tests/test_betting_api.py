@@ -118,3 +118,146 @@ class TestBettingAnalysisAPI:
     def test_nonexistent_race(self, client):
         response = client.get("/api/races/99999999/betting-analysis")
         assert response.status_code == 404
+
+    def test_settlement_and_strategy_outcomes(self, client):
+        """Tests settlement scoring and strategy comparison on a completed race."""
+        with get_session() as s:
+            row = s.execute(text("""
+                SELECT r.id FROM races r
+                JOIN entries e ON e.race_id = r.id
+                WHERE e.finish_pos IS NOT NULL
+                GROUP BY r.id
+                HAVING COUNT(e.finish_pos) >= 5
+                LIMIT 1
+            """)).fetchone()
+
+        if not row:
+            pytest.skip("No completed race with results in database")
+
+        race_id = row[0]
+        response = client.get(f"/api/races/{race_id}/betting-analysis?budget=1000&mode=dutching")
+        assert response.status_code == 200
+        data = response.json()
+
+        # Strategy result structure
+        assert "strategy_result" in data
+        s_res = data["strategy_result"]
+        assert s_res["is_settled"] is True
+        assert "staked" in s_res
+        assert "payout" in s_res
+        assert "profit" in s_res
+        assert "roi_pct" in s_res
+        assert "status" in s_res
+        assert s_res["status"] in ("won", "lost", "push", "pass")
+
+        # Multi-strategy comparison
+        assert "all_strategies_results" in data
+        all_res = data["all_strategies_results"]
+        for mode in ("auto", "hybrid", "pure_win", "dutching"):
+            if mode in all_res:
+                assert all_res[mode]["is_settled"] is True
+                assert "profit" in all_res[mode]
+
+        # Ticket level settlement
+        tickets = data["staking_plan"]["tickets"]
+        for t in tickets:
+            assert t["is_settled"] is True
+            assert isinstance(t["won"], bool)
+            assert "payout" in t
+            assert "profit" in t
+            assert "runner_finishes" in t
+            assert len(t["runner_finishes"]) >= 1
+            for rf in t["runner_finishes"]:
+                assert "post_position" in rf
+                assert "horse_name" in rf
+
+        # Pricing table finish positions
+        pricing_table = data["pricing_table"]
+        assert any(h.get("finish_pos") is not None for h in pricing_table)
+
+
+def test_settle_bet_tickets_unit():
+    """Unit test for settle_bet_tickets helper across win, place, exotics."""
+    from models.betting_engine import BetTicket, settle_bet_tickets
+
+    entries_map = {
+        13: {"finish_pos": 1, "odds": 4.5, "horse_name": "Bell Azzurro", "horse_name_jp": "ベルアズーロ"},
+        10: {"finish_pos": 6, "odds": 16.6, "horse_name": "Cool Fidel", "horse_name_jp": "クールフィデル"},
+        1:  {"finish_pos": 2, "odds": 144.1, "horse_name": "Azulite", "horse_name_jp": "アズライトアスール"},
+        2:  {"finish_pos": 3, "odds": 5.2, "horse_name": "Lord Stellato", "horse_name_jp": "ロードステラート"},
+    }
+
+    # 1. Win ticket on winner (No. 13)
+    t1 = BetTicket(
+        ticket_type="単勝",
+        ticket_type_en="win",
+        selection=[13],
+        selection_display="No. 13 単勝",
+        prob=0.25,
+        fair_odds=4.0,
+        market_odds=4.5,
+        stake=900,
+    )
+
+    # 2. Win ticket on 6th place (No. 10)
+    t2 = BetTicket(
+        ticket_type="単勝",
+        ticket_type_en="win",
+        selection=[10],
+        selection_display="No. 10 単勝",
+        prob=0.07,
+        fair_odds=14.0,
+        market_odds=16.6,
+        stake=100,
+    )
+
+    # 3. Quinella on 13 and 1 (1st and 2nd)
+    t3 = BetTicket(
+        ticket_type="馬連",
+        ticket_type_en="quinella",
+        selection=[13, 1],
+        selection_display="1–13 馬連",
+        prob=0.04,
+        market_odds=50.0,
+        stake=200,
+    )
+
+    # 4. Wide on 13 and 10 (1st and 6th -> loss)
+    t4 = BetTicket(
+        ticket_type="ワイド",
+        ticket_type_en="wide",
+        selection=[13, 10],
+        selection_display="10–13 ワイド",
+        prob=0.10,
+        market_odds=15.0,
+        stake=100,
+    )
+
+    res = settle_bet_tickets([t1, t2, t3, t4], entries_map)
+
+    # Assertions on tickets
+    assert t1.won is True
+    assert t1.payout == 4050  # 900 * 4.5
+    assert t1.profit == 3150
+
+    assert t2.won is False
+    assert t2.payout == 0
+    assert t2.profit == -100
+
+    assert t3.won is True
+    assert t3.payout == 10000  # 200 * 50.0
+    assert t3.profit == 9800
+
+    assert t4.won is False
+    assert t4.payout == 0
+    assert t4.profit == -100
+
+    # Summary assertion
+    assert res["is_settled"] is True
+    assert res["staked"] == 1300
+    assert res["payout"] == 14050
+    assert res["profit"] == 12750
+    assert res["status"] == "won"
+    assert res["tickets_won"] == 2
+    assert res["tickets_count"] == 4
+

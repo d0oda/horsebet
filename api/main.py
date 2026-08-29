@@ -6,6 +6,8 @@ backtest results, and odds time-series from the local SQLite database.
 """
 
 import os
+import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime
 from typing import Optional
 
@@ -29,16 +31,10 @@ MODEL_VERSION = os.getenv("MODEL_VERSION", "retrain_20260822_2143")
 
 app = FastAPI(title="UmaEdge API", version="1.0.0")
 
-# CORS: read from env or fall back to localhost
-_cors_origins_str = os.getenv(
-    "CORS_ORIGINS",
-    "http://localhost:3000,http://localhost:3001,http://localhost:8080,https://umaedge.vercel.app",
-)
-_cors_origins = [o.strip() for o in _cors_origins_str.split(",") if o.strip()]
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_cors_origins,
+    allow_origins=["*"],
+    allow_origin_regex=r".*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -97,11 +93,13 @@ def list_races(
         params["course"] = course
 
     where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+    where_sub = ("WHERE " + " AND ".join([c.replace("r.", "r_sub.").replace("c.", "c_sub.") for c in conditions])) if conditions else ""
 
     with get_session() as s:
         rows = s.execute(text(f"""
             SELECT r.id, r.netkeiba_id, r.date, r.race_number, r.race_name, r.race_name_jp,
                    r.distance, r.surface, r.going, r.grade, r.post_time, r.course_id,
+                   r.odds_updated_at,
                    c.name AS course_name,
                    -- Best value bet for this race (highest EV)
                    vb_best.ev          AS bet_ev,
@@ -109,30 +107,61 @@ def list_races(
                    h_bet.name_jp       AS bet_horse,
                    e_bet.odds_win      AS bet_odds,
                    e_bet.post_position AS bet_post_position,
+                   COALESCE(e_bet.finish_pos, res_bet.finish_pos) AS bet_finish_pos,
                    -- Whether any predictions have been run for this race
-                   CASE WHEN pred_count.n > 0 THEN 1 ELSE 0 END AS has_predictions
+                   CASE WHEN pred_count.n > 0 THEN 1 ELSE 0 END AS has_predictions,
+                   pred_count.latest_created_at AS pred_created_at,
+                   -- Whether official finish results have been recorded for this race
+                   CASE WHEN res_count.n > 0 THEN 1 ELSE 0 END AS is_finished
             FROM races r
             LEFT JOIN courses c ON c.id = r.course_id
             LEFT JOIN (
                 SELECT race_id, entry_id, ev, model_prob,
-                       ROW_NUMBER() OVER (PARTITION BY race_id ORDER BY ev DESC) AS rn
+                       ROW_NUMBER() OVER (
+                           PARTITION BY race_id 
+                           ORDER BY CASE WHEN model_version = :mv THEN 0 ELSE 1 END, ev DESC, id DESC
+                       ) AS rn
                 FROM value_bets
+                WHERE race_id IN (
+                    SELECT r_sub.id FROM races r_sub
+                    LEFT JOIN courses c_sub ON c_sub.id = r_sub.course_id
+                    {where_sub}
+                )
             ) vb_best ON vb_best.race_id = r.id AND vb_best.rn = 1
             LEFT JOIN entries e_bet ON e_bet.id = vb_best.entry_id
+            LEFT JOIN results res_bet ON res_bet.entry_id = e_bet.id
             LEFT JOIN horses  h_bet ON h_bet.id = e_bet.horse_id
             LEFT JOIN (
-                SELECT race_id, COUNT(*) AS n FROM predictions GROUP BY race_id
+                SELECT race_id, COUNT(*) AS n, MAX(created_at) AS latest_created_at
+                FROM predictions
+                WHERE race_id IN (
+                    SELECT r_sub.id FROM races r_sub
+                    LEFT JOIN courses c_sub ON c_sub.id = r_sub.course_id
+                    {where_sub}
+                )
+                GROUP BY race_id
             ) pred_count ON pred_count.race_id = r.id
+            LEFT JOIN (
+                SELECT e_res.race_id, COUNT(*) AS n
+                FROM entries e_res
+                LEFT JOIN results r_res ON r_res.entry_id = e_res.id
+                WHERE COALESCE(e_res.finish_pos, r_res.finish_pos) IS NOT NULL
+                GROUP BY e_res.race_id
+            ) res_count ON res_count.race_id = r.id
             {where}
             ORDER BY r.date DESC, r.course_id, r.race_number
             LIMIT :limit OFFSET :offset
-        """), {**params, "limit": limit, "offset": offset}).fetchall()
+        """), {**params, "limit": limit, "offset": offset, "mv": MODEL_VERSION}).fetchall()
 
     races = []
     for r in rows:
         d = dict(r._mapping)
         d["has_bet"] = d["bet_ev"] is not None
         d["has_predictions"] = bool(d.get("has_predictions"))
+        d["is_finished"] = bool(d.get("is_finished"))
+        d["bet_won"] = bool(d["has_bet"] and d.get("bet_finish_pos") == 1)
+        d["bet_payout"] = round(d["bet_odds"] * 1000) if (d["bet_won"] and d.get("bet_odds")) else 0
+        d["odds_as_of"] = d.get("odds_updated_at") or d.get("pred_created_at")
         races.append(d)
     return {"races": races, "count": len(races)}
 
@@ -161,14 +190,11 @@ def get_race(race_id: int):
                    COALESCE(e.margin, res.margin) AS margin,
                    h.name AS horse_name, h.name_jp AS horse_name_jp, h.sex, h.birth_year,
                    j.name AS jockey_name, j.name_jp AS jockey_name_jp,
-                   t.name AS trainer_name
+                   NULL AS trainer_name
             FROM entries e
             LEFT JOIN results res ON res.entry_id = e.id
             LEFT JOIN horses h ON h.id = e.horse_id
             LEFT JOIN jockeys j ON j.id = e.jockey_id
-            LEFT JOIN trainers t ON t.id = (
-                SELECT trainer_id FROM entries WHERE id = e.id LIMIT 1
-            )
             WHERE e.race_id = :race_id
             ORDER BY e.post_position
         """), {"race_id": race_id}).fetchall()
@@ -201,8 +227,14 @@ def get_race(race_id: int):
             ORDER BY vb.ev DESC
         """), {"race_id": race_id}).fetchall()
 
+    race_dict = dict(race._mapping)
+    latest_pred_time = dict(predictions[0]._mapping).get("created_at") if predictions else None
+    race_dict["odds_as_of"] = race_dict.get("odds_updated_at") or latest_pred_time
+
     return {
-        "race": dict(race._mapping),
+        "race": race_dict,
+        "odds_as_of": race_dict["odds_as_of"],
+        "odds_updated_at": race_dict["odds_as_of"],
         "entries": [dict(r._mapping) for r in entries],
         "predictions": [_coerce_prediction(dict(r._mapping)) for r in predictions],
         "value_bets": [dict(r._mapping) for r in value_bets],
@@ -239,6 +271,396 @@ def get_race_betting_analysis(
         except Exception as e:
             raise HTTPException(500, f"Betting analysis failed: {str(e)}")
 
+
+_daily_returns_cache = {}
+_monthly_returns_cache = {}
+
+
+@app.get("/api/races/date/{date_str}/daily-returns")
+def get_daily_returns(
+    date_str: str,
+    budget_per_race: int = Query(1000, ge=100, le=1000000, description="Base stake budget per race in yen"),
+    model_version: Optional[str] = Query(None, description="Model version for predictions"),
+    force_refresh: bool = False,
+):
+    """
+    Computes aggregated daily betting performance & returns across all 4 strategy modes
+    ('auto', 'pure_win', 'hybrid', 'dutching') for a specific race date.
+    """
+    cache_key = (date_str, budget_per_race, model_version)
+    if not force_refresh and cache_key in _daily_returns_cache:
+        return _daily_returns_cache[cache_key]
+
+    from models.betting_engine import analyze_race_betting
+
+    strategy_meta_map = {
+        "auto": {
+            "id": "auto",
+            "name": "AI Auto (Optimal)",
+            "icon": "🧠",
+            "tagline": "AI Dynamic Per-Race Optimal Routing",
+        },
+        "pure_win": {
+            "id": "pure_win",
+            "name": "Pure Win (Max ROI)",
+            "icon": "⚡",
+            "tagline": "100% Single Top Value Pick",
+        },
+        "hybrid": {
+            "id": "hybrid",
+            "name": "Balanced (Win + Exotics)",
+            "icon": "🎯",
+            "tagline": "75% Core Win + 25% Elite Exotics",
+        },
+        "dutching": {
+            "id": "dutching",
+            "name": "Dual Dutching (Low DD)",
+            "icon": "🛡️",
+            "tagline": "Dual Value Win Split — Lowest Drawdown",
+        },
+    }
+
+    with get_session() as s:
+        races = s.execute(
+            text("SELECT id, race_number, course_id FROM races WHERE date = :d ORDER BY course_id, race_number"),
+            {"d": date_str},
+        ).fetchall()
+
+        if not races:
+            raise HTTPException(404, f"No races found for date {date_str}")
+
+        entries = s.execute(
+            text("""
+                SELECT e.race_id, e.post_position, COALESCE(e.finish_pos, res.finish_pos) AS finish_pos, e.odds_win
+                FROM entries e
+                LEFT JOIN results res ON res.entry_id = e.id
+                WHERE e.race_id IN (SELECT id FROM races WHERE date = :d)
+            """),
+            {"d": date_str},
+        ).fetchall()
+
+        entry_map = {(e.race_id, e.post_position): (e.finish_pos, e.odds_win or 1.0) for e in entries}
+        results_count = sum(1 for e in entries if e.finish_pos is not None)
+        has_results = results_count > 0
+
+        modes = ["auto", "pure_win", "hybrid", "dutching"]
+        mode_stats = {
+            m: {
+                "total_staked": 0,
+                "total_payout": 0,
+                "bets_placed": 0,
+                "bets_won": 0,
+                "pending_staked": 0,
+                "pending_races": 0,
+            }
+            for m in modes
+        }
+
+        for r in races:
+            try:
+                analysis = analyze_race_betting(
+                    race_id=r.id,
+                    budget=budget_per_race,
+                    strategy_mode="auto",
+                    model_version=model_version,
+                    session=s,
+                    include_all_modes=True,
+                )
+                results_by_mode = analysis.get("all_strategies_results", {})
+
+                for m in modes:
+                    s_res = results_by_mode.get(m, {})
+                    if not s_res:
+                        continue
+
+                    stk = s_res.get("staked", 0)
+                    pay = s_res.get("payout", 0)
+                    is_settled = s_res.get("is_settled", False)
+
+                    if not is_settled:
+                        if stk > 0:
+                            mode_stats[m]["pending_staked"] += stk
+                            mode_stats[m]["pending_races"] += 1
+                        continue
+
+                    if stk > 0:
+                        mode_stats[m]["total_staked"] += stk
+                        mode_stats[m]["total_payout"] += pay
+                        mode_stats[m]["bets_placed"] += 1
+                        if pay > stk:
+                            mode_stats[m]["bets_won"] += 1
+            except Exception:
+                pass
+
+        strategies_summary = {}
+        for mode in modes:
+            stats = mode_stats[mode]
+            total_staked = stats["total_staked"]
+            total_payout = stats["total_payout"]
+            bets_placed = stats["bets_placed"]
+            bets_won = stats["bets_won"]
+            profit = total_payout - total_staked
+            roi_pct = round((profit / total_staked * 100), 1) if total_staked > 0 else 0.0
+            strike_rate = round((bets_won / bets_placed * 100), 1) if bets_placed > 0 else 0.0
+            meta = strategy_meta_map.get(mode, {})
+
+            strategies_summary[mode] = {
+                "id": mode,
+                "name": meta.get("name", mode.title()),
+                "icon": meta.get("icon", "📊"),
+                "tagline": meta.get("tagline", ""),
+                "staked": total_staked,
+                "payout": round(total_payout),
+                "profit": round(profit),
+                "roi_pct": roi_pct,
+                "bets_placed": bets_placed,
+                "bets_won": bets_won,
+                "strike_rate": strike_rate,
+                "pending_staked": stats["pending_staked"],
+                "pending_races": stats["pending_races"],
+            }
+
+        res_obj = {
+            "date": date_str,
+            "has_results": has_results,
+            "total_races": len(races),
+            "budget_per_race": budget_per_race,
+            "strategies": strategies_summary,
+        }
+        _daily_returns_cache[cache_key] = res_obj
+        return res_obj
+
+
+@app.get("/api/races/month/{month_str}/monthly-returns")
+@app.get("/api/portfolio/monthly")
+def get_monthly_returns(
+    month_str: Optional[str] = None,
+    month: Optional[str] = Query(None, description="Month in YYYY-MM format"),
+    budget_per_race: int = Query(1000, ge=100, le=1000000, description="Base stake budget per race in yen"),
+    model_version: Optional[str] = Query(None, description="Model version for predictions"),
+    force_refresh: bool = False,
+):
+    """
+    Computes aggregated monthly betting performance & returns across all 4 strategy modes
+    ('auto', 'pure_win', 'hybrid', 'dutching') for a specific month (YYYY-MM).
+    Includes day-by-day progression timeline and available months discovery.
+    """
+    target_month = month_str or month
+    if not target_month:
+        target_month = datetime.now().strftime("%Y-%m")
+
+    if not re.match(r"^\d{4}-\d{2}$", target_month):
+        raise HTTPException(400, f"Invalid month format: '{target_month}'. Expected YYYY-MM (e.g. 2026-08).")
+
+    cache_key = (target_month, budget_per_race, model_version)
+    if not force_refresh and cache_key in _monthly_returns_cache:
+        return _monthly_returns_cache[cache_key]
+
+    from models.betting_engine import analyze_race_betting
+
+    strategy_meta_map = {
+        "auto": {
+            "id": "auto",
+            "name": "AI Auto (Optimal)",
+            "icon": "🧠",
+            "tagline": "AI Dynamic Per-Race Optimal Routing",
+        },
+        "pure_win": {
+            "id": "pure_win",
+            "name": "Pure Win (Max ROI)",
+            "icon": "⚡",
+            "tagline": "100% Single Top Value Pick",
+        },
+        "hybrid": {
+            "id": "hybrid",
+            "name": "Balanced (Win + Exotics)",
+            "icon": "🎯",
+            "tagline": "75% Core Win + 25% Elite Exotics",
+        },
+        "dutching": {
+            "id": "dutching",
+            "name": "Dual Dutching (Low DD)",
+            "icon": "🛡️",
+            "tagline": "Dual Value Win Split — Lowest Drawdown",
+        },
+    }
+
+    modes = ["auto", "pure_win", "hybrid", "dutching"]
+
+    with get_session() as s:
+        # 1. Discover available months with predictions in the database
+        month_rows = s.execute(text("""
+            SELECT DISTINCT substr(date, 1, 7) AS ym
+            FROM races
+            WHERE id IN (SELECT race_id FROM predictions)
+            ORDER BY ym DESC
+        """)).fetchall()
+        available_months = [r[0] for r in month_rows]
+
+        # 2. Get distinct race dates for target month
+        date_rows = s.execute(
+            text("SELECT DISTINCT date FROM races WHERE date LIKE :m ORDER BY date"),
+            {"m": f"{target_month}%"},
+        ).fetchall()
+        race_dates = [r[0] for r in date_rows]
+
+        if not race_dates:
+            raise HTTPException(404, f"No race days found for month {target_month}")
+
+        # 3. Monthly aggregated stats and daily timeline
+        month_stats = {
+            m: {
+                "total_staked": 0,
+                "total_payout": 0,
+                "bets_placed": 0,
+                "bets_won": 0,
+                "pending_staked": 0,
+                "pending_races": 0,
+            }
+            for m in modes
+        }
+
+        daily_timeline = []
+        total_races_in_month = 0
+        total_finished_races_in_month = 0
+
+        for d_str in race_dates:
+            races = s.execute(
+                text("SELECT id, race_number, course_id FROM races WHERE date = :d ORDER BY course_id, race_number"),
+                {"d": d_str},
+            ).fetchall()
+            if not races:
+                continue
+
+            total_races_in_month += len(races)
+
+            d_mode_stats = {
+                m: {
+                    "staked": 0,
+                    "payout": 0,
+                    "bets_placed": 0,
+                    "bets_won": 0,
+                    "profit": 0,
+                    "roi_pct": 0.0,
+                }
+                for m in modes
+            }
+
+            d_finished_count = 0
+            for r in races:
+                try:
+                    analysis = analyze_race_betting(
+                        race_id=r.id,
+                        budget=budget_per_race,
+                        strategy_mode="auto",
+                        model_version=model_version,
+                        session=s,
+                        include_all_modes=True,
+                    )
+                    results_by_mode = analysis.get("all_strategies_results", {})
+                    is_race_finished = any(res.get("is_settled", False) for res in results_by_mode.values())
+                    if is_race_finished:
+                        d_finished_count += 1
+
+                    for m in modes:
+                        s_res = results_by_mode.get(m, {})
+                        if not s_res:
+                            continue
+
+                        stk = s_res.get("staked", 0)
+                        pay = s_res.get("payout", 0)
+                        is_settled = s_res.get("is_settled", False)
+
+                        if not is_settled:
+                            if stk > 0:
+                                month_stats[m]["pending_staked"] += stk
+                                month_stats[m]["pending_races"] += 1
+                            continue
+
+                        if stk > 0:
+                            d_mode_stats[m]["staked"] += stk
+                            d_mode_stats[m]["payout"] += pay
+                            d_mode_stats[m]["bets_placed"] += 1
+                            month_stats[m]["total_staked"] += stk
+                            month_stats[m]["total_payout"] += pay
+                            month_stats[m]["bets_placed"] += 1
+                            if pay > stk:
+                                d_mode_stats[m]["bets_won"] += 1
+                                month_stats[m]["bets_won"] += 1
+                except Exception:
+                    pass
+
+            total_finished_races_in_month += d_finished_count
+
+            # Compute profits & ROI per day
+            for m in modes:
+                prof = d_mode_stats[m]["payout"] - d_mode_stats[m]["staked"]
+                d_mode_stats[m]["profit"] = prof
+                d_mode_stats[m]["roi_pct"] = round((prof / d_mode_stats[m]["staked"] * 100), 1) if d_mode_stats[m]["staked"] > 0 else 0.0
+
+            auto_d = d_mode_stats["auto"]
+            daily_timeline.append({
+                "date": d_str,
+                "total_races": len(races),
+                "finished_races": d_finished_count,
+                "has_results": d_finished_count > 0,
+                "staked": auto_d["staked"],
+                "payout": auto_d["payout"],
+                "profit": auto_d["profit"],
+                "roi_pct": auto_d["roi_pct"],
+                "bets_placed": auto_d["bets_placed"],
+                "bets_won": auto_d["bets_won"],
+                "strategies": d_mode_stats,
+            })
+
+        strategies_summary = {}
+        for mode in modes:
+            stats = month_stats[mode]
+            total_staked = stats["total_staked"]
+            total_payout = stats["total_payout"]
+            bets_placed = stats["bets_placed"]
+            bets_won = stats["bets_won"]
+            profit = total_payout - total_staked
+            roi_pct = round((profit / total_staked * 100), 1) if total_staked > 0 else 0.0
+            strike_rate = round((bets_won / bets_placed * 100), 1) if bets_placed > 0 else 0.0
+            meta = strategy_meta_map.get(mode, {})
+
+            strategies_summary[mode] = {
+                "id": mode,
+                "name": meta.get("name", mode.title()),
+                "icon": meta.get("icon", "📊"),
+                "tagline": meta.get("tagline", ""),
+                "staked": total_staked,
+                "payout": round(total_payout),
+                "profit": round(profit),
+                "roi_pct": roi_pct,
+                "bets_placed": bets_placed,
+                "bets_won": bets_won,
+                "strike_rate": strike_rate,
+                "pending_staked": stats["pending_staked"],
+                "pending_races": stats["pending_races"],
+            }
+
+        try:
+            m_dt = datetime.strptime(target_month, "%Y-%m")
+            month_name = m_dt.strftime("%B %Y")
+        except Exception:
+            month_name = target_month
+
+        res_obj = {
+            "month": target_month,
+            "month_name": month_name,
+            "has_results": total_finished_races_in_month > 0,
+            "total_race_days": len(race_dates),
+            "total_races": total_races_in_month,
+            "total_finished_races": total_finished_races_in_month,
+            "budget_per_race": budget_per_race,
+            "strategies": strategies_summary,
+            "daily_timeline": daily_timeline,
+            "available_months": available_months,
+        }
+        _monthly_returns_cache[cache_key] = res_obj
+        return res_obj
 
 
 # ===================================================================
@@ -541,7 +963,7 @@ def predict_date_races(
     date_str: str,
     version: Optional[str] = Query(None, description="Model version to use for predictions"),
     ev_threshold: float = Query(0.08, description="EV threshold for value bets (default: 8% to match EV_PASS)"),
-    max_odds: float = Query(20.0, description="Max odds for value bets"),
+    max_odds: float = Query(60.0, description="Max odds for value bets"),
     min_odds: float = Query(2.0, description="Min odds for value bets"),
     refresh_odds: bool = Query(True, description="Whether to fetch latest live odds first"),
 ):
@@ -551,7 +973,7 @@ def predict_date_races(
     """
     model = version if (isinstance(version, str) and version) else MODEL_VERSION
     ev_thresh = float(ev_threshold) if isinstance(ev_threshold, (int, float)) else 0.08
-    max_o = float(max_odds) if isinstance(max_odds, (int, float)) else 20.0
+    max_o = float(max_odds) if isinstance(max_odds, (int, float)) else 60.0
     min_o = float(min_odds) if isinstance(min_odds, (int, float)) else 2.0
     ref_odds = refresh_odds if isinstance(refresh_odds, bool) else True
 
@@ -575,9 +997,7 @@ def predict_date_races(
 
     race_ids = [r.id for r in race_rows]
 
-    # 2. Optionally refresh live odds
-    # Auto-skip for past dates: netkeiba removes live odds pages after race day,
-    # so scraping them fails and causes the whole batch predict to show "Retry".
+    # 2. Optionally refresh live odds (concurrently outside DB transaction)
     from datetime import date as _date
     try:
         is_past_date = _date.fromisoformat(date_str) < _date.today()
@@ -589,28 +1009,56 @@ def predict_date_races(
     updated_odds_count = 0
     if refresh_odds:
         from scraper.odds_watcher import fetch_win_odds
-        with get_session() as s:
-            for r in race_rows:
-                if r.netkeiba_id:
-                    odds = fetch_win_odds(r.netkeiba_id)
+
+        def _fetch_race_odds(r_id: int, nk_id: str):
+            if not nk_id:
+                return (r_id, None)
+            try:
+                odds = fetch_win_odds(nk_id)
+                return (r_id, odds)
+            except Exception:
+                return (r_id, None)
+
+        odds_results = []
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            futures = [
+                executor.submit(_fetch_race_odds, r.id, r.netkeiba_id)
+                for r in race_rows
+                if r.netkeiba_id
+            ]
+            for f in as_completed(futures):
+                try:
+                    r_id, odds = f.result()
                     if odds:
-                        for o in odds:
-                            s.execute(
-                                text("""
-                                    UPDATE entries
-                                    SET odds_win = :odds,
-                                        popularity = COALESCE(:pop, popularity)
-                                    WHERE race_id = :race_id AND post_position = :pp
-                                """),
-                                {
-                                    "odds": o["odds_value"],
-                                    "pop": o.get("popularity"),
-                                    "race_id": r.id,
-                                    "pp": int(o["combination"]),
-                                },
-                            )
-                        updated_odds_count += len(odds)
-            s.commit()
+                        official_dt = odds[0].get("official_datetime") or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        odds_results.append((r_id, official_dt, odds))
+                except Exception:
+                    pass
+
+        if odds_results:
+            with get_session() as s:
+                for r_id, official_dt, odds in odds_results:
+                    s.execute(
+                        text("UPDATE races SET odds_updated_at = :dt WHERE id = :race_id"),
+                        {"dt": official_dt, "race_id": r_id},
+                    )
+                    for o in odds:
+                        s.execute(
+                            text("""
+                                UPDATE entries
+                                SET odds_win = :odds,
+                                    popularity = COALESCE(:pop, popularity)
+                                WHERE race_id = :race_id AND post_position = :pp
+                            """),
+                            {
+                                "odds": o["odds_value"],
+                                "pop": o.get("popularity"),
+                                "race_id": r_id,
+                                "pp": int(o["combination"]),
+                            },
+                        )
+                    updated_odds_count += len(odds)
+                s.commit()
 
     # 3. Predict with filters across all races
     try:
@@ -628,20 +1076,46 @@ def predict_date_races(
     if df is None or df.empty:
         raise HTTPException(status_code=500, detail=f"No predictions generated for date {date_str}")
 
-    # 4. Persist predictions + value bets into DB
+    # 4. Persist predictions + value bets into DB with fast bulk insert
     now = datetime.utcnow().isoformat()
     value_bets_count = 0
     races_with_value_bets = set()
+
+    pred_params = []
+    vb_params = []
+    for _, row in df.iterrows():
+        rid = int(row["race_id"])
+        eid = int(row["entry_id"])
+        ev_val = float(row["ev"]) if (row["ev"] is not None and not pd.isna(row["ev"])) else None
+        pred_params.append({
+            "race_id": rid,
+            "entry_id": eid,
+            "mv": model,
+            "win_prob": float(row["combined_prob"]),
+            "edge": ev_val,
+            "created_at": now,
+        })
+        if row.get("is_value_bet") and ev_val is not None:
+            value_bets_count += 1
+            races_with_value_bets.add(rid)
+            vb_params.append({
+                "race_id": rid,
+                "entry_id": eid,
+                "model_prob": float(row["combined_prob"]),
+                "market_prob": float(row["market_prob"]) if row["market_prob"] is not None else 0.0,
+                "ev": ev_val,
+                "kelly": float(row["kelly_fraction"]),
+                "stake": int(row["recommended_stake"]),
+                "mv": model,
+                "created_at": now,
+            })
 
     with get_session() as s:
         id_list_str = ",".join(str(rid) for rid in race_ids)
         s.execute(text(f"DELETE FROM predictions WHERE race_id IN ({id_list_str}) AND model_version = :mv"), {"mv": model})
         s.execute(text(f"DELETE FROM value_bets WHERE race_id IN ({id_list_str}) AND model_version = :mv"), {"mv": model})
 
-        for _, row in df.iterrows():
-            rid = int(row["race_id"])
-            eid = int(row["entry_id"])
-            ev_val = float(row["ev"]) if (row["ev"] is not None and not pd.isna(row["ev"])) else None
+        if pred_params:
             s.execute(
                 text("""
                     INSERT INTO predictions
@@ -649,40 +1123,24 @@ def predict_date_races(
                     VALUES
                         (:race_id, :entry_id, :mv, :win_prob, :edge, :created_at)
                 """),
-                {
-                    "race_id": rid,
-                    "entry_id": eid,
-                    "mv": model,
-                    "win_prob": float(row["combined_prob"]),
-                    "edge": ev_val,
-                    "created_at": now,
-                },
+                pred_params,
             )
-            if row.get("is_value_bet") and ev_val is not None:
-                value_bets_count += 1
-                races_with_value_bets.add(rid)
-                s.execute(
-                    text("""
-                        INSERT INTO value_bets
-                            (race_id, entry_id, bet_type, model_prob, market_prob,
-                             ev, kelly_fraction, recommended_stake, model_version, created_at)
-                        VALUES
-                            (:race_id, :entry_id, 'win', :model_prob, :market_prob,
-                             :ev, :kelly, :stake, :mv, :created_at)
-                    """),
-                    {
-                        "race_id": rid,
-                        "entry_id": eid,
-                        "model_prob": float(row["combined_prob"]),
-                        "market_prob": float(row["market_prob"]) if row["market_prob"] is not None else 0.0,
-                        "ev": ev_val,
-                        "kelly": float(row["kelly_fraction"]),
-                        "stake": int(row["recommended_stake"]),
-                        "mv": model,
-                        "created_at": now,
-                    },
-                )
+        if vb_params:
+            s.execute(
+                text("""
+                    INSERT INTO value_bets
+                        (race_id, entry_id, bet_type, model_prob, market_prob,
+                         ev, kelly_fraction, recommended_stake, model_version, created_at)
+                    VALUES
+                        (:race_id, :entry_id, 'win', :model_prob, :market_prob,
+                         :ev, :kelly, :stake, :mv, :created_at)
+                """),
+                vb_params,
+            )
         s.commit()
+
+    _daily_returns_cache.clear()
+    _monthly_returns_cache.clear()
 
     return {
         "status": "success",
@@ -700,6 +1158,8 @@ def predict_date_races(
 @app.post("/api/races/{race_id}/refresh")
 def refresh_race(race_id: int, version: str = None):
     """Refresh live odds and recalculate predictions for a specific race."""
+    _daily_returns_cache.clear()
+    _monthly_returns_cache.clear()
     model = version or MODEL_VERSION
 
     # 1. Look up race info
@@ -715,11 +1175,16 @@ def refresh_race(race_id: int, version: str = None):
     nk_id = race_row.netkeiba_id
     race_date = str(race_row.date)
 
-    # 2. Fetch new odds
+    # 2. Fetch new odds outside DB transaction
     from scraper.odds_watcher import fetch_win_odds
-    odds = fetch_win_odds(nk_id)
+    odds = fetch_win_odds(nk_id) if nk_id else []
     if odds:
+        official_dt = odds[0].get("official_datetime") or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         with get_session() as s:
+            s.execute(
+                text("UPDATE races SET odds_updated_at = :dt WHERE id = :race_id"),
+                {"dt": official_dt, "race_id": race_id},
+            )
             for o in odds:
                 s.execute(
                     text("""
@@ -744,7 +1209,7 @@ def refresh_race(race_id: int, version: str = None):
             race_ids=[race_id],
             model_version=model,
             ev_threshold=0.08,
-            max_odds=20.0,
+            max_odds=60.0,
             min_odds=2.0,
         )
     except Exception as e:
@@ -753,10 +1218,34 @@ def refresh_race(race_id: int, version: str = None):
     if df is None or df.empty:
         raise HTTPException(status_code=500, detail="No predictions generated")
 
-    # 4. Persist predictions + value bets to the DB so the frontend can display them
+    # 4. Persist predictions + value bets to the DB with bulk insert
     now = datetime.utcnow().isoformat()
+    pred_params = []
+    vb_params = []
+    for _, row in df.iterrows():
+        ev_val = float(row["ev"]) if (row["ev"] is not None and not pd.isna(row["ev"])) else None
+        pred_params.append({
+            "race_id": int(row["race_id"]),
+            "entry_id": int(row["entry_id"]),
+            "mv": model,
+            "win_prob": float(row["combined_prob"]),
+            "edge": ev_val,
+            "created_at": now,
+        })
+        if row.get("is_value_bet") and ev_val is not None:
+            vb_params.append({
+                "race_id": int(row["race_id"]),
+                "entry_id": int(row["entry_id"]),
+                "model_prob": float(row["combined_prob"]),
+                "market_prob": float(row["market_prob"]) if row["market_prob"] is not None else 0.0,
+                "ev": ev_val,
+                "kelly": float(row["kelly_fraction"]),
+                "stake": int(row["recommended_stake"]),
+                "mv": model,
+                "created_at": now,
+            })
+
     with get_session() as s:
-        # Delete stale predictions and value bets for this race + model version
         s.execute(
             text("DELETE FROM predictions WHERE race_id = :race_id AND model_version = :mv"),
             {"race_id": race_id, "mv": model},
@@ -765,8 +1254,7 @@ def refresh_race(race_id: int, version: str = None):
             text("DELETE FROM value_bets WHERE race_id = :race_id AND model_version = :mv"),
             {"race_id": race_id, "mv": model},
         )
-        for _, row in df.iterrows():
-            ev_val = float(row["ev"]) if (row["ev"] is not None and not pd.isna(row["ev"])) else None
+        if pred_params:
             s.execute(
                 text("""
                     INSERT INTO predictions
@@ -774,37 +1262,20 @@ def refresh_race(race_id: int, version: str = None):
                     VALUES
                         (:race_id, :entry_id, :mv, :win_prob, :edge, :created_at)
                 """),
-                {
-                    "race_id": int(row["race_id"]),
-                    "entry_id": int(row["entry_id"]),
-                    "mv": model,
-                    "win_prob": float(row["combined_prob"]),
-                    "edge": ev_val,
-                    "created_at": now,
-                },
+                pred_params,
             )
-            if row.get("is_value_bet") and ev_val is not None:
-                s.execute(
-                    text("""
-                        INSERT INTO value_bets
-                            (race_id, entry_id, bet_type, model_prob, market_prob,
-                             ev, kelly_fraction, recommended_stake, model_version, created_at)
-                        VALUES
-                            (:race_id, :entry_id, 'win', :model_prob, :market_prob,
-                             :ev, :kelly, :stake, :mv, :created_at)
-                    """),
-                    {
-                        "race_id": int(row["race_id"]),
-                        "entry_id": int(row["entry_id"]),
-                        "model_prob": float(row["combined_prob"]),
-                        "market_prob": float(row["market_prob"]) if row["market_prob"] is not None else 0.0,
-                        "ev": ev_val,
-                        "kelly": float(row["kelly_fraction"]),
-                        "stake": int(row["recommended_stake"]),
-                        "mv": model,
-                        "created_at": now,
-                    },
-                )
+        if vb_params:
+            s.execute(
+                text("""
+                    INSERT INTO value_bets
+                        (race_id, entry_id, bet_type, model_prob, market_prob,
+                         ev, kelly_fraction, recommended_stake, model_version, created_at)
+                    VALUES
+                        (:race_id, :entry_id, 'win', :model_prob, :market_prob,
+                         :ev, :kelly, :stake, :mv, :created_at)
+                """),
+                vb_params,
+            )
         s.commit()
 
     return {
@@ -853,6 +1324,8 @@ def sync_date_results(
     try:
         from pipeline import step_results
         synced_ids = step_results(date_str, force=force)
+        _daily_returns_cache.clear()
+        _monthly_returns_cache.clear()
         return {
             "status": "success",
             "message": f"Synced results for {len(synced_ids)} races on {date_str}",

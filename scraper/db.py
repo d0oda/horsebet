@@ -11,7 +11,7 @@ DATABASE_URL is read from .env, e.g.:
 import os
 from contextlib import contextmanager
 from dotenv import load_dotenv
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, text, event
 from sqlalchemy.orm import sessionmaker, Session
 
 load_dotenv()
@@ -25,11 +25,25 @@ if not DATABASE_URL:
 
 from sqlalchemy.pool import NullPool
 
+connect_args = {"check_same_thread": False}
+if DATABASE_URL.startswith("sqlite"):
+    connect_args["timeout"] = 30
+
 engine = create_engine(
     DATABASE_URL,
     poolclass=NullPool,
-    connect_args={"check_same_thread": False},
+    connect_args=connect_args,
 )
+
+@event.listens_for(engine, "connect")
+def set_sqlite_pragma(dbapi_connection, connection_record):
+    if DATABASE_URL and DATABASE_URL.startswith("sqlite"):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA synchronous=NORMAL")
+        cursor.execute("PRAGMA busy_timeout=30000")
+        cursor.close()
+
 
 SessionLocal = sessionmaker(bind=engine)
 

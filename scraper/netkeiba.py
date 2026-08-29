@@ -26,7 +26,12 @@ import time
 from dataclasses import dataclass, field, asdict
 from typing import Optional
 
-import requests
+try:
+    from curl_cffi import requests as c_requests
+    HAS_CURL_CFFI = True
+except ImportError:
+    HAS_CURL_CFFI = False
+    import requests
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from sqlalchemy import text
@@ -57,8 +62,8 @@ RACE_LIST_URL = BASE_URL + "/top/race_list.html?kaisai_date={date}"
 # Legacy db.netkeiba.com URL (kept for backward compat, but returns 400 now)
 LEGACY_RACE_URL = "https://db.netkeiba.com/race/{race_id}/"
 
-DELAY_MIN = float(os.getenv("SCRAPE_DELAY_MIN", 2))
-DELAY_MAX = float(os.getenv("SCRAPE_DELAY_MAX", 5))
+DELAY_MIN = float(os.getenv("SCRAPE_DELAY_MIN", 0.2))
+DELAY_MAX = float(os.getenv("SCRAPE_DELAY_MAX", 0.5))
 
 HEADERS = {
     "User-Agent": (
@@ -150,28 +155,32 @@ def _sleep():
     time.sleep(delay)
 
 
-def _fetch(url: str, retries: int = 3) -> Optional[BeautifulSoup]:
+def _fetch(url: str, retries: int = 2) -> Optional[BeautifulSoup]:
     """Fetch a URL and return parsed BeautifulSoup, with retries."""
     for attempt in range(retries):
         try:
             _sleep()
-            resp = requests.get(url, headers=HEADERS, timeout=(10.0, 20.0))
-            if "db.netkeiba.com" in url:
-                resp.encoding = "EUC-JP"  # Legacy DB pages use EUC-JP
+            if HAS_CURL_CFFI:
+                resp = c_requests.get(url, headers=HEADERS, impersonate="chrome120", timeout=(5.0, 10.0))
             else:
-                resp.encoding = "utf-8"   # All live netkeiba pages are UTF-8
+                resp = requests.get(url, headers=HEADERS, timeout=(5.0, 10.0))
+
             if resp.status_code == 200:
-                return BeautifulSoup(resp.text, "lxml")
-            elif resp.status_code == 404:
-                log.warning(f"404 Not Found: {url}")
+                if "db.netkeiba.com" in url:
+                    content = resp.content.decode("euc-jp", errors="replace")
+                else:
+                    content = resp.content.decode("utf-8", errors="replace")
+                return BeautifulSoup(content, "lxml")
+            elif resp.status_code in (403, 404):
+                log.warning(f"HTTP {resp.status_code} (no retry): {url}")
                 return None
             else:
                 log.warning(f"HTTP {resp.status_code} for {url} (attempt {attempt + 1})")
-        except requests.RequestException as e:
+        except Exception as e:
             log.warning(f"Request error for {url}: {e} (attempt {attempt + 1})")
 
         if attempt < retries - 1:
-            time.sleep(5 * (attempt + 1))
+            time.sleep(1.0 * (attempt + 1))
 
     log.error(f"Failed to fetch {url} after {retries} attempts")
     return None
@@ -1149,7 +1158,7 @@ def save_race_to_db(race: RaceData, force: bool = False) -> bool:
 # Scrape Orchestration
 # ---------------------------------------------------------------------------
 
-def scrape_race(race_id: str) -> Optional[RaceData]:
+def scrape_race(race_id: str, results_only: bool = False) -> Optional[RaceData]:
     """
     Scrape a single race by its netkeiba ID and save to DB.
     Tries result page first, then legacy archive, then shutuba (pre-race).
@@ -1167,15 +1176,20 @@ def scrape_race(race_id: str) -> Optional[RaceData]:
                 save_race_to_db(race)
                 return race
 
-    # 2. Try legacy archive page (db.netkeiba.com)
-    url = LEGACY_RACE_URL.format(race_id=race_id)
-    soup = _fetch(url)
-    if soup:
-        race = _parse_legacy_race_page(soup, race_id)
-        # Check if legacy parsed successfully and has finish positions
-        if race and race.entries and any(e.finish_pos is not None for e in race.entries):
-            save_race_to_db(race)
-            return race
+    # 2. Try legacy archive page (db.netkeiba.com) for historical races
+    year = int(race_id[:4]) if (race_id and len(race_id) >= 4 and race_id[:4].isdigit()) else 2026
+    if not results_only or year < 2025:
+        url = LEGACY_RACE_URL.format(race_id=race_id)
+        soup = _fetch(url)
+        if soup:
+            race = _parse_legacy_race_page(soup, race_id)
+            # Check if legacy parsed successfully and has finish positions
+            if race and race.entries and any(e.finish_pos is not None for e in race.entries):
+                save_race_to_db(race)
+                return race
+
+    if results_only:
+        return None
 
     # 3. Try shutuba page (pre-race entry list) as last resort
     url = SHUTUBA_URL.format(race_id=race_id)

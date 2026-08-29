@@ -181,32 +181,16 @@ def predict_with_filters(
         fundamental = combined
         market = combined
 
-        # Look up odds and horse names
-        with get_session() as session:
-            entries = session.execute(
-                text("""
-                    SELECT e.id, e.odds_win, h.name_jp
-                    FROM entries e
-                    JOIN horses h ON h.id = e.horse_id
-                    WHERE e.race_id = :rid
-                    ORDER BY e.post_position
-                """),
-                {"rid": race_id},
-            ).fetchall()
-
-        entry_map = {e[0]: {"odds": e[1], "name": e[2]} for e in entries}
-
         # Normalize probabilities to sum to 1.0 for the race
         comb_sum = sum(float(c) for c in combined)
         fund_sum = sum(float(f) for f in fundamental)
         mkt_sum = sum(float(m) for m in market)
 
         for i, (_, row) in enumerate(features_df.iterrows()):
-            entry_id = row["entry_id"]
-            info = entry_map.get(entry_id, {})
-            raw_odds = info.get("odds")
-            odds = float(raw_odds) if (raw_odds is not None and float(raw_odds) > 0) else 0.0
-            name = info.get("name", "?")
+            entry_id = int(row["entry_id"])
+            raw_odds = row.get("odds_win")
+            odds = float(raw_odds) if (raw_odds is not None and not pd.isna(raw_odds) and float(raw_odds) > 0) else 0.0
+            name = str(row.get("horse_name") or "?")
 
             combined_p = float(combined[i]) / comb_sum if comb_sum > 0 else 0
             fund_p = float(fundamental[i]) / fund_sum if fund_sum > 0 else 0

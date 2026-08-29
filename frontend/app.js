@@ -1,8 +1,10 @@
 // ── API Base URL ──
-// Auto-detect: local dev → localhost:8000, production → Render
-const API_BASE = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
-  ? 'http://localhost:8000'
-  : 'https://umaedge-api.onrender.com';
+// Auto-detect: if served directly by backend on port 8000 or Render → relative '', if served by static server on port 3000 → http://localhost:8000
+const API_BASE = (window.location.port === '8000' || window.location.origin.includes('onrender.com'))
+  ? ''
+  : ((window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') ? 'http://localhost:8000' : 'https://umaedge-api.onrender.com');
+
+const round1 = v => (v == null || isNaN(v)) ? 0.0 : Math.round(v * 10) / 10;
 
 // ── State ──
 let manifest = [];           // [{ date, races, bets, winners, strike_rate }]
@@ -32,6 +34,7 @@ async function init() {
   calPrev.addEventListener('click', () => { calMonth--; if (calMonth < 0) { calMonth = 11; calYear--; } renderCalendar(); });
   calNext.addEventListener('click', () => { calMonth++; if (calMonth > 11) { calMonth = 0; calYear++; } renderCalendar(); });
 
+  renderCalendar();
   setStatus('loading');
   try {
     const res = await fetch(`${API_BASE}/api/manifest`);
@@ -53,7 +56,10 @@ async function init() {
   // Auto-select today if it has data, or the latest available date
   const todayStr = toDateStr(new Date());
   if (manifest.some(d => d.date === todayStr)) {
-    selectDate(todayStr);
+    await selectDate(todayStr);
+  } else if (manifest.length > 0) {
+    const sorted = [...manifest].sort((a, b) => b.date.localeCompare(a.date));
+    await selectDate(sorted[0].date);
   }
 }
 
@@ -204,11 +210,14 @@ function renderManifestList() {
   });
 }
 
+let activeSelectDateToken = 0;
 // ── Select a date ──
 async function selectDate(dateStr) {
+  const currentToken = ++activeSelectDateToken;
   selectedDate = dateStr;
   openRaceIds = new Set();
   raceDetailCache = {};
+  currentFilter = 'all';
 
   // Update calendar + header
   renderCalendar();
@@ -230,9 +239,11 @@ async function selectDate(dateStr) {
   let races = [];
   try {
     const res = await fetch(`${API_BASE}/api/races?date=${dateStr}&limit=100`);
+    if (currentToken !== activeSelectDateToken) return;
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     races = (await res.json()).races || [];
   } catch (e) {
+    if (currentToken !== activeSelectDateToken) return;
     racePanelInner.innerHTML = `
       <div class="empty-state">
         <div class="empty-icon">⚠️</div>
@@ -242,6 +253,7 @@ async function selectDate(dateStr) {
     return;
   }
 
+  if (currentToken !== activeSelectDateToken) return;
   const manifestEntry = manifest.find(m => m.date === dateStr);
 
   if (races.length === 0) {
@@ -249,7 +261,7 @@ async function selectDate(dateStr) {
     renderNoRacesState(dateStr);
   } else {
     // Races exist — render them (some may have predictions, some may not)
-    renderRacePanel(races, manifestEntry || { date: dateStr, races: races.length, bets: 0, winners: 0 }, dateStr);
+    await renderRacePanel(races, manifestEntry || { date: dateStr, races: races.length, bets: 0, winners: 0 }, dateStr);
   }
 }
 
@@ -531,7 +543,16 @@ async function syncResultsForDate(dateStr, force = false) {
 
     raceDetailCache = {};
 
-    showToast(`✨ Results synced for ${data.races_synced != null ? data.races_synced : 'all'} races!`, 'success', 4500);
+    if (data.races_synced > 0) {
+      showToast(`✨ Successfully recorded official results for ${data.races_synced} race${data.races_synced === 1 ? '' : 's'}!`, 'success', 4500);
+    } else {
+      const todayIso = toDateStr(new Date());
+      if (dateStr >= todayIso) {
+        showToast(`⏳ Races for ${formatDate(dateStr)} have not run yet (or are in progress). Official results are published by netkeiba after each race finishes.`, 'info', 5000);
+      } else {
+        showToast(`ℹ️ All races for ${formatDate(dateStr)} are already up-to-date with official results.`, 'info', 4000);
+      }
+    }
     await selectDate(dateStr);
   } catch (e) {
     showToast(`❌ Results sync failed: ${escHtml(String(e.message || e))}`, 'error', 5000);
@@ -580,26 +601,323 @@ async function rescrapeSingleRace(raceId, dateStr) {
   }
 }
 
-// ── Filter races by type/venue/surface ──
+let portfolioViewMode = 'daily'; // 'daily' | 'monthly'
+let currentSelectedMonth = '2026-08';
+
+async function switchPortfolioView(mode, month = null) {
+  portfolioViewMode = mode;
+  if (month) currentSelectedMonth = month;
+  if (!currentSelectedMonth && selectedDate) {
+    currentSelectedMonth = selectedDate.slice(0, 7);
+  }
+  if (portfolioViewMode === 'daily') {
+    await loadDailyReturns(selectedDate);
+  } else {
+    await loadMonthlyReturns(currentSelectedMonth || (selectedDate ? selectedDate.slice(0, 7) : '2026-08'));
+  }
+}
+
+// ── Load and render daily returns for all 4 strategies ──
+async function loadDailyReturns(dateStr, force = false) {
+  const container = document.getElementById('daily-returns-container');
+  if (!container) return;
+
+  if (portfolioViewMode === 'monthly') {
+    return loadMonthlyReturns(currentSelectedMonth || (dateStr ? dateStr.slice(0, 7) : '2026-08'), force);
+  }
+
+  try {
+    const res = await fetch(`${API_BASE}/api/races/date/${dateStr}/daily-returns?budget_per_race=1000${force ? '&force_refresh=true' : ''}`);
+    if (!res.ok) {
+      container.style.display = 'none';
+      return;
+    }
+    const data = await res.json();
+    if (!data || !data.strategies) {
+      container.style.display = 'none';
+      return;
+    }
+
+    const strategies = data.strategies;
+    const hasResults = data.has_results;
+    container.style.display = 'block';
+
+    let html = `
+      <div class="daily-returns-card">
+        <div class="daily-returns-header">
+          <div class="returns-title-group">
+            <span class="returns-badge">📊 PORTFOLIO PERFORMANCE</span>
+            <div class="returns-view-toggle">
+              <button class="view-toggle-btn active" onclick="switchPortfolioView('daily')">📅 Daily</button>
+              <button class="view-toggle-btn" onclick="switchPortfolioView('monthly')">🗓️ Monthly</button>
+            </div>
+            <span class="returns-title">Daily Returns & P&L — ${formatDate(dateStr)} (¥1,000 / race)</span>
+          </div>
+          <div class="returns-meta-info">
+            ${hasResults ? `<span class="returns-status-live">🏁 Official Payouts Calculated</span>` : `<span class="returns-status-pending">⏳ Official Results Pending</span>`}
+          </div>
+        </div>
+
+        <div class="strategy-return-grid">
+    `;
+
+    const stratKeys = ['auto', 'pure_win', 'hybrid', 'dutching'];
+    stratKeys.forEach(k => {
+      const s = strategies[k];
+      if (!s) return;
+      const isProfitable = s.profit > 0;
+      const isZero = s.profit === 0;
+      const profitClass = isZero ? 'return-profit-neutral' : isProfitable ? 'return-profit-positive' : 'return-profit-negative';
+      const profitSign = s.profit > 0 ? '+' : '';
+
+      html += `
+        <div class="strategy-return-item ${s.id}">
+          <div class="strategy-item-top">
+            <div class="strategy-name-box">
+              <span class="strategy-item-icon">${s.icon}</span>
+              <div class="strategy-text-wrap">
+                <div class="strategy-item-name">${escHtml(s.name)}</div>
+                <div class="strategy-item-tagline">${escHtml(s.tagline)}</div>
+              </div>
+            </div>
+            ${hasResults && isProfitable ? `<span class="roi-pill positive">+${s.roi_pct}% ROI</span>` : hasResults && !isZero ? `<span class="roi-pill negative">${s.roi_pct}% ROI</span>` : ''}
+          </div>
+
+          <div class="strategy-numbers-row">
+            <div class="strat-stat">
+              <span class="strat-stat-label">STAKED</span>
+              <span class="strat-stat-val">¥${s.staked.toLocaleString()}</span>
+            </div>
+            <div class="strat-stat">
+              <span class="strat-stat-label">PAYOUT</span>
+              <span class="strat-stat-val ${isProfitable ? 'text-green' : ''}">¥${s.payout.toLocaleString()}</span>
+            </div>
+            <div class="strat-stat strat-stat-profit">
+              <span class="strat-stat-label">NET P&L</span>
+              <span class="strat-stat-val ${profitClass}">
+                ${hasResults ? `${profitSign}¥${s.profit.toLocaleString()}` : '—'}
+              </span>
+            </div>
+          </div>
+
+          <div class="strategy-hit-row">
+            <div class="hit-label">Hit Rate:</div>
+            <div class="hit-value">${hasResults ? `<strong>${s.bets_won} / ${s.bets_placed}</strong> wins (${s.strike_rate}%)` : `<strong>${s.bets_placed}</strong> value bets active`}</div>
+          </div>
+        </div>
+      `;
+    });
+
+    html += `
+        </div>
+      </div>
+    `;
+
+    container.innerHTML = html;
+  } catch (e) {
+    console.error('Failed to load daily returns:', e);
+    container.style.display = 'none';
+  }
+}
+
+// ── Load and render monthly returns across all 4 strategies ──
+async function loadMonthlyReturns(monthStr, force = false) {
+  const container = document.getElementById('daily-returns-container');
+  if (!container) return;
+
+  currentSelectedMonth = monthStr;
+
+  try {
+    const res = await fetch(`${API_BASE}/api/races/month/${monthStr}/monthly-returns?budget_per_race=1000${force ? '&force_refresh=true' : ''}`);
+    if (!res.ok) {
+      container.style.display = 'none';
+      return;
+    }
+    const data = await res.json();
+    if (!data || !data.strategies) {
+      container.style.display = 'none';
+      return;
+    }
+
+    const strategies = data.strategies;
+    const hasResults = data.has_results;
+    const availMonths = data.available_months || [monthStr];
+    container.style.display = 'block';
+
+    const monthChipsHtml = availMonths.map(m => {
+      const [yr, mo] = m.split('-');
+      const monthNames = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const label = `${monthNames[parseInt(mo, 10)] || mo} ${yr}`;
+      const isActive = m === monthStr;
+      return `<button class="month-chip ${isActive ? 'active' : ''}" onclick="switchPortfolioView('monthly', '${m}')">${label}</button>`;
+    }).join('');
+
+    let html = `
+      <div class="daily-returns-card monthly-returns-card">
+        <div class="daily-returns-header">
+          <div class="returns-title-group">
+            <span class="returns-badge">📊 PORTFOLIO PERFORMANCE</span>
+            <div class="returns-view-toggle">
+              <button class="view-toggle-btn" onclick="switchPortfolioView('daily')">📅 Daily</button>
+              <button class="view-toggle-btn active" onclick="switchPortfolioView('monthly')">🗓️ Monthly</button>
+            </div>
+            <span class="returns-title">Monthly Overview — ${escHtml(data.month_name || monthStr)} (${data.total_race_days} Race Days · ${data.total_races} Races)</span>
+          </div>
+          <div class="returns-meta-info">
+            ${hasResults ? `<span class="returns-status-live">🏁 ${data.total_finished_races} Races Settled</span>` : `<span class="returns-status-pending">⏳ Official Results Pending</span>`}
+          </div>
+        </div>
+
+        <!-- Month Navigation Bar -->
+        <div class="month-picker-bar">
+          <span class="month-picker-label">Select Month:</span>
+          ${monthChipsHtml}
+        </div>
+
+        <div class="strategy-return-grid">
+    `;
+
+    const stratKeys = ['auto', 'pure_win', 'hybrid', 'dutching'];
+    stratKeys.forEach(k => {
+      const s = strategies[k];
+      if (!s) return;
+      const isProfitable = s.profit > 0;
+      const isZero = s.profit === 0;
+      const profitClass = isZero ? 'return-profit-neutral' : isProfitable ? 'return-profit-positive' : 'return-profit-negative';
+      const profitSign = s.profit > 0 ? '+' : '';
+
+      html += `
+        <div class="strategy-return-item ${s.id}">
+          <div class="strategy-item-top">
+            <div class="strategy-name-box">
+              <span class="strategy-item-icon">${s.icon}</span>
+              <div class="strategy-text-wrap">
+                <div class="strategy-item-name">${escHtml(s.name)}</div>
+                <div class="strategy-item-tagline">${escHtml(s.tagline)}</div>
+              </div>
+            </div>
+            ${hasResults && isProfitable ? `<span class="roi-pill positive">+${s.roi_pct}% ROI</span>` : hasResults && !isZero ? `<span class="roi-pill negative">${s.roi_pct}% ROI</span>` : ''}
+          </div>
+
+          <div class="strategy-numbers-row">
+            <div class="strat-stat">
+              <span class="strat-stat-label">STAKED</span>
+              <span class="strat-stat-val">¥${s.staked.toLocaleString()}</span>
+            </div>
+            <div class="strat-stat">
+              <span class="strat-stat-label">PAYOUT</span>
+              <span class="strat-stat-val ${isProfitable ? 'text-green' : ''}">¥${s.payout.toLocaleString()}</span>
+            </div>
+            <div class="strat-stat strat-stat-profit">
+              <span class="strat-stat-label">NET P&L</span>
+              <span class="strat-stat-val ${profitClass}">
+                ${hasResults ? `${profitSign}¥${s.profit.toLocaleString()}` : '—'}
+              </span>
+            </div>
+          </div>
+
+          <div class="strategy-hit-row">
+            <div class="hit-label">Hit Rate:</div>
+            <div class="hit-value">${hasResults ? `<strong>${s.bets_won} / ${s.bets_placed}</strong> wins (${s.strike_rate}%)` : `<strong>${s.bets_placed}</strong> value bets active`}</div>
+          </div>
+        </div>
+      `;
+    });
+
+    html += `
+        </div>
+
+        <!-- Daily Breakdown Timeline Table -->
+        <div class="monthly-breakdown-section">
+          <div class="monthly-breakdown-header">
+            <span class="monthly-breakdown-title">🗓️ Daily Performance Breakdown (${data.daily_timeline ? data.daily_timeline.length : 0} Race Days)</span>
+            <span class="monthly-breakdown-sub">Click any race day row to view that date's racecard</span>
+          </div>
+          <div class="monthly-timeline-table-wrap">
+            <table class="monthly-timeline-table">
+              <thead>
+                <tr>
+                  <th>Race Date</th>
+                  <th>Races</th>
+                  <th>Value Bets</th>
+                  <th>Staked</th>
+                  <th>Payout</th>
+                  <th>Net P&L</th>
+                  <th>ROI</th>
+                  <th>Hit Rate</th>
+                  <th style="text-align:center;">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+    `;
+
+    const timeline = data.daily_timeline || [];
+    timeline.forEach(row => {
+      const isRowProfitable = row.profit > 0;
+      const isRowZero = row.profit === 0;
+      const pnlClass = isRowZero ? 'neutral' : isRowProfitable ? 'positive' : 'negative';
+      const pnlSign = row.profit > 0 ? '+' : '';
+      const isCurrentDay = row.date === selectedDate;
+
+      html += `
+        <tr class="${isCurrentDay ? 'active-day-row' : ''}" onclick="selectDate('${row.date}')" title="View race card for ${formatDate(row.date)}">
+          <td><strong>${formatDate(row.date)}</strong> ${isCurrentDay ? '<span style="color:#a5b4fc;font-size:10px;margin-left:4px;">(Current)</span>' : ''}</td>
+          <td>${row.total_races}</td>
+          <td>${row.bets_placed}</td>
+          <td>¥${row.staked.toLocaleString()}</td>
+          <td class="${isRowProfitable ? 'text-green' : ''}">¥${row.payout.toLocaleString()}</td>
+          <td>
+            <span class="timeline-pnl-badge ${pnlClass}">
+              ${pnlSign}¥${row.profit.toLocaleString()}
+            </span>
+          </td>
+          <td class="${isRowProfitable ? 'text-green' : isRowZero ? '' : 'text-red'}">
+            <strong>${row.roi_pct > 0 ? '+' : ''}${row.roi_pct}%</strong>
+          </td>
+          <td>${row.bets_won} / ${row.bets_placed} (${row.bets_placed > 0 ? ((row.bets_won/row.bets_placed)*100).toFixed(1) : 0}%)</td>
+          <td style="text-align:center;">
+            <button class="timeline-view-btn" onclick="event.stopPropagation(); selectDate('${row.date}')">View →</button>
+          </td>
+        </tr>
+      `;
+    });
+
+    html += `
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    `;
+
+    container.innerHTML = html;
+  } catch (e) {
+    console.error('Failed to load monthly returns:', e);
+    container.style.display = 'none';
+  }
+}
+
+// ── Filter races by type/venue/surface/winners ──
 function setRaceFilter(filterName) {
   currentFilter = filterName;
 
   // Update active state on all chips
   document.querySelectorAll('.filter-chip').forEach(chip => {
     chip.classList.remove('active');
+    if (filterName === 'all' && chip.id === 'chip-filter-all') {
+      chip.classList.add('active');
+    } else if (filterName === 'bets' && chip.id === 'chip-filter-bets') {
+      chip.classList.add('active');
+    } else if (filterName === 'winners' && chip.id === 'chip-filter-winners') {
+      chip.classList.add('active');
+    } else if (filterName === 'turf' && chip.id === 'chip-filter-turf') {
+      chip.classList.add('active');
+    } else if (filterName === 'dirt' && chip.id === 'chip-filter-dirt') {
+      chip.classList.add('active');
+    } else if (chip.getAttribute('data-filter') === filterName) {
+      chip.classList.add('active');
+    }
   });
-  if (filterName === 'all') {
-    document.getElementById('chip-filter-all')?.classList.add('active');
-  } else if (filterName === 'bets') {
-    document.getElementById('chip-filter-bets')?.classList.add('active');
-  } else if (filterName === 'turf') {
-    document.getElementById('chip-filter-turf')?.classList.add('active');
-  } else if (filterName === 'dirt') {
-    document.getElementById('chip-filter-dirt')?.classList.add('active');
-  } else {
-    const matchChip = document.querySelector(`[data-filter="${filterName}"]`);
-    if (matchChip) matchChip.classList.add('active');
-  }
 
   renderRaceCardsList();
 }
@@ -613,6 +931,8 @@ function renderRaceCardsList() {
   let filtered = currentRaces;
   if (currentFilter === 'bets') {
     filtered = currentRaces.filter(r => r.has_bet);
+  } else if (currentFilter === 'winners') {
+    filtered = currentRaces.filter(r => r.bet_won);
   } else if (currentFilter === 'turf') {
     filtered = currentRaces.filter(r => (r.surface || '').toLowerCase() === 'turf' || (r.surface || '').includes('芝'));
   } else if (currentFilter === 'dirt') {
@@ -622,7 +942,22 @@ function renderRaceCardsList() {
   }
 
   if (filtered.length === 0) {
-    if (currentFilter === 'bets') {
+    if (currentFilter === 'winners') {
+      racesList.innerHTML = `
+        <div class="empty-filter-state">
+          <div class="empty-filter-icon">🏆</div>
+          <div class="empty-filter-title">No Winning Bets on This Day</div>
+          <div class="empty-filter-msg">
+            ${currentRaces.some(r => r.has_bet)
+              ? 'Races for this date have completed, but value bet selections did not finish in 1st place.'
+              : 'Official race results are pending or no value bets were placed on this date.'}
+          </div>
+          <button class="filter-chip active" style="margin-top:14px;padding:8px 16px;cursor:pointer;" onclick="setRaceFilter('all')">
+            ← View All ${currentRaces.length} Races
+          </button>
+        </div>
+      `;
+    } else if (currentFilter === 'bets') {
       racesList.innerHTML = `
         <div class="empty-filter-state">
           <div class="empty-filter-icon">🛡️</div>
@@ -656,11 +991,12 @@ function renderRaceCardsList() {
 }
 
 // ── Render the race panel for a date ──
-function renderRacePanel(races, manifestEntry, dateStr) {
+async function renderRacePanel(races, manifestEntry, dateStr) {
   currentRaces = races;
   const bets = manifestEntry.bets || races.filter(r => r.has_bet).length;
-  const winners = manifestEntry.winners || 0;
-  const strikeRate = manifestEntry.strike_rate;
+  const wonCount = races.filter(r => r.bet_won).length;
+  const winners = manifestEntry.winners != null ? manifestEntry.winners : wonCount;
+  const strikeRate = manifestEntry.strike_rate != null ? manifestEntry.strike_rate : (bets > 0 ? round1((wonCount / bets) * 100) : null);
   const totalRaces = manifestEntry.races || races.length;
   const predictedRacesCount = races.filter(r => r.has_predictions).length;
   const unpredictedRacesCount = totalRaces - predictedRacesCount;
@@ -681,9 +1017,12 @@ function renderRacePanel(races, manifestEntry, dateStr) {
     <div class="summary-grid">
       ${statCard('RACES', totalRaces, '', 'stat-accent')}
       ${statCard('VALUE BETS', worthItCount, worthItCount === 0 ? 'No positive EV edge' : `${worthItCount} value picks (click to filter)`, worthItCount > 0 ? 'stat-positive stat-clickable' : 'stat-neutral', 'onclick="setRaceFilter(\'bets\')"' )}
-      ${bets > 0 ? statCard('WINNERS', winners, strikeRate !== null ? `${strikeRate}% strike rate` : '', winners > 0 ? 'stat-positive' : 'stat-negative') : ''}
+      ${bets > 0 ? statCard('WINNERS', winners, strikeRate !== null ? `${strikeRate}% strike rate (click to filter)` : (wonCount > 0 ? `${round1(wonCount/worthItCount*100)}% strike rate (click to filter)` : ''), (winners > 0 || wonCount > 0) ? 'stat-positive stat-clickable' : 'stat-negative', 'onclick="setRaceFilter(\'winners\')"' ) : ''}
       ${statCard('VENUES', venueList.length, '', 'stat-neutral')}
     </div>
+
+    <!-- Daily Multi-Strategy Performance & Returns Card -->
+    <div id="daily-returns-container" style="display:none;margin-bottom:18px;"></div>
   `;
 
   if (races.length === 0) {
@@ -739,7 +1078,7 @@ function renderRacePanel(races, manifestEntry, dateStr) {
     <div class="section-header">
       <div class="section-title-group">
         <span class="section-title">Races — ${formatDate(dateStr)}</span>
-        <span class="section-count">${races.length} races ${worthItCount > 0 ? `· <strong style="color:#4ade80">${worthItCount} value bet${worthItCount === 1 ? '' : 's'}</strong>` : ''}</span>
+        <span class="section-count">${races.length} races ${worthItCount > 0 ? `· <strong style="color:#4ade80">${worthItCount} value bet${worthItCount === 1 ? '' : 's'}</strong>` : ''} ${wonCount > 0 ? `· <strong style="color:#fde047">🏆 ${wonCount} won</strong>` : ''}</span>
       </div>
       <div class="section-actions">
         ${(dateStr <= toDateStr(new Date())) ? `
@@ -763,6 +1102,11 @@ function renderRacePanel(races, manifestEntry, dateStr) {
         <button class="filter-chip filter-chip-worth ${currentFilter === 'bets' ? 'active' : ''} ${worthItCount > 0 ? 'has-bets' : ''}" id="chip-filter-bets" onclick="setRaceFilter('bets')">
           <span class="chip-flame">🔥</span> Value Bets <span class="chip-count">${worthItCount}</span>
         </button>
+        ${wonCount > 0 ? `
+          <button class="filter-chip filter-chip-winners ${currentFilter === 'winners' ? 'active' : ''}" id="chip-filter-winners" onclick="setRaceFilter('winners')">
+            <span class="chip-trophy">🏆</span> Winning Bets <span class="chip-count">${wonCount}</span>
+          </button>
+        ` : ''}
         <button class="filter-chip ${currentFilter === 'turf' ? 'active' : ''}" id="chip-filter-turf" onclick="setRaceFilter('turf')">
           🌱 Turf <span class="chip-count">${races.filter(r => (r.surface || '').toLowerCase() === 'turf' || (r.surface || '').includes('芝')).length}</span>
         </button>
@@ -782,13 +1126,15 @@ function renderRacePanel(races, manifestEntry, dateStr) {
 
   racePanelInner.innerHTML = html;
   renderRaceCardsList();
+  loadDailyReturns(dateStr);
 }
 
 // ── Build a race card (shows bet status immediately from race list data) ──
 function buildRaceCard(race) {
   const card = document.createElement('div');
+  const isWon = Boolean(race.bet_won);
   const isWorthIt = Boolean(race.has_bet);
-  card.className = 'race-card' + (isWorthIt ? ' has-bet has-worth-bet' : '');
+  card.className = 'race-card' + (isWon ? ' has-won-bet has-bet has-worth-bet' : isWorthIt ? ' has-bet has-worth-bet' : '');
   card.dataset.raceId = race.id;
 
   const surface = (race.surface || 'turf').toLowerCase();
@@ -799,21 +1145,31 @@ function buildRaceCard(race) {
   const dist     = race.distance ? `${race.distance}m` : '';
   const venue    = race.course_name || '';
   const postTime = race.post_time ? race.post_time.slice(0, 5) : '';
+  const isFinished = Boolean(race.is_finished || isWon || race.bet_finish_pos != null);
+  const oddsTime = formatOddsTime(race.odds_updated_at || race.odds_as_of || race.pred_created_at);
+  const oddsTagTitle = isFinished
+    ? `Official closing SP odds locked at race post time (${escHtml(oddsTime)} JST). Predictions evaluated with official closing odds.`
+    : `Live market odds captured as of ${escHtml(oddsTime)} JST`;
+  const oddsTagLabel = isFinished ? `⏱ Final: ${escHtml(oddsTime)}` : `⏱ Odds: ${escHtml(oddsTime)}`;
 
   // Bet tag — visible immediately from race list data
-  const betTag = isWorthIt
-    ? `<span class="tag tag-worth-bet"><span class="flame-icon">🔥</span> VALUE BET</span>`
-    : race.has_predictions
-      ? `<span class="tag tag-predicted" style="opacity:0.65">Predicted (Pass)</span>`
-      : `<span class="tag tag-nobets" style="opacity:0.5">No bet</span>`;
+  const betTag = isWon
+    ? `<span class="tag tag-won"><span class="trophy-icon">🏆</span> BET WON</span>`
+    : isWorthIt
+      ? `<span class="tag tag-worth-bet"><span class="flame-icon">🔥</span> VALUE BET</span>`
+      : race.has_predictions
+        ? `<span class="tag tag-predicted" style="opacity:0.65">Predicted (Pass)</span>`
+        : `<span class="tag tag-nobets" style="opacity:0.5">No bet</span>`;
 
-  // Bet preview line (horse name + odds + EV) shown in header if available
+  // Bet preview line (horse name + odds + EV or Payout) shown in header if available
   const betPreview = isWorthIt && race.bet_horse
-    ? `<span class="bet-preview worth-it">
+    ? `<span class="bet-preview ${isWon ? 'won' : 'worth-it'}">
          <span class="bet-horse-num">#${race.bet_post_position}</span>
          <span class="bet-horse-name">${escHtml(race.bet_horse)}</span>
          <span class="bet-odds">@${(race.bet_odds||0).toFixed(1)}x</span>
-         <span class="bet-ev">${race.bet_ev > 0 ? '+' : ''}${(race.bet_ev * 100).toFixed(0)}% EV</span>
+         ${isWon
+           ? `<span class="bet-won-pill">✅ 1st · +¥${(race.bet_payout || Math.round((race.bet_odds||0)*1000)).toLocaleString()}</span>`
+           : `<span class="bet-ev">${race.bet_ev > 0 ? '+' : ''}${(race.bet_ev * 100).toFixed(0)}% EV</span>`}
        </span>`
     : '';
 
@@ -821,17 +1177,18 @@ function buildRaceCard(race) {
   // Show full "▶ Predict" when no predictions exist yet; subtle "↺" re-run icon otherwise.
   const predictBtn = !race.has_predictions
     ? `<button class="predict-btn" id="btn-predict-${race.id}" onclick="event.stopPropagation(); runPredictionsForRace(${race.id}, '${race.date}')">▶ Predict</button>`
-    : `<button class="predict-btn predict-btn-rerun" id="btn-predict-${race.id}" onclick="event.stopPropagation(); runPredictionsForRace(${race.id}, '${race.date}')" title="Re-run with latest odds">↺</button>`;
+    : `<button class="predict-btn predict-btn-rerun" id="btn-predict-${race.id}" onclick="event.stopPropagation(); runPredictionsForRace(${race.id}, '${race.date}')" title="Re-run with latest odds (odds recorded at ${oddsTime})">↺</button>`;
 
   card.innerHTML = `
     <div class="race-header" id="race-header-${race.id}">
-      <div class="race-num${isWorthIt ? ' race-num-bet' : ''}">${race.race_number}</div>
+      <div class="race-num${isWon ? ' race-num-won' : isWorthIt ? ' race-num-bet' : ''}">${isWon ? '🏆 ' : ''}${race.race_number}</div>
       <div class="race-title-block">
         <div class="race-name">${escHtml(race.race_name_jp || race.race_name || 'Race')}</div>
         <div class="race-meta">
           ${venue    ? `<span>📍 ${escHtml(venue)}</span>` : ''}
           ${dist     ? `<span>📏 ${dist}</span>`           : ''}
           ${postTime ? `<span>🕐 ${postTime}</span>`            : ''}
+          ${oddsTime ? `<span class="odds-time-tag" title="${oddsTagTitle}">${oddsTagLabel}</span>` : ''}
           ${betPreview}
         </div>
       </div>
@@ -860,7 +1217,11 @@ async function toggleRace(card, race) {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         raceDetailCache[race.id] = await res.json();
       } catch (e) {
-        body.innerHTML = `<div class="race-body-loading" style="color:var(--red)">⚠️ Failed to load: ${escHtml(String(e))}</div>`;
+        delete raceDetailCache[race.id];
+        body.innerHTML = `<div class="race-body-loading" style="color:var(--red);display:flex;align-items:center;justify-content:center;gap:10px;">
+          <span>⚠️ Failed to load: ${escHtml(String(e))}</span>
+          <button class="btn btn-sm" onclick="event.stopPropagation(); delete raceDetailCache[${race.id}]; const c = document.getElementById('race-card-${race.id}'); if (c) { c.classList.remove('open'); toggleRace(c, {id:${race.id}, date:'${race.date}'}); }" style="padding:3px 10px;font-size:11px;background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.3);color:var(--red);">🔄 Retry</button>
+        </div>`;
         return;
       }
     }
@@ -1032,7 +1393,7 @@ async function updateBettingAnalysisView(raceId, budget, detail, mode) {
   } catch (e) {
     console.warn(`Failed to fetch betting analysis for race ${raceId}:`, e);
     // Render fallback from local detail data if available
-    renderLocalBettingAnalysisFallback(container, detail || raceDetailCache[raceId], raceId, currentBudget);
+    renderLocalBettingAnalysisFallback(container, detail || raceDetailCache[raceId], raceId, currentBudget, currentMode);
   }
 }
 
@@ -1042,6 +1403,8 @@ function renderBettingAnalysisHtml(container, data, raceId, currentBudget, curre
   const staking = data.staking_plan || {};
   const tickets = staking.tickets || [];
   const pricing = data.pricing_table || [];
+  const allStratResults = data.all_strategies_results || {};
+  const strategyResult = data.strategy_result || allStratResults[currentMode] || staking.strategy_result || {};
   const strategyMeta = data.strategy_meta || {
     name: 'Adaptive AI Router',
     icon: '🧠',
@@ -1061,7 +1424,7 @@ function renderBettingAnalysisHtml(container, data, raceId, currentBudget, curre
     </button>
   `).join('');
 
-  // Strategy Mode Pills
+  // Strategy Mode Pills with live race outcome badges (if race is settled)
   const strategyModes = [
     { id: 'auto', label: 'AI Auto (Optimal)', icon: '🧠' },
     { id: 'hybrid', label: 'Balanced (Win + Exotics)', icon: '🎯' },
@@ -1071,15 +1434,72 @@ function renderBettingAnalysisHtml(container, data, raceId, currentBudget, curre
 
   const strategyPillsHtml = `
     <div class="strategy-mode-bar">
-      ${strategyModes.map(m => `
-        <button class="strategy-mode-btn ${m.id === currentMode ? 'active' : ''}"
-                onclick="updateBettingAnalysisView(${raceId}, ${currentBudget}, null, '${m.id}')">
-          <span>${m.icon}</span>
-          <span>${m.label}</span>
-        </button>
-      `).join('')}
+      ${strategyModes.map(m => {
+        const mRes = allStratResults[m.id];
+        let resBadgeHtml = '';
+        if (mRes && mRes.is_settled && mRes.staked > 0) {
+          const isProfitable = mRes.profit > 0;
+          const isZero = mRes.profit === 0;
+          const sign = isProfitable ? '+' : '';
+          const cls = isProfitable ? 'won' : isZero ? 'push' : 'lost';
+          resBadgeHtml = `<span class="strat-btn-res-pill ${cls}">${isProfitable ? '✅ ' : isZero ? '⚖️ ' : '❌ '}${sign}¥${mRes.profit.toLocaleString()}</span>`;
+        }
+        return `
+          <button class="strategy-mode-btn ${m.id === currentMode ? 'active' : ''}"
+                  onclick="updateBettingAnalysisView(${raceId}, ${currentBudget}, null, '${m.id}')">
+            <span>${m.icon}</span>
+            <span>${m.label}</span>
+            ${resBadgeHtml}
+          </button>
+        `;
+      }).join('')}
     </div>
   `;
+
+  // Strategy Outcome Summary Banner (shown when race results are recorded)
+  let strategyOutcomeBannerHtml = '';
+  if (strategyResult && strategyResult.is_settled && strategyResult.staked > 0) {
+    const isWin = strategyResult.profit > 0;
+    const isZero = strategyResult.profit === 0;
+    const profitSign = strategyResult.profit > 0 ? '+' : '';
+    const statusCls = isWin ? 'strat-outcome-win' : isZero ? 'strat-outcome-push' : 'strat-outcome-loss';
+    const statusIcon = isWin ? '🏆' : isZero ? '⚖️' : '❌';
+    const statusText = isWin ? 'STRATEGY WON' : isZero ? 'BREAK EVEN' : 'STRATEGY LOST';
+    const roiPill = isWin
+      ? `<span class="outcome-roi positive">+${strategyResult.roi_pct}% ROI</span>`
+      : !isZero ? `<span class="outcome-roi negative">${strategyResult.roi_pct}% ROI</span>` : '';
+
+    strategyOutcomeBannerHtml = `
+      <div class="strategy-outcome-banner ${statusCls}">
+        <div class="outcome-main-group">
+          <div class="outcome-status-badge">
+            <span class="outcome-icon">${statusIcon}</span>
+            <span class="outcome-title">${statusText}</span>
+            ${roiPill}
+          </div>
+          <div class="outcome-subtitle">
+            ${strategyResult.tickets_won} of ${strategyResult.tickets_count} ticket${strategyResult.tickets_count === 1 ? '' : 's'} hit
+          </div>
+        </div>
+        <div class="outcome-numbers-grid">
+          <div class="outcome-stat">
+            <span class="stat-lbl">STAKED</span>
+            <span class="stat-val">¥${strategyResult.staked.toLocaleString()}</span>
+          </div>
+          <div class="outcome-stat">
+            <span class="stat-lbl">PAYOUT</span>
+            <span class="stat-val ${isWin ? 'text-green font-bold' : ''}">¥${strategyResult.payout.toLocaleString()}</span>
+          </div>
+          <div class="outcome-stat">
+            <span class="stat-lbl">NET P&L</span>
+            <span class="stat-val ${isWin ? 'text-green font-bold' : isZero ? 'text-neutral' : 'text-red'}">
+              ${profitSign}¥${strategyResult.profit.toLocaleString()}
+            </span>
+          </div>
+        </div>
+      </div>
+    `;
+  }
 
   // Strategy Meta Insights Banner
   const strategyBannerHtml = `
@@ -1096,27 +1516,111 @@ function renderBettingAnalysisHtml(container, data, raceId, currentBudget, curre
     </div>
   `;
 
-  // Staking tickets
+  // Staking tickets with settlement & runner finish details
   const ticketsHtml = tickets.map(t => {
     const typeCls = `ticket-type-${t.type || '単勝'}`;
     const probPct = Math.round((t.prob || 0) * 100);
-    const mktInfo = t.market_odds ? ` · Mkt: <strong>${t.market_odds}x</strong>` : '';
+    const isLivePool = t.odds_source === 'live_pool';
+    const sourceBadge = isLivePool
+      ? `<span class="odds-source-badge live" title="Live JRA betting pool dividend">LIVE POOL</span>`
+      : `<span class="odds-source-badge est" title="Theoretical estimate synthesized from Win odds">EST</span>`;
+    
+    let mktInfo = '';
+    if (t.market_odds) {
+      const estHint = (isLivePool && t.estimated_market_odds && t.estimated_market_odds !== t.market_odds)
+        ? ` <span class="est-hint" title="Theoretical Harville Model baseline">(Est: ${t.estimated_market_odds}x)</span>`
+        : '';
+      mktInfo = ` · ${isLivePool ? 'Mkt' : 'Est. Mkt'}: <strong>${t.market_odds}x</strong> ${sourceBadge}${estHint}`;
+    }
+    
     const evInfo = t.ev != null ? ` · EV: <strong style="color:${t.ev > 0 ? '#22c55e' : '#f87171'}">${t.ev > 0 ? '+' : ''}${(t.ev * 100).toFixed(0)}%</strong>` : '';
+    
+    // Settlement Information
+    let cardStateClass = '';
+    let resultTagHtml = '';
+    let runnerFinishBadgesHtml = '';
+    let stakePayoutHtml = '';
+
+    if (t.is_settled) {
+      if (t.won) {
+        cardStateClass = 'ticket-won';
+        const netProfit = t.profit != null ? t.profit : (t.payout - t.stake);
+        const netSign = netProfit > 0 ? '+' : '';
+        resultTagHtml = `<span class="ticket-result-pill won">✅ WON · +¥${(t.payout || 0).toLocaleString()} (Net ${netSign}¥${netProfit.toLocaleString()})</span>`;
+      } else {
+        cardStateClass = 'ticket-lost';
+        resultTagHtml = `<span class="ticket-result-pill lost">❌ LOST · ¥0 (Net -¥${(t.stake || 0).toLocaleString()})</span>`;
+      }
+
+      // Runner finish indicators
+      if (t.runner_finishes && t.runner_finishes.length > 0) {
+        runnerFinishBadgesHtml = `
+          <div class="ticket-runner-finishes">
+            ${t.runner_finishes.map(rf => {
+              const pos = rf.finish_pos;
+              let posHtml;
+              if (pos === 1) posHtml = '<span class="finish-pill finish-1">🥇 1st</span>';
+              else if (pos === 2) posHtml = '<span class="finish-pill finish-2">🥈 2nd</span>';
+              else if (pos === 3) posHtml = '<span class="finish-pill finish-3">🥉 3rd</span>';
+              else if (pos != null) posHtml = `<span class="finish-pill finish-other">${pos}th</span>`;
+              else posHtml = '<span class="finish-pill finish-dnf">—</span>';
+              return `<span class="ticket-runner-tag">#${rf.post_position} ${escHtml(rf.horse_name)} ${posHtml}</span>`;
+            }).join(' ')}
+          </div>
+        `;
+      }
+
+      // Stake & Payout box
+      if (t.won) {
+        stakePayoutHtml = `
+          <div class="ticket-stake-payout won">
+            <div class="ticket-stake-sub">Staked ¥${(t.stake || 0).toLocaleString()}</div>
+            <div class="ticket-payout-val">+¥${(t.payout || 0).toLocaleString()}</div>
+          </div>
+        `;
+      } else {
+        stakePayoutHtml = `
+          <div class="ticket-stake-payout lost">
+            <div class="ticket-stake-sub">Staked ¥${(t.stake || 0).toLocaleString()}</div>
+            <div class="ticket-payout-val zero">¥0</div>
+          </div>
+        `;
+      }
+    } else {
+      stakePayoutHtml = `<div class="ticket-stake">¥${(t.stake || 0).toLocaleString()}</div>`;
+    }
+
     return `
-      <div class="ticket-card">
+      <div class="ticket-card ${cardStateClass}">
         <div class="ticket-left">
-          <div style="display:flex;align-items:center;gap:6px">
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
             <span class="ticket-type-badge ${typeCls}">${escHtml(t.type)}</span>
             <span class="ticket-display">${escHtml(t.label.split('—')[1]?.trim() || t.label)}</span>
+            ${resultTagHtml}
           </div>
           <div class="ticket-stats">Win chance: <strong>${probPct}%</strong> · Fair: <strong>${t.fair_odds}x</strong>${mktInfo}${evInfo}</div>
+          ${runnerFinishBadgesHtml}
         </div>
-        <div class="ticket-stake">¥${(t.stake || 0).toLocaleString()}</div>
+        ${stakePayoutHtml}
       </div>
     `;
   }).join('');
 
-  // Pricing Table rows
+  // Simple Bet settlement info
+  let simpleBetStatusHtml = '';
+  const sb = staking.simple_bet;
+  if (sb && sb.is_settled) {
+    if (sb.won) {
+      const net = sb.profit != null ? sb.profit : (sb.payout - sb.stake);
+      simpleBetStatusHtml = ` <strong style="color:#4ade80;margin-left:6px;">→ ✅ WON +¥${(sb.payout||0).toLocaleString()} (Net +¥${net.toLocaleString()} · 🥇 1st)</strong>`;
+    } else {
+      const fpos = sb.runner_finishes?.[0]?.finish_pos;
+      const fposStr = fpos ? `Finished ${ordinal(fpos)}` : 'Did not place 1st';
+      simpleBetStatusHtml = ` <strong style="color:#f87171;margin-left:6px;">→ ❌ LOST (${fposStr})</strong>`;
+    }
+  }
+
+  // Pricing Table rows with Finish Positions & Winner Highlights
   const pricingRowsHtml = pricing.map(h => {
     const verdictCls = getVerdictBadgeClass(h.verdict);
     const probPct = h.win_prob_pct || Math.round((h.win_prob || 0) * 100);
@@ -1127,8 +1631,19 @@ function renderBettingAnalysisHtml(container, data, raceId, currentBudget, curre
       ? `${h.market_odds}x`
       : `<span style="color:var(--text-dim);font-weight:normal">Pending</span>`;
 
+    const finishPos = h.finish_pos;
+    let finishBadgeHtml = '';
+    if (finishPos === 1) finishBadgeHtml = '<span class="finish-badge finish-1">🥇 1st</span>';
+    else if (finishPos === 2) finishBadgeHtml = '<span class="finish-badge finish-2">🥈 2nd</span>';
+    else if (finishPos === 3) finishBadgeHtml = '<span class="finish-badge finish-3">🥉 3rd</span>';
+    else if (finishPos != null) finishBadgeHtml = `<span class="finish-badge finish-other">${finishPos}th</span>`;
+    else finishBadgeHtml = '<span class="finish-badge finish-dnf" style="opacity:0.4">—</span>';
+
+    const isRowWinner = finishPos === 1;
+    const rowCls = isRowWinner ? 'pricing-row-winner is-winner' : '';
+
     return `
-      <tr>
+      <tr class="${rowCls}">
         <td>${ppHtml}</td>
         <td>
           <div class="horse-name">${escHtml(h.horse_name)}</div>
@@ -1141,82 +1656,89 @@ function renderBettingAnalysisHtml(container, data, raceId, currentBudget, curre
         </td>
         <td style="font-weight:600;color:#93c5fd">${h.fair_odds}x</td>
         <td style="font-weight:600">${mktOddsHtml}</td>
+        <td>${finishBadgeHtml}</td>
         <td><span class="verdict-badge ${verdictCls}">${escHtml(h.verdict)}</span></td>
       </tr>
     `;
   }).join('');
 
-    let ticketsBodyHtml = '';
-    const hasMktOdds = pricing.some(h => h.market_odds != null && h.market_odds > 1.0);
-    if (!hasMktOdds) {
-      ticketsBodyHtml = `
-        <div style="background:rgba(99,102,241,0.08);border:1px solid rgba(99,102,241,0.25);border-radius:8px;padding:14px 18px;margin-bottom:14px;display:flex;align-items:center;gap:12px;">
-          <span style="font-size:22px;">⏳</span>
-          <div>
-            <div style="font-size:14px;font-weight:700;color:#a5b4fc;margin-bottom:2px;">Market Odds Pending (Draw & Betting Opens Friday)</div>
-            <div style="font-size:12px;color:#94a3b8;line-height:1.4;">Official JRA betting pools open Friday evening. Model win probabilities and fair decimal odds are calculated in the table below. Ticket staking and Kelly sizing will unlock once market odds are published.</div>
-          </div>
+  let ticketsBodyHtml = '';
+  const hasMktOdds = pricing.some(h => h.market_odds != null && h.market_odds > 1.0);
+  if (!hasMktOdds) {
+    ticketsBodyHtml = `
+      <div style="background:rgba(99,102,241,0.08);border:1px solid rgba(99,102,241,0.25);border-radius:8px;padding:14px 18px;margin-bottom:14px;display:flex;align-items:center;gap:12px;">
+        <span style="font-size:22px;">⏳</span>
+        <div>
+          <div style="font-size:14px;font-weight:700;color:#a5b4fc;margin-bottom:2px;">Market Odds Pending (Draw & Betting Opens Friday)</div>
+          <div style="font-size:12px;color:#94a3b8;line-height:1.4;">Official JRA betting pools open Friday evening. Model win probabilities and fair decimal odds are calculated in the table below. Ticket staking and Kelly sizing will unlock once market odds are published.</div>
         </div>
-      `;
-    } else if (tickets.length === 0) {
-      ticketsBodyHtml = `
-        <div style="background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.25);border-radius:8px;padding:14px 18px;margin-bottom:14px;display:flex;align-items:center;gap:12px;">
-          <span style="font-size:22px;">🛑</span>
-          <div>
-            <div style="font-size:14px;font-weight:700;color:#fca5a5;margin-bottom:2px;">Pass — No Mathematical Edge</div>
-            <div style="font-size:12px;color:#94a3b8;line-height:1.4;">Every horse and exotic combination in this race is fairly priced or underpriced by the market. Bankroll is preserved for positive-EV opportunities.</div>
-          </div>
-        </div>
-      `;
-    } else {
-      ticketsBodyHtml = `
-        <div class="ticket-grid">
-          ${ticketsHtml}
-        </div>
-        <div class="simple-bet-box">
-          <span class="simple-bet-icon">💡</span>
-          <span>${escHtml(staking.simple_bet_label || 'Simple bet option available')}</span>
-        </div>
-      `;
-    }
-
-    container.innerHTML = `
-      <!-- 1. Executive Staking Card -->
-      <div class="staking-card">
-        <div class="staking-header">
-          <div class="staking-headline-group">
-            <span class="staking-title">🎯 Executive Betting Portfolio</span>
-            <div class="staking-recommendation">
-              <span>👑 ${escHtml(headline.recommended_horse || 'Top Pick')}</span>
-              <span style="font-size:13px;font-weight:600;color:#a5b4fc;background:rgba(99,102,241,0.15);padding:2px 8px;border-radius:12px;border:1px solid rgba(99,102,241,0.3);">${escHtml(headline.action || 'to win')}</span>
-            </div>
-          </div>
-          <div class="staking-budget-control">
-            <span class="budget-label">Budget:</span>
-            <div class="budget-chips-wrap">
-              ${budgetChipsHtml}
-              <div class="custom-budget-container">
-                <span class="custom-budget-curr">¥</span>
-                <input type="number"
-                       class="custom-budget-input"
-                       id="custom-budget-input-${raceId}"
-                       min="100"
-                       max="1000000"
-                       step="500"
-                       placeholder="Custom"
-                       value="${currentBudget}"
-                       onchange="updateBettingAnalysisView(${raceId}, Math.max(100, parseInt(this.value)||1000), null, '${currentMode}')"
-                       onkeydown="if(event.key==='Enter'){updateBettingAnalysisView(${raceId}, Math.max(100, parseInt(this.value)||1000), null, '${currentMode}');}"
-                       title="Type custom bankroll amount in yen">
-              </div>
-            </div>
-          </div>
-        </div>
-
-        ${strategyPillsHtml}
-        ${strategyBannerHtml}
-        ${ticketsBodyHtml}
       </div>
+    `;
+  } else if (tickets.length === 0) {
+    ticketsBodyHtml = `
+      <div style="background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.25);border-radius:8px;padding:14px 18px;margin-bottom:14px;display:flex;align-items:center;gap:12px;">
+        <span style="font-size:22px;">🛑</span>
+        <div>
+          <div style="font-size:14px;font-weight:700;color:#fca5a5;margin-bottom:2px;">Pass — No Mathematical Edge</div>
+          <div style="font-size:12px;color:#94a3b8;line-height:1.4;">Every horse and exotic combination in this race is fairly priced or underpriced by the market. Bankroll is preserved for positive-EV opportunities.</div>
+        </div>
+      </div>
+    `;
+  } else {
+    ticketsBodyHtml = `
+      <div class="ticket-grid">
+        ${ticketsHtml}
+      </div>
+      <div class="simple-bet-box">
+        <span class="simple-bet-icon">💡</span>
+        <span>${escHtml(staking.simple_bet_label || 'Simple bet option available')}${simpleBetStatusHtml}</span>
+      </div>
+    `;
+  }
+
+  const oddsTime = formatOddsTime(data.odds_as_of || data.odds_updated_at || raceDetailCache[raceId]?.race?.odds_as_of || raceDetailCache[raceId]?.race?.odds_updated_at);
+  const oddsAsOfHtml = oddsTime
+    ? `<span class="odds-as-of-badge" title="Market odds captured as of ${escHtml(oddsTime)}">⏱ Odds as of <strong>${escHtml(oddsTime)}</strong></span>`
+    : '';
+
+  container.innerHTML = `
+    <!-- 1. Executive Staking Card -->
+    <div class="staking-card">
+      <div class="staking-header">
+        <div class="staking-headline-group">
+          <span class="staking-title">🎯 Executive Betting Portfolio</span>
+          <div class="staking-recommendation">
+            <span>👑 ${escHtml(headline.recommended_horse || 'Top Pick')}</span>
+            <span style="font-size:13px;font-weight:600;color:#a5b4fc;background:rgba(99,102,241,0.15);padding:2px 8px;border-radius:12px;border:1px solid rgba(99,102,241,0.3);">${escHtml(headline.action || 'to win')}</span>
+          </div>
+        </div>
+        <div class="staking-budget-control">
+          <span class="budget-label">Budget:</span>
+          <div class="budget-chips-wrap">
+            ${budgetChipsHtml}
+            <div class="custom-budget-container">
+              <span class="custom-budget-curr">¥</span>
+              <input type="number"
+                     class="custom-budget-input"
+                     id="custom-budget-input-${raceId}"
+                     min="100"
+                     max="1000000"
+                     step="500"
+                     placeholder="Custom"
+                     value="${currentBudget}"
+                     onchange="updateBettingAnalysisView(${raceId}, Math.max(100, parseInt(this.value)||1000), null, '${currentMode}')"
+                     onkeydown="if(event.key==='Enter'){updateBettingAnalysisView(${raceId}, Math.max(100, parseInt(this.value)||1000), null, '${currentMode}');}"
+                     title="Type custom bankroll amount in yen">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      ${strategyPillsHtml}
+      ${strategyOutcomeBannerHtml}
+      ${strategyBannerHtml}
+      ${ticketsBodyHtml}
+    </div>
 
     <!-- 2. My Pricing Card -->
     <div class="pricing-card">
@@ -1224,6 +1746,7 @@ function renderBettingAnalysisHtml(container, data, raceId, currentBudget, curre
         <div class="pricing-title">
           <span>📊 Fair Odds Pricing & Analytical Verdicts</span>
         </div>
+        ${oddsAsOfHtml}
       </div>
       <div class="table-wrap">
         <table>
@@ -1233,7 +1756,8 @@ function renderBettingAnalysisHtml(container, data, raceId, currentBudget, curre
               <th>Horse</th>
               <th>Win Chance</th>
               <th>Fair Odds</th>
-              <th>Market Odds</th>
+              <th>Market Odds${oddsTime ? ` <span class="odds-col-time">(${escHtml(oddsTime)})</span>` : ''}</th>
+              <th>Finish</th>
               <th>Verdict</th>
             </tr>
           </thead>
@@ -1261,7 +1785,7 @@ function getVerdictBadgeClass(verdict) {
 }
 
 // ── Local Fallback for offline/cached states ──
-function renderLocalBettingAnalysisFallback(container, detail, raceId, budget) {
+function renderLocalBettingAnalysisFallback(container, detail, raceId, budget, mode = 'auto') {
   const entries = detail?.entries || [];
   const predictions = detail?.predictions || [];
   const predMap = {};
@@ -1289,11 +1813,51 @@ function renderLocalBettingAnalysisFallback(container, detail, raceId, budget) {
       market_odds: mkt,
       ev: ev,
       verdict: verdict,
+      finish_pos: e.finish_pos,
     };
   });
 
   priced.sort((a, b) => b.win_prob - a.win_prob);
-  const anchor = priced.find(p => p.ev >= 0.05) || priced[0] || { post_position: 1, horse_name: "Top Runner", win_prob: 0.25, fair_odds: 4.0 };
+  const anchor = priced.find(p => p.ev >= 0.05) || priced[0] || { post_position: 1, horse_name: "Top Runner", win_prob: 0.25, fair_odds: 4.0, finish_pos: null };
+
+  const isSettled = entries.some(e => e.finish_pos != null);
+  const anchorWon = anchor.finish_pos === 1;
+  const anchorPayout = anchorWon ? Math.round(budget * (anchor.market_odds || anchor.fair_odds)) : 0;
+  const anchorProfit = anchorPayout - budget;
+
+  const tickets = [
+    {
+      type: "単勝",
+      type_en: "win",
+      selection: [anchor.post_position],
+      selection_display: `No. ${anchor.post_position} 単勝`,
+      label: `¥${budget.toLocaleString()} — No. ${anchor.post_position} 単勝`,
+      stake: budget,
+      prob: anchor.win_prob,
+      fair_odds: anchor.fair_odds,
+      market_odds: anchor.market_odds,
+      ev: anchor.ev,
+      is_settled: isSettled,
+      won: anchorWon,
+      payout: anchorPayout,
+      profit: anchorProfit,
+      roi_pct: round1(anchorProfit / budget * 100),
+      runner_finishes: [
+        { post_position: anchor.post_position, finish_pos: anchor.finish_pos, horse_name: anchor.horse_name }
+      ],
+    }
+  ];
+
+  const stratResult = {
+    is_settled: isSettled,
+    staked: budget,
+    payout: anchorPayout,
+    profit: anchorProfit,
+    roi_pct: round1(anchorProfit / budget * 100),
+    status: anchorWon ? "won" : "lost",
+    tickets_won: anchorWon ? 1 : 0,
+    tickets_count: 1,
+  };
 
   const data = {
     headline: {
@@ -1302,24 +1866,25 @@ function renderLocalBettingAnalysisFallback(container, detail, raceId, budget) {
       action: "to win",
       summary: `My bet: No. ${anchor.post_position} ${anchor.horse_name} to win`,
     },
+    strategy_result: stratResult,
+    all_strategies_results: {
+      auto: stratResult,
+      pure_win: stratResult,
+      hybrid: stratResult,
+      dutching: stratResult,
+    },
     staking_plan: {
       budget: budget,
-      tickets: [
-        {
-          type: "単勝",
-          selection: [anchor.post_position],
-          label: `¥${Math.round(budget * 0.6 / 100) * 100} — No. ${anchor.post_position} 単勝`,
-          stake: Math.round(budget * 0.6 / 100) * 100,
-          prob: anchor.win_prob,
-          fair_odds: anchor.fair_odds,
-        }
-      ],
+      tickets: tickets,
+      simple_bet: tickets[0],
       simple_bet_label: `If you only want one uncomplicated bet: ¥${budget.toLocaleString()} on No. ${anchor.post_position} 単勝.`,
+      strategy_result: stratResult,
     },
     pricing_table: priced,
+    odds_as_of: detail?.race?.odds_as_of || detail?.race?.odds_updated_at || detail?.predictions?.[0]?.created_at,
   };
 
-  renderBettingAnalysisHtml(container, data, raceId, budget);
+  renderBettingAnalysisHtml(container, data, raceId, budget, mode);
 }
 
 
@@ -1430,6 +1995,32 @@ function escHtml(s) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+function formatOddsTime(ts) {
+  if (!ts) return '';
+  const s = String(ts).trim();
+  if (!s || s === 'None' || s === 'null') return '';
+
+  // Format "YYYY-MM-DD HH:MM:SS" (Netkeiba JST timestamp)
+  if (s.includes(' ') && s.includes(':')) {
+    const timePart = s.split(' ')[1];
+    const parts = timePart.split(':');
+    return `${parts[0]}:${parts[1]}`;
+  }
+  // ISO format "YYYY-MM-DDTHH:MM:SS..." (UTC created_at)
+  if (s.includes('T')) {
+    const d = new Date(s.endsWith('Z') ? s : s + 'Z');
+    if (!isNaN(d.getTime())) {
+      // JST is UTC+9
+      const jstHours = (d.getUTCHours() + 9) % 24;
+      const jstMins = d.getUTCMinutes();
+      return `${String(jstHours).padStart(2, '0')}:${String(jstMins).padStart(2, '0')}`;
+    }
+  }
+  const match = s.match(/(\d{1,2}):(\d{2})/);
+  if (match) return `${match[1].padStart(2, '0')}:${match[2]}`;
+  return s;
 }
 
 // ── Start ──

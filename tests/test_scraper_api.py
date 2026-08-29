@@ -43,3 +43,40 @@ class TestScraperAPI:
             assert data["race_ids"] == [101, 102]
             mock_results.assert_called_once_with("2026-08-23", force=False)
 
+    def test_daily_returns_endpoint(self, client):
+        response = client.get("/api/races/date/2026-08-16/daily-returns")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["date"] == "2026-08-16"
+        assert "strategies" in data
+        assert "auto" in data["strategies"]
+        assert "pure_win" in data["strategies"]
+        assert "hybrid" in data["strategies"]
+        assert "dutching" in data["strategies"]
+        assert data["strategies"]["pure_win"]["bets_won"] > 0
+        assert data["strategies"]["pure_win"]["profit"] > 0
+
+    def test_races_winning_bets_flags(self, client):
+        response = client.get("/api/races?date=2026-08-16&limit=50")
+        assert response.status_code == 200
+        races = response.json()["races"]
+        winning_races = [r for r in races if r.get("bet_won")]
+        assert len(winning_races) == 6
+        for r in winning_races:
+            assert r["bet_finish_pos"] == 1
+            assert r["bet_payout"] > 0
+
+    def test_monthly_returns_endpoint(self, client):
+        response = client.get("/api/portfolio/monthly?month=2026-08")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["month"] == "2026-08"
+        assert "strategies" in data
+        assert "daily_timeline" in data
+        assert len(data["daily_timeline"]) > 0
+        assert "available_months" in data
+        assert "2026-08" in data["available_months"]
+
+
+
+

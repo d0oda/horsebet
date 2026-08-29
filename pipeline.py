@@ -19,6 +19,7 @@ Usage:
 """
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import json
 import logging
 import re
@@ -32,7 +33,7 @@ from sqlalchemy import text
 
 from scraper.db import get_session
 from scraper.netkeiba import scrape_race_list, scrape_race, save_race_to_db
-from scraper.odds_watcher import fetch_win_odds
+from scraper.odds_watcher import fetch_win_odds, fetch_exotic_odds, save_odds_snapshot
 from models.predict_final import predict_with_filters
 from models.paddock_scorer import score_race_paddock
 from results.build_data_json import build_data_json
@@ -191,7 +192,12 @@ def step_odds(date: str, race_ids: list[str]) -> list[int]:
             time.sleep(0.5)
             continue
 
+        official_dt = odds[0].get("official_datetime") or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         with get_session() as session:
+            session.execute(
+                text("UPDATE races SET odds_updated_at = :dt WHERE id = :race_id"),
+                {"dt": official_dt, "race_id": db_id},
+            )
             count = 0
             for o in odds:
                 pp = int(o["combination"])
@@ -206,8 +212,16 @@ def step_odds(date: str, race_ids: list[str]) -> list[int]:
                 count += result.rowcount
             session.commit()
 
+        # Also fetch top exotic pools (quinella, wide, exacta, trio)
+        try:
+            exotics = fetch_exotic_odds(nk_id, bet_types=["quinella", "wide", "exacta", "trio"])
+            if exotics:
+                save_odds_snapshot(nk_id, exotics)
+        except Exception as e:
+            log.warning(f"  [{i}/{len(upcoming_ids)}] R{info.race_number if info else '?'}: exotic fetch failed ({e})")
+
         log.info(f"  [{i}/{len(upcoming_ids)}] R{info.race_number if info else '?'} "
-                 f"({time_str}): {len(odds)} horses updated")
+                 f"({time_str}): {len(odds)} horses updated (with exotics)")
         updated_db_ids.append(db_id)
         time.sleep(0.5)
 
@@ -637,24 +651,22 @@ def step_results(date: str, race_ids: list[str] = None, force: bool = False) -> 
         log.info("  No new results to collect")
         return []
 
-    log.info(f"  Scraping results for {len(finished_ids)} finished races")
-    synced_db_ids = []
+    log.info(f"  Scraping results concurrently for {len(finished_ids)} finished races")
 
-    for i, race_row in enumerate(finished_ids, 1):
-        log.info(f"  [{i}/{len(finished_ids)}] R{race_row.race_number} ({race_row.netkeiba_id})")
+    def _sync_single_race(race_row):
         try:
-            race_data = scrape_race(race_row.netkeiba_id)
+            race_data = scrape_race(race_row.netkeiba_id, results_only=True)
             if not race_data or not race_data.entries:
-                log.warning(f"    No result data yet")
-                time.sleep(0.5)
-                continue
+                return None
 
-            # Update entries with results
+            has_finish = any(e.finish_pos is not None for e in race_data.entries)
+            if not has_finish:
+                return None
+
             with get_session() as session:
-                updated_any = False
                 for entry in race_data.entries:
                     if entry.finish_pos is not None:
-                        session.execute(
+                        entry_row = session.execute(
                             text("""
                                 UPDATE entries
                                 SET finish_pos = :fp, time_secs = :ts,
@@ -662,6 +674,7 @@ def step_results(date: str, race_ids: list[str] = None, force: bool = False) -> 
                                     odds_win = COALESCE(:odds, odds_win),
                                     popularity = COALESCE(:pop, popularity)
                                 WHERE race_id = :rid AND post_position = :pp
+                                RETURNING id
                             """),
                             {
                                 "fp": entry.finish_pos,
@@ -673,17 +686,46 @@ def step_results(date: str, race_ids: list[str] = None, force: bool = False) -> 
                                 "rid": race_row.id,
                                 "pp": entry.post_position,
                             },
-                        )
-                        updated_any = True
+                        ).fetchone()
+                        if entry_row:
+                            entry_id = entry_row[0]
+                            session.execute(
+                                text("""
+                                    INSERT INTO results (
+                                        entry_id, finish_pos, margin, time_secs,
+                                        last_3f_secs, corner_positions
+                                    ) VALUES (
+                                        :entry_id, :finish_pos, :margin, :time_secs,
+                                        :last_3f, :corners
+                                    )
+                                    ON CONFLICT (entry_id) DO UPDATE SET
+                                        finish_pos = COALESCE(EXCLUDED.finish_pos, results.finish_pos),
+                                        margin = COALESCE(EXCLUDED.margin, results.margin),
+                                        time_secs = COALESCE(EXCLUDED.time_secs, results.time_secs),
+                                        last_3f_secs = COALESCE(EXCLUDED.last_3f_secs, results.last_3f_secs),
+                                        corner_positions = COALESCE(EXCLUDED.corner_positions, results.corner_positions)
+                                """),
+                                {
+                                    "entry_id": entry_id,
+                                    "finish_pos": entry.finish_pos,
+                                    "margin": getattr(entry, "margin", None),
+                                    "time_secs": entry.time_secs,
+                                    "last_3f": entry.last_3f_secs,
+                                    "corners": entry.corner_positions,
+                                },
+                            )
                 session.commit()
-                if updated_any:
-                    synced_db_ids.append(race_row.id)
-                log.info(f"    ✅ Results saved ({len(race_data.entries)} entries)")
-
+            log.info(f"    ✅ Results saved for R{race_row.race_number} ({race_row.netkeiba_id})")
+            return race_row.id
         except Exception as e:
-            log.warning(f"    ⚠️ Failed: {e}")
-        time.sleep(0.5)
+            log.warning(f"    ⚠️ Failed R{race_row.race_number} ({race_row.netkeiba_id}): {e}")
+            return None
 
+    workers = min(8, max(1, len(finished_ids)))
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        results = list(executor.map(_sync_single_race, finished_ids))
+
+    synced_db_ids = [rid for rid in results if rid is not None]
     log.info(f"✅ Collected results for {len(synced_db_ids)} races")
 
     if synced_db_ids:

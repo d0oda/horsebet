@@ -72,6 +72,7 @@ class HorsePricing:
     is_favorite: bool          # Model-probability favorite (argmax win_prob)
     is_top_value: bool         # Highest EV horse with prob >= 4% and EV > EV_TOP_VALUE
     is_market_favorite: bool = False  # Market-odds favorite (argmin market_odds)
+    finish_pos: Optional[int] = None  # Official finish position (1 = 1st place)
 
     @property
     def win_prob_pct(self) -> int:
@@ -92,16 +93,17 @@ class HorsePricing:
             "is_favorite": self.is_favorite,
             "is_top_value": self.is_top_value,
             "is_market_favorite": self.is_market_favorite,
+            "finish_pos": self.finish_pos,
         }
 
 
 @dataclass
 class BetTicket:
-    ticket_type: str        # '単勝', '複勝', 'ワイド', '馬連', '馬単', '三連複', '三連単'
-    ticket_type_en: str     # 'win', 'place', 'wide', 'quinella', 'exacta', 'trio', 'trifecta'
-    selection: List[int]    # List of post positions e.g. [18] or [6, 18] or [6, 9, 18]
-    selection_display: str  # Formatted string e.g. "No. 18 単勝", "6–18 ワイド", "6–9–18 三連複"
-    prob: float             # Joint probability of this ticket hitting
+    ticket_type: str = "単勝"        # '単勝', '複勝', 'ワイド', '馬連', '馬単', '三連複', '三連単'
+    ticket_type_en: str = "win"     # 'win', 'place', 'wide', 'quinella', 'exacta', 'trio', 'trifecta'
+    selection: List[int] = field(default_factory=list)    # List of post positions e.g. [18] or [6, 18] or [6, 9, 18]
+    selection_display: str = ""  # Formatted string e.g. "No. 18 単勝", "6–18 ワイド", "6–9–18 三連複"
+    prob: float = 0.0             # Joint probability of this ticket hitting
     # (Audit R7-SIG-2): Optional[float] — PASS tickets have no valid fair odds (1/0 is
     # undefined); None is semantically correct and consistent with market_odds/ev.
     fair_odds: Optional[float] = None  # 1 / prob when well-defined; None for PASS/PENDING
@@ -110,8 +112,22 @@ class BetTicket:
     stake: int = 0          # Yen amount (multiple of 100)
     weight_pct: float = 0.0 # Stake percentage
     label: str = ""         # "¥600 — No. 18 単勝"
+    odds_source: str = "synthetic"  # 'live_pool' or 'synthetic'
+    estimated_market_odds: Optional[float] = None
+    is_settled: bool = False
+    won: Optional[bool] = None
+    payout: int = 0
+    profit: int = 0
+    roi_pct: Optional[float] = None
+    runner_finishes: Optional[List[dict]] = None
 
     def __post_init__(self):
+        if not self.selection_display and self.selection:
+            sel_str = "–".join(str(p) for p in self.selection)
+            if len(self.selection) == 1:
+                self.selection_display = f"No. {self.selection[0]} {self.ticket_type}"
+            else:
+                self.selection_display = f"{sel_str} {self.ticket_type}"
         if not self.label and self.stake > 0:
             self.label = f"¥{self.stake:,} — {self.selection_display}"
 
@@ -126,8 +142,16 @@ class BetTicket:
             "prob": round(self.prob, 4),
             "fair_odds": self.fair_odds,  # None for PASS/PENDING tickets
             "market_odds": self.market_odds,
+            "estimated_market_odds": self.estimated_market_odds or self.market_odds,
+            "odds_source": self.odds_source,
             "ev": round(self.ev, 4) if self.ev is not None else None,
             "weight_pct": round(self.weight_pct, 4),
+            "is_settled": self.is_settled,
+            "won": self.won,
+            "payout": self.payout,
+            "profit": self.profit,
+            "roi_pct": self.roi_pct,
+            "runner_finishes": self.runner_finishes or [],
         }
 
 
@@ -219,6 +243,7 @@ def calculate_pricing_breakdown(entries: List[dict]) -> List[HorsePricing]:
             "pp": int(e.get("post_position") or 0),
             "name": str(e.get("horse_name") or ""),
             "name_jp": e.get("horse_name_jp"),
+            "finish_pos": e.get("finish_pos"),
         })
 
     # ---- Step 2: Identify model-probability favorite ----
@@ -363,6 +388,7 @@ def calculate_pricing_breakdown(entries: List[dict]) -> List[HorsePricing]:
             is_favorite=is_fav,
             is_top_value=is_top_val,
             is_market_favorite=is_mkt_fav,
+            finish_pos=item.get("finish_pos"),
         ))
 
     # Sort results by win_prob descending (then post_position)
@@ -585,6 +611,7 @@ def construct_staking_plan(
     pricing: List[HorsePricing],
     budget: int = 1000,
     strategy_mode: str = "hybrid",  # "hybrid", "pure_win", "dutching", "auto"
+    exotic_odds_map: Optional[dict] = None,
 ) -> StakingPlan:
     """
     Constructs an optimal risk-adjusted betting plan for a given budget.
@@ -832,6 +859,7 @@ def construct_staking_plan(
         dutch_weight = 0.35 if strategy_mode == "dutching" else 0.25
 
     # Ticket 1: Primary Win Bet (Anchor)
+    anchor_mkt_source = "live_pool" if (anchor.market_odds is not None and anchor.market_odds > 1.0) else "synthetic"
     candidate_tickets.append({
         "type": "単勝", "type_en": "win",
         "selection": [anchor.post_position],
@@ -839,12 +867,15 @@ def construct_staking_plan(
         "prob": anchor.win_prob,
         "weight": primary_win_weight,
         "market_odds": anchor.market_odds,
+        "estimated_market_odds": anchor.market_odds,
+        "odds_source": anchor_mkt_source,
         "ev": anchor.ev,
         "is_core": True,
     })
 
     # Dutching Ticket (Secondary Value Win)
     if has_dutch and second_v is not None and strategy_mode in ("dutching", "hybrid"):
+        second_mkt_source = "live_pool" if (second_v.market_odds is not None and second_v.market_odds > 1.0) else "synthetic"
         candidate_tickets.append({
             "type": "単勝", "type_en": "win",
             "selection": [second_v.post_position],
@@ -852,6 +883,8 @@ def construct_staking_plan(
             "prob": second_v.win_prob,
             "weight": dutch_weight,
             "market_odds": second_v.market_odds,
+            "estimated_market_odds": second_v.market_odds,
+            "odds_source": second_mkt_source,
             "ev": second_v.ev,
             "is_core": True,
         })
@@ -866,14 +899,24 @@ def construct_staking_plan(
         ex_p = model.exacta_prob(anchor.post_position, c1.post_position)
         ex_mkt_p = mkt_full_model.exacta_prob(anchor.post_position, c1.post_position)
         ex_odds = round((1.0 - TAKEOUT_MAP["exacta"]) / max(0.0001, ex_mkt_p), 1)
-        ex_ev = (ex_p * ex_odds) - 1.0
+        ex_key = (anchor.post_position, c1.post_position)
+        real_ex_odds = exotic_odds_map.get(("exacta", ex_key)) if exotic_odds_map else None
+        if real_ex_odds is not None and real_ex_odds > 1.0:
+            effective_ex_odds = real_ex_odds
+            ex_source = "live_pool"
+        else:
+            effective_ex_odds = ex_odds
+            ex_source = "synthetic"
+        ex_ev = (ex_p * effective_ex_odds) - 1.0
         candidate_tickets.append({
             "type": "馬単", "type_en": "exacta",
             "selection": [anchor.post_position, c1.post_position],
             "display": f"{anchor.post_position} → {c1.post_position} 馬単",
             "prob": ex_p,
             "weight": 0.15,
-            "market_odds": ex_odds,
+            "market_odds": effective_ex_odds,
+            "estimated_market_odds": ex_odds,
+            "odds_source": ex_source,
             "ev": ex_ev,
             "is_core": False,
         })
@@ -892,14 +935,24 @@ def construct_staking_plan(
         q_p = model.quinella_prob(anchor.post_position, quinella_partner.post_position)
         q_mkt_p = mkt_full_model.quinella_prob(anchor.post_position, quinella_partner.post_position)
         q_odds = round((1.0 - TAKEOUT_MAP["quinella"]) / max(0.0001, q_mkt_p), 1)
-        q_ev = (q_p * q_odds) - 1.0
+        q_key = tuple(sorted([anchor.post_position, quinella_partner.post_position]))
+        real_q_odds = exotic_odds_map.get(("quinella", q_key)) if exotic_odds_map else None
+        if real_q_odds is not None and real_q_odds > 1.0:
+            effective_q_odds = real_q_odds
+            q_source = "live_pool"
+        else:
+            effective_q_odds = q_odds
+            q_source = "synthetic"
+        q_ev = (q_p * effective_q_odds) - 1.0
         candidate_tickets.append({
             "type": "馬連", "type_en": "quinella",
             "selection": sorted([anchor.post_position, quinella_partner.post_position]),
             "display": f"{min(anchor.post_position, quinella_partner.post_position)}–{max(anchor.post_position, quinella_partner.post_position)} 馬連",
             "prob": q_p,
             "weight": 0.15,
-            "market_odds": q_odds,
+            "market_odds": effective_q_odds,
+            "estimated_market_odds": q_odds,
+            "odds_source": q_source,
             "ev": q_ev,
             "is_core": False,
         })
@@ -919,14 +972,24 @@ def construct_staking_plan(
         w_p = model.wide_prob(anchor.post_position, wide_partner.post_position)
         w_mkt_p = mkt_full_model.wide_prob(anchor.post_position, wide_partner.post_position)
         w_odds = round((1.0 - TAKEOUT_MAP["wide"]) / max(0.0001, w_mkt_p), 1)
-        w_ev = (w_p * w_odds) - 1.0
+        w_key = tuple(sorted([anchor.post_position, wide_partner.post_position]))
+        real_w_odds = exotic_odds_map.get(("wide", w_key)) if exotic_odds_map else None
+        if real_w_odds is not None and real_w_odds > 1.0:
+            effective_w_odds = real_w_odds
+            w_source = "live_pool"
+        else:
+            effective_w_odds = w_odds
+            w_source = "synthetic"
+        w_ev = (w_p * effective_w_odds) - 1.0
         candidate_tickets.append({
             "type": "ワイド", "type_en": "wide",
             "selection": sorted([anchor.post_position, wide_partner.post_position]),
             "display": f"{min(anchor.post_position, wide_partner.post_position)}–{max(anchor.post_position, wide_partner.post_position)} ワイド",
             "prob": w_p,
             "weight": 0.12,
-            "market_odds": w_odds,
+            "market_odds": effective_w_odds,
+            "estimated_market_odds": w_odds,
+            "odds_source": w_source,
             "ev": w_ev,
             "is_core": False,
         })
@@ -940,14 +1003,24 @@ def construct_staking_plan(
         w2_p = model.wide_prob(anchor.post_position, other_c.post_position)
         w2_mkt_p = mkt_full_model.wide_prob(anchor.post_position, other_c.post_position)
         w2_odds = round((1.0 - TAKEOUT_MAP["wide"]) / max(0.0001, w2_mkt_p), 1)
-        w2_ev = (w2_p * w2_odds) - 1.0
+        w2_key = tuple(sorted([anchor.post_position, other_c.post_position]))
+        real_w2_odds = exotic_odds_map.get(("wide", w2_key)) if exotic_odds_map else None
+        if real_w2_odds is not None and real_w2_odds > 1.0:
+            effective_w2_odds = real_w2_odds
+            w2_source = "live_pool"
+        else:
+            effective_w2_odds = w2_odds
+            w2_source = "synthetic"
+        w2_ev = (w2_p * effective_w2_odds) - 1.0
         candidate_tickets.append({
             "type": "ワイド", "type_en": "wide",
             "selection": sorted([anchor.post_position, other_c.post_position]),
             "display": f"{min(anchor.post_position, other_c.post_position)}–{max(anchor.post_position, other_c.post_position)} ワイド",
             "prob": w2_p,
             "weight": 0.10,
-            "market_odds": w2_odds,
+            "market_odds": effective_w2_odds,
+            "estimated_market_odds": w2_odds,
+            "odds_source": w2_source,
             "ev": w2_ev,
             "is_core": False,
         })
@@ -958,14 +1031,24 @@ def construct_staking_plan(
         tr_p = model.trio_prob(trio_pps[0], trio_pps[1], trio_pps[2])
         tr_mkt_p = mkt_full_model.trio_prob(trio_pps[0], trio_pps[1], trio_pps[2])
         tr_odds = round((1.0 - TAKEOUT_MAP["trio"]) / max(0.0001, tr_mkt_p), 1)
-        tr_ev = (tr_p * tr_odds) - 1.0
+        tr_key = tuple(sorted(trio_pps))
+        real_tr_odds = exotic_odds_map.get(("trio", tr_key)) if exotic_odds_map else None
+        if real_tr_odds is not None and real_tr_odds > 1.0:
+            effective_tr_odds = real_tr_odds
+            tr_source = "live_pool"
+        else:
+            effective_tr_odds = tr_odds
+            tr_source = "synthetic"
+        tr_ev = (tr_p * effective_tr_odds) - 1.0
         candidate_tickets.append({
             "type": "三連複", "type_en": "trio",
             "selection": trio_pps,
             "display": f"{trio_pps[0]}–{trio_pps[1]}–{trio_pps[2]} 三連複",
             "prob": tr_p,
             "weight": 0.08,
-            "market_odds": tr_odds,
+            "market_odds": effective_tr_odds,
+            "estimated_market_odds": tr_odds,
+            "odds_source": tr_source,
             "ev": tr_ev,
             "is_core": False,
         })
@@ -1164,6 +1247,8 @@ def construct_staking_plan(
             stake=stk,
             weight_pct=norm_w,
             label=f"¥{stk:,} — {t['display']}",
+            odds_source=t.get("odds_source", "synthetic"),
+            estimated_market_odds=t.get("estimated_market_odds"),
         ))
 
     # 4. Simple Bet Alternative (100% Win on Anchor)
@@ -1179,6 +1264,8 @@ def construct_staking_plan(
         stake=budget,
         weight_pct=1.0,
         label=f"¥{budget:,} on No. {anchor.post_position} 単勝",
+        odds_source="live_pool" if (anchor.market_odds is not None and anchor.market_odds > 1.0) else "synthetic",
+        estimated_market_odds=anchor.market_odds,
     )
 
     # (Audit NEW-INTEGRITY-1): In dutching mode two win tickets are placed;
@@ -1283,7 +1370,160 @@ def construct_staking_plan(
 
 
 # ---------------------------------------------------------------------------
-# 4. End-to-End Race Betting Analysis Helper
+# 4. Bet Ticket Settlement Helper
+# ---------------------------------------------------------------------------
+
+def settle_bet_tickets(
+    tickets: List[BetTicket],
+    entries_map: Dict[int, dict],
+) -> dict:
+    """
+    Evaluates each BetTicket against official finish positions in entries_map
+    (post_position -> {'finish_pos': int, 'odds': float, 'horse_name': str, 'horse_name_jp': str}).
+    Mutates ticket attributes (is_settled, won, payout, profit, roi_pct, runner_finishes)
+    and returns a summary dictionary of the strategy outcome.
+    """
+    has_results = any(e.get("finish_pos") is not None for e in entries_map.values())
+    if not has_results:
+        return {
+            "is_settled": False,
+            "staked": sum(t.stake for t in tickets),
+            "payout": 0,
+            "profit": 0,
+            "roi_pct": 0.0,
+            "status": "pending",
+            "tickets_won": 0,
+            "tickets_count": len(tickets),
+        }
+
+    field_size = len(entries_map)
+    place_cutoff = 2 if field_size <= 7 else 3
+
+    total_staked = 0
+    total_payout = 0
+    tickets_won = 0
+
+    for t in tickets:
+        t.is_settled = True
+        total_staked += t.stake
+        sel = t.selection or []
+        ttype = (t.ticket_type or "").strip()
+        ttype_en = (t.ticket_type_en or "").strip().lower()
+
+        # Build runner finish info
+        finishes = []
+        for pp in sel:
+            info = entries_map.get(pp, {})
+            finishes.append({
+                "post_position": pp,
+                "finish_pos": info.get("finish_pos"),
+                "horse_name": info.get("horse_name_jp") or info.get("horse_name", f"No. {pp}"),
+            })
+        t.runner_finishes = finishes
+
+        is_win = False
+        payout = 0
+
+        if (ttype in ("単勝", "win") or ttype_en == "win") and len(sel) == 1:
+            pp = sel[0]
+            info = entries_map.get(pp, {})
+            fpos = info.get("finish_pos")
+            odds = info.get("odds") or t.market_odds or 1.0
+            if fpos == 1:
+                is_win = True
+                payout = int(round(t.stake * odds))
+
+        elif (ttype in ("複勝", "place") or ttype_en == "place") and len(sel) == 1:
+            pp = sel[0]
+            info = entries_map.get(pp, {})
+            fpos = info.get("finish_pos")
+            odds = info.get("odds") or 1.0
+            if fpos is not None and 1 <= fpos <= place_cutoff:
+                is_win = True
+                place_mult = t.market_odds if t.market_odds else max(1.1, odds * 0.35)
+                payout = int(round(t.stake * place_mult))
+
+        elif (ttype in ("馬連", "quinella") or ttype_en == "quinella") and len(sel) == 2:
+            f1 = entries_map.get(sel[0], {}).get("finish_pos")
+            f2 = entries_map.get(sel[1], {}).get("finish_pos")
+            if {f1, f2} == {1, 2}:
+                is_win = True
+                o1 = entries_map.get(sel[0], {}).get("odds", 1.0)
+                o2 = entries_map.get(sel[1], {}).get("odds", 1.0)
+                mkt = t.market_odds or (o1 * o2 / 2.5)
+                payout = int(round(t.stake * mkt))
+
+        elif (ttype in ("ワイド", "wide") or ttype_en == "wide") and len(sel) == 2:
+            f1 = entries_map.get(sel[0], {}).get("finish_pos")
+            f2 = entries_map.get(sel[1], {}).get("finish_pos")
+            if f1 and f2 and 1 <= f1 <= place_cutoff and 1 <= f2 <= place_cutoff and sel[0] != sel[1]:
+                is_win = True
+                o1 = entries_map.get(sel[0], {}).get("odds", 1.0)
+                o2 = entries_map.get(sel[1], {}).get("odds", 1.0)
+                mkt = t.market_odds or (o1 * o2 / 4.0)
+                payout = int(round(t.stake * mkt))
+
+        elif (ttype in ("馬単", "exacta") or ttype_en == "exacta") and len(sel) == 2:
+            f1 = entries_map.get(sel[0], {}).get("finish_pos")
+            f2 = entries_map.get(sel[1], {}).get("finish_pos")
+            if f1 == 1 and f2 == 2:
+                is_win = True
+                o1 = entries_map.get(sel[0], {}).get("odds", 1.0)
+                o2 = entries_map.get(sel[1], {}).get("odds", 1.0)
+                mkt = t.market_odds or (o1 * o2 / 1.5)
+                payout = int(round(t.stake * mkt))
+
+        elif (ttype in ("三連複", "trio") or ttype_en == "trio") and len(sel) == 3:
+            f1 = entries_map.get(sel[0], {}).get("finish_pos")
+            f2 = entries_map.get(sel[1], {}).get("finish_pos")
+            f3 = entries_map.get(sel[2], {}).get("finish_pos")
+            if {f1, f2, f3} == {1, 2, 3}:
+                is_win = True
+                o1 = entries_map.get(sel[0], {}).get("odds", 1.0)
+                o2 = entries_map.get(sel[1], {}).get("odds", 1.0)
+                o3 = entries_map.get(sel[2], {}).get("odds", 1.0)
+                mkt = t.market_odds or (o1 * o2 * o3 / 6.0)
+                payout = int(round(t.stake * mkt))
+
+        elif (ttype in ("三連単", "trifecta") or ttype_en == "trifecta") and len(sel) == 3:
+            f1 = entries_map.get(sel[0], {}).get("finish_pos")
+            f2 = entries_map.get(sel[1], {}).get("finish_pos")
+            f3 = entries_map.get(sel[2], {}).get("finish_pos")
+            if f1 == 1 and f2 == 2 and f3 == 3:
+                is_win = True
+                o1 = entries_map.get(sel[0], {}).get("odds", 1.0)
+                o2 = entries_map.get(sel[1], {}).get("odds", 1.0)
+                o3 = entries_map.get(sel[2], {}).get("odds", 1.0)
+                mkt = t.market_odds or (o1 * o2 * o3 / 2.0)
+                payout = int(round(t.stake * mkt))
+
+        t.won = is_win
+        t.payout = payout
+        t.profit = payout - t.stake
+        t.roi_pct = round((t.profit / t.stake * 100), 1) if t.stake > 0 else 0.0
+
+        if is_win:
+            tickets_won += 1
+            total_payout += payout
+
+    profit = total_payout - total_staked
+    roi_pct = round((profit / total_staked * 100), 1) if total_staked > 0 else 0.0
+    status = "won" if total_payout > total_staked else ("push" if total_payout == total_staked and total_staked > 0 else ("lost" if total_staked > 0 else "pass"))
+
+    return {
+        "is_settled": True,
+        "staked": total_staked,
+        "payout": total_payout,
+        "profit": profit,
+        "roi_pct": roi_pct,
+        "status": status,
+        "tickets_won": tickets_won,
+        "tickets_count": len(tickets),
+    }
+
+
+# ---------------------------------------------------------------------------
+# 5. End-to-End Race Betting Analysis Helper
 # ---------------------------------------------------------------------------
 
 def analyze_race_betting(
@@ -1292,6 +1532,7 @@ def analyze_race_betting(
     strategy_mode: str = "hybrid",
     model_version: Optional[str] = None,
     session: Any = None,
+    include_all_modes: bool = True,
 ) -> dict:
     """
     Given a race_id and optional budget and strategy_mode, fetches data from the database,
@@ -1305,6 +1546,7 @@ def analyze_race_betting(
         race_row = s.execute(
             text("""
                 SELECT r.id, r.race_name, r.race_name_jp, r.race_number, r.date,
+                       r.netkeiba_id, r.odds_updated_at,
                        c.name AS course_name, c.name_jp AS course_name_jp
                 FROM races r
                 LEFT JOIN courses c ON c.id = r.course_id
@@ -1316,12 +1558,14 @@ def analyze_race_betting(
         if not race_row:
             return None, [], []
 
-        # Fetch entries
+        # Fetch entries (including official results if available)
         entries = s.execute(
             text("""
                 SELECT e.id, e.post_position, e.odds_win, e.popularity,
+                       COALESCE(e.finish_pos, res.finish_pos) AS finish_pos,
                        h.name AS horse_name, h.name_jp AS horse_name_jp
                 FROM entries e
+                LEFT JOIN results res ON res.entry_id = e.id
                 LEFT JOIN horses h ON h.id = e.horse_id
                 WHERE e.race_id = :race_id
                 ORDER BY e.post_position
@@ -1331,7 +1575,7 @@ def analyze_race_betting(
 
         # Fetch latest predictions for this race
         q_pred = """
-            SELECT p.entry_id, p.win_prob, p.edge, p.model_version
+            SELECT p.entry_id, p.win_prob, p.edge, p.model_version, p.created_at
             FROM predictions p
             WHERE p.race_id = :race_id
         """
@@ -1366,10 +1610,7 @@ def analyze_race_betting(
 
     pred_map = {p.entry_id: float(p.win_prob or 0.0) for p in pred_rows}
 
-    # (Audit NEW-FLAW-3): Track ML prediction coverage so we can warn the user when
-    # EV values are computed from market-implied probs (1/odds) rather than the model.
-    # When a horse lacks an ML prediction, its win_prob = 1/mkt_odds, making
-    # EV = (1/odds × odds) − 1 = 0.0 always — silent garbage masquerading as analysis.
+    # Track ML prediction coverage
     n_entries = len(entry_rows)
     n_with_pred = sum(
         1 for r in entry_rows
@@ -1396,16 +1637,67 @@ def analyze_race_betting(
             "horse_name_jp": r.horse_name_jp,
             "odds": mkt_odds,
             "win_prob": win_prob,
+            "finish_pos": getattr(r, "finish_pos", None),
         })
+
+    # Fetch cached exotic odds map from DB (non-blocking)
+    exotic_odds_map = None
+    try:
+        from scraper.odds_watcher import get_live_exotic_odds_map
+        r_dict = dict(race_row._mapping)
+        netkeiba_id = r_dict.get("netkeiba_id")
+        exotic_odds_map = get_live_exotic_odds_map(
+            race_id=race_id,
+            netkeiba_id=netkeiba_id,
+            session=session if session is not None else None,
+            auto_fetch=False,
+        )
+    except Exception as e:
+        log.warning(f"Could not load exotic odds map for race {race_id}: {e}")
 
     # Calculate pricing and staking plan
     pricing = calculate_pricing_breakdown(entries_data)
-    staking = construct_staking_plan(pricing, budget=budget, strategy_mode=strategy_mode)
+    staking = construct_staking_plan(
+        pricing,
+        budget=budget,
+        strategy_mode=strategy_mode,
+        exotic_odds_map=exotic_odds_map,
+    )
 
-    # (Audit R4-INTEGRITY-3 + R5-LOGIC-4): Use the resolved_mode stored in the StakingPlan
-    # instead of calling select_adaptive_strategy a second time.  The second call was
-    # redundant (deterministic, same input) and left PASS races showing strategy_meta["auto"]
-    # instead of the correct resolved outcome.
+    # Build entry results lookup map for settling bet tickets
+    entries_map = {
+        r.post_position: {
+            "finish_pos": getattr(r, "finish_pos", None),
+            "odds": float(r.odds_win) if r.odds_win is not None else None,
+            "horse_name": r.horse_name,
+            "horse_name_jp": r.horse_name_jp,
+        }
+        for r in entry_rows
+    }
+
+    # Settle tickets for the active staking plan
+    strategy_result = settle_bet_tickets(staking.portfolio_tickets, entries_map)
+
+    # Settle simple bet if present
+    if staking.simple_bet:
+        settle_bet_tickets([staking.simple_bet], entries_map)
+
+    # Evaluate outcomes for all 4 strategy modes for quick UI comparison (when requested)
+    all_strategies_results = {strategy_mode: strategy_result}
+    has_mkt_odds = any(h.market_odds is not None and h.market_odds > 1.0 for h in pricing)
+    if has_mkt_odds and include_all_modes:
+        for m in ("auto", "hybrid", "pure_win", "dutching"):
+            if m == strategy_mode:
+                continue
+            m_plan = construct_staking_plan(
+                pricing,
+                budget=budget,
+                strategy_mode=m,
+                exotic_odds_map=exotic_odds_map,
+            )
+            m_res = settle_bet_tickets(m_plan.portfolio_tickets, entries_map)
+            all_strategies_results[m] = m_res
+
     _resolved_mode = staking.resolved_mode
 
     # Format full race name
@@ -1416,7 +1708,6 @@ def analyze_race_betting(
     full_race_name = f"{venue} {r_num}R — {r_name}".strip() if venue and r_num else r_name
 
     anchor_name = staking.anchor_horse.horse_name_jp or staking.anchor_horse.horse_name
-    has_mkt_odds = any(h.market_odds is not None and h.market_odds > 1.0 for h in pricing)
     pos_str = f"No. {staking.anchor_horse.post_position} " if staking.anchor_horse.post_position > 0 else ""
 
     if not has_mkt_odds:
@@ -1429,17 +1720,6 @@ def analyze_race_betting(
         recommended_horse_str = f"{pos_str}{anchor_name}"
         action_str = "to win"
 
-    # INTEGRITY NOTE (Bug #13): The stats below (historical_roi, hit_rate, sharpe) are
-    # STATIC TARGET STRINGS and are NOT computed from live backtests. They represent
-    # theoretical design targets from early simulation work and must be manually updated
-    # whenever strategy logic changes significantly. The 'stats_validated' flag is
-    # explicitly set to False so the frontend can display a disclaimer.
-    # (Audit INTEGRITY-1: these numbers were served to users as if real.)
-    #
-    # (Audit R7-SIG-4): Removed the "auto" and "adaptive" entries — resolved_mode can
-    # never be "auto" or "adaptive" (the auto path resolves to the actual chosen mode
-    # before storing resolved_mode).  These entries were dead code and showed misleading
-    # '+88.5% ROI' stats if ever accidentally reached via the fallback chain.
     STRATEGY_META = {
         "hybrid": {
             "id": "hybrid",
@@ -1471,10 +1751,6 @@ def analyze_race_betting(
             "sharpe": 3.81,
             "stats_validated": False,
         },
-        # (Audit R6-META-1): Explicit entries for non-betting outcomes so that
-        # STRATEGY_META.get(_resolved_mode) returns sensible meta instead of
-        # falling back to the 'auto' entry and showing misleading historical stats
-        # (e.g. '+88.5% ROI, Sharpe 3.95' on a PASS race).
         "pass": {
             "id": "pass",
             "name": "Pass (No Bet)",
@@ -1501,9 +1777,6 @@ def analyze_race_betting(
         "ml_coverage": round(ml_coverage, 3),
         "horses_with_predictions": n_with_pred,
         "total_horses": n_entries,
-        # Warn when <70% of the field has ML predictions; EV values for the remaining
-        # horses are computed from market-implied probabilities (EV = 0 by definition)
-        # and should not be relied upon.
         "coverage_warning": ml_coverage < 0.7,
         "coverage_warning_msg": (
             f"⚠️ ML predictions available for only {n_with_pred}/{n_entries} runners "
@@ -1512,9 +1785,15 @@ def analyze_race_betting(
         ) if ml_coverage < 0.7 else None,
     }
 
+    race_dict = dict(race_row._mapping) if race_row else {}
+    pred_created_at = dict(pred_rows[0]._mapping).get("created_at") if pred_rows else None
+    odds_as_of = race_dict.get("odds_updated_at") or pred_created_at
+
     return {
         "race_id": race_id,
         "race_name": full_race_name,
+        "odds_as_of": odds_as_of,
+        "odds_updated_at": odds_as_of,
         "budget": budget,
         "strategy_mode": strategy_mode,
         "strategy_meta": STRATEGY_META.get(_resolved_mode, STRATEGY_META.get(strategy_mode, STRATEGY_META["hybrid"])),
@@ -1525,17 +1804,14 @@ def analyze_race_betting(
             "action": action_str,
             "summary": staking.verdict_summary,
         },
-        # (Audit R7-MINOR-4): Use BetTicket.to_dict() instead of a manual projection
-        # so type_en, selection_display, weight_pct are included, matching the field
-        # set returned by StakingPlan.to_dict() callers.
+        "strategy_result": strategy_result,
+        "all_strategies_results": all_strategies_results,
         "staking_plan": {
             "budget": budget,
             "tickets": [t.to_dict() for t in staking.portfolio_tickets],
+            "simple_bet": staking.simple_bet.to_dict() if staking.simple_bet else None,
             "simple_bet_label": staking.simple_bet_label,
+            "strategy_result": strategy_result,
         },
-        # (Audit R7-SIG-3): Use HorsePricing.to_dict() instead of a manual projection
-        # so ev, is_top_value, is_favorite, is_market_favorite are included.
-        # The old manual projection returned a stripped table with no per-horse EV,
-        # forcing the frontend to work without EV data from this endpoint.
         "pricing_table": [h.to_dict() for h in pricing],
     }

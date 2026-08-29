@@ -2792,9 +2792,13 @@ class FeatureBuilder:
         race_ids = race_df['race_id'].unique()
         import multiprocessing
         from joblib import Parallel, delayed
-        n_jobs = max(1, multiprocessing.cpu_count() // 2)
-        race_id_chunks = np.array_split(race_ids, min(n_jobs * 2, len(race_ids)))
-        chunk_dfs = [race_df[race_df['race_id'].isin(chunk)] for chunk in race_id_chunks]
+        if len(race_ids) <= 2:
+            n_jobs = 1
+            race_id_chunks = [race_ids]
+        else:
+            n_jobs = max(1, min(multiprocessing.cpu_count() // 2, len(race_ids)))
+            race_id_chunks = np.array_split(race_ids, min(n_jobs * 2, len(race_ids)))
+        chunk_dfs = [race_df[race_df['race_id'].isin(chunk)] for chunk in race_id_chunks if len(chunk) > 0]
         
         log.info(f'Starting joblib pool with {n_jobs} workers across {len(chunk_dfs)} chunks...')
         

@@ -38,7 +38,12 @@ import time
 from datetime import datetime
 from typing import Any, Optional
 
-import requests
+try:
+    from curl_cffi import requests as c_requests
+    HAS_CURL_CFFI = True
+except ImportError:
+    HAS_CURL_CFFI = False
+    import requests
 from dotenv import load_dotenv
 from sqlalchemy import text
 
@@ -122,45 +127,61 @@ def _format_combination(raw_key: str) -> str:
     return "-".join(chunks)
 
 
-def _request_odds_api(race_id: str, api_type: str, max_retries: int = 3) -> Optional[dict]:
+def _request_odds_api(race_id: str, api_type: str, action: str = "update", max_retries: int = 2) -> Optional[dict]:
     """Make HTTP GET request to Netkeiba internal odds API with retry logic."""
-    url = f"{API_BASE_URL}?race_id={race_id}&type={api_type}&action=init"
+    url = f"{API_BASE_URL}?race_id={race_id}&type={api_type}&action={action}"
     headers = dict(HEADERS)
     headers["Referer"] = f"https://race.netkeiba.com/odds/index.html?race_id={race_id}"
 
     for attempt in range(max_retries):
         try:
-            resp = requests.get(url, headers=headers, timeout=(4.0, 8.0))
+            if HAS_CURL_CFFI:
+                resp = c_requests.get(url, headers=headers, impersonate="chrome120", timeout=(2.0, 5.0))
+            else:
+                resp = requests.get(url, headers=headers, timeout=(2.0, 4.0))
             if resp.status_code == 200:
                 data = resp.json()
-                if data.get("status") != "NG" and isinstance(data.get("data"), dict):
+                if data.get("status") == "NG":
+                    # Netkeiba reports no odds available for this race/type
+                    return None
+                if isinstance(data.get("data"), dict):
                     return data["data"]
-            log.warning(
-                f"Odds API fetch failed for {race_id} (type={api_type}) "
-                f"attempt {attempt + 1}/{max_retries}: status {resp.status_code}"
-            )
+            elif resp.status_code in (403, 404):
+                # Race finished or invalid Netkeiba ID — do not retry
+                return None
+            else:
+                log.debug(
+                    f"Odds API fetch status {resp.status_code} for {race_id} (type={api_type}, action={action}) "
+                    f"attempt {attempt + 1}/{max_retries}"
+                )
         except Exception as e:
-            log.warning(
-                f"Odds API exception for {race_id} (type={api_type}) "
+            log.debug(
+                f"Odds API exception for {race_id} (type={api_type}, action={action}) "
                 f"attempt {attempt + 1}/{max_retries}: {e}"
             )
         if attempt < max_retries - 1:
-            time.sleep(1.0 * (attempt + 1))
+            time.sleep(0.5 * (attempt + 1))
+
+    # Fallback to action="init" only if action="update" failed on network/5xx error
+    if action == "update":
+        return _request_odds_api(race_id, api_type=api_type, action="init", max_retries=1)
+
     return None
 
 
-def fetch_win_odds(race_id: str) -> list[dict]:
+def fetch_win_odds(race_id: str, action: str = "update") -> list[dict]:
     """
     Fetch current win odds for all horses in a race.
     Returns list of dicts:
-        [{'combination': '1', 'odds_value': 3.5, 'popularity': 2}, ...]
+        [{'combination': '1', 'odds_value': 3.5, 'popularity': 2, 'official_datetime': '2026-08-29 13:13:28'}, ...]
 
     100% backwards-compatible with legacy UmaEdge pipeline and watchers.
     """
-    odds_data = _request_odds_api(race_id, api_type="1")
+    odds_data = _request_odds_api(race_id, api_type="1", action=action)
     if not odds_data:
         return []
 
+    official_dt = odds_data.get("official_datetime")
     tansho = odds_data.get("odds", {}).get("1", {})
     if not isinstance(tansho, dict):
         return []
@@ -173,25 +194,28 @@ def fetch_win_odds(race_id: str) -> list[dict]:
                 continue
 
             pop = int(values[2]) if len(values) >= 3 and str(values[2]).isdigit() else None
-            odds_list.append({
+            item = {
                 "combination": str(int(horse_num)),
                 "odds_value": odds_val,
                 "popularity": pop,
                 "bet_type": "win",
-            })
+            }
+            if official_dt:
+                item["official_datetime"] = official_dt
+            odds_list.append(item)
 
     if odds_list:
         log.debug(f"Got {len(odds_list)} win odds for {race_id}")
     return odds_list
 
 
-def fetch_place_odds(race_id: str) -> list[dict]:
+def fetch_place_odds(race_id: str, action: str = "update") -> list[dict]:
     """
     Fetch current place (複勝) odds for all horses in a race.
     Returns list of dicts:
         [{'combination': '1', 'min_odds': 1.5, 'max_odds': 2.2, 'popularity': 2}, ...]
     """
-    odds_data = _request_odds_api(race_id, api_type="1")
+    odds_data = _request_odds_api(race_id, api_type="1", action=action)
     if not odds_data:
         return []
 
@@ -219,7 +243,7 @@ def fetch_place_odds(race_id: str) -> list[dict]:
     return place_list
 
 
-def fetch_exotic_odds(race_id: str, bet_types: Optional[list[str]] = None) -> list[dict]:
+def fetch_exotic_odds(race_id: str, bet_types: Optional[list[str]] = None, action: str = "update") -> list[dict]:
     """
     Fetch current exotic odds for a race.
     Supported pools: 'quinella', 'wide', 'exacta', 'trio', 'trifecta', 'bracket_quinella'.
@@ -240,7 +264,7 @@ def fetch_exotic_odds(race_id: str, bet_types: Optional[list[str]] = None) -> li
 
     odds_list = []
     for api_type, bet_type in api_types.items():
-        data = _request_odds_api(race_id, api_type=api_type)
+        data = _request_odds_api(race_id, api_type=api_type, action=action)
         if not data:
             continue
 
@@ -277,14 +301,14 @@ def fetch_exotic_odds(race_id: str, bet_types: Optional[list[str]] = None) -> li
     return odds_list
 
 
-def fetch_race_odds(race_id: str, include_exotics: bool = False) -> dict[str, Any]:
+def fetch_race_odds(race_id: str, include_exotics: bool = False, action: str = "update") -> dict[str, Any]:
     """
     Fetch comprehensive odds package for a single race.
     Always includes Win and Place in 1 network request.
     Optionally fetches exotic pools (quinella, wide, exacta, trio, trifecta).
     """
-    win_odds = fetch_win_odds(race_id)
-    place_odds = fetch_place_odds(race_id)
+    win_odds = fetch_win_odds(race_id, action=action)
+    place_odds = fetch_place_odds(race_id, action=action)
 
     result = {
         "race_id": race_id,
@@ -294,17 +318,19 @@ def fetch_race_odds(race_id: str, include_exotics: bool = False) -> dict[str, An
     }
 
     if include_exotics:
-        exotics = fetch_exotic_odds(race_id)
+        exotics = fetch_exotic_odds(race_id, action=action)
         grouped_exotics = {}
         for item in exotics:
             btype = item["bet_type"]
-            grouped_exotics.setdefault(btype, []).append(item)
+            if btype not in grouped_exotics:
+                grouped_exotics[btype] = []
+            grouped_exotics[btype].append(item)
         result.update(grouped_exotics)
 
     return result
 
 
-def update_race_odds_in_db(race_netkeiba_id: str, odds: Optional[list[dict]] = None) -> int:
+def update_race_odds_in_db(race_netkeiba_id: str, odds: Optional[list[dict]] = None, action: str = "update") -> int:
     """
     Update `entries.odds_win` and `entries.popularity` in the DB for a race.
     If `odds` is None, automatically fetches fresh win odds via `fetch_win_odds`.
@@ -312,7 +338,7 @@ def update_race_odds_in_db(race_netkeiba_id: str, odds: Optional[list[dict]] = N
     Returns count of updated entries.
     """
     if odds is None:
-        odds = fetch_win_odds(race_netkeiba_id)
+        odds = fetch_win_odds(race_netkeiba_id, action=action)
     if not odds:
         return 0
 
@@ -328,6 +354,20 @@ def update_race_odds_in_db(race_netkeiba_id: str, odds: Optional[list[dict]] = N
 
         db_race_id = race_row[0]
         updated_count = 0
+
+        official_dt = None
+        if odds:
+            official_dt = odds[0].get("official_datetime")
+        if not official_dt:
+            official_dt = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        try:
+            session.execute(
+                text("UPDATE races SET odds_updated_at = :dt WHERE id = :id"),
+                {"dt": official_dt, "id": db_race_id},
+            )
+        except Exception as e:
+            log.debug(f"Failed updating odds_updated_at for race {db_race_id}: {e}")
 
         for o in odds:
             if o.get("bet_type", "win") != "win":
@@ -400,6 +440,119 @@ def save_odds_snapshot(race_id: str, odds: list[dict]) -> int:
         session.commit()
         log.info(f"💾 Saved {count} odds snapshots for race {race_id} at {now.strftime('%H:%M:%S')}")
         return count
+
+
+def parse_combination_key(bet_type: str, comb_str: str) -> Optional[tuple[int, ...]]:
+    """
+    Parses combination string like '1-2-3' or '8-9' into a tuple of integers.
+    For symmetric bet types (quinella, wide, trio, bracket_quinella): returns sorted tuple e.g. (1, 2, 3).
+    For asymmetric/ordered bet types (exacta, trifecta): returns ordered tuple e.g. (8, 9).
+    """
+    try:
+        parts = tuple(int(x) for x in str(comb_str).split("-") if str(x).strip().isdigit())
+        if not parts:
+            return None
+        btype = bet_type.lower()
+        if btype in ("quinella", "umaren", "wide", "trio", "sanrenpuku", "bracket_quinella", "wakuren"):
+            return tuple(sorted(parts))
+        return parts
+    except (ValueError, TypeError):
+        return None
+
+
+def get_live_exotic_odds_map(
+    race_id: int,
+    netkeiba_id: Optional[str] = None,
+    session: Any = None,
+    auto_fetch: bool = True,
+    max_age_seconds: int = 300,
+) -> dict[tuple[str, tuple[int, ...]], float]:
+    """
+    Retrieves the latest exotic odds map for a race.
+    Returns a dictionary mapping (bet_type, post_positions_tuple) -> float odds_value.
+
+    Examples:
+        ('trio', (3, 8, 9)) -> 429.8
+        ('exacta', (8, 9)) -> 53.4
+        ('quinella', (8, 9)) -> 26.5
+        ('wide', (8, 9)) -> 7.6
+    """
+    def _query(s):
+        nonlocal netkeiba_id
+        if not netkeiba_id:
+            row = s.execute(
+                text("SELECT netkeiba_id FROM races WHERE id = :rid"),
+                {"rid": race_id},
+            ).fetchone()
+            if row:
+                netkeiba_id = row[0]
+
+        # Check existing snapshots in DB
+        rows = s.execute(
+            text("""
+                SELECT bet_type, combination, odds_value, captured_at
+                FROM odds_snapshots
+                WHERE race_id = :rid AND bet_type NOT IN ('win', 'place')
+                ORDER BY captured_at DESC
+            """),
+            {"rid": race_id},
+        ).fetchall()
+
+        now_utc = datetime.utcnow()
+        is_fresh = False
+        if rows and rows[0].captured_at:
+            cap_dt = rows[0].captured_at
+            if isinstance(cap_dt, str):
+                try:
+                    cap_dt = datetime.fromisoformat(cap_dt.replace("Z", "+00:00").split(".")[0])
+                except Exception:
+                    cap_dt = None
+            if cap_dt:
+                age = (now_utc - cap_dt.replace(tzinfo=None)).total_seconds()
+                if age <= max_age_seconds:
+                    is_fresh = True
+
+        odds_map = {}
+        if is_fresh and rows:
+            for r in rows:
+                key = parse_combination_key(r.bet_type, r.combination)
+                if key and (r.bet_type, key) not in odds_map and r.odds_value is not None:
+                    odds_map[(r.bet_type, key)] = float(r.odds_value)
+            return odds_map
+
+        # If not fresh and auto_fetch is enabled with netkeiba_id, fetch from API
+        if auto_fetch and netkeiba_id:
+            try:
+                exotics = fetch_exotic_odds(
+                    netkeiba_id,
+                    bet_types=["quinella", "wide", "exacta", "trio"],
+                )
+                if exotics:
+                    save_odds_snapshot(netkeiba_id, exotics)
+                    for item in exotics:
+                        btype = item.get("bet_type")
+                        comb = item.get("combination")
+                        val = item.get("odds_value")
+                        if btype and comb and val is not None:
+                            key = parse_combination_key(btype, comb)
+                            if key:
+                                odds_map[(btype, key)] = float(val)
+                    return odds_map
+            except Exception as e:
+                log.warning(f"Failed to auto-fetch live exotics for {netkeiba_id}: {e}")
+
+        # Fallback to whatever snapshots exist in DB even if older
+        for r in rows:
+            key = parse_combination_key(r.bet_type, r.combination)
+            if key and (r.bet_type, key) not in odds_map and r.odds_value is not None:
+                odds_map[(r.bet_type, key)] = float(r.odds_value)
+
+        return odds_map
+
+    if session is not None:
+        return _query(session)
+    with get_session() as s:
+        return _query(s)
 
 
 def stream_odds(race_ids: list[str], interval_secs: int = 60, save_to_db: bool = True):
