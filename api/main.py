@@ -166,6 +166,24 @@ def list_races(
     return {"races": races, "count": len(races)}
 
 
+@app.get("/api/races/all-time-returns")
+@app.get("/api/races/all-time/returns")
+def get_races_all_time_returns_route(
+    budget_per_race: int = Query(1000, ge=100, le=1000000, description="Base stake budget per race in yen"),
+    model_version: Optional[str] = Query(None, description="Model version for predictions"),
+    start_month: Optional[str] = Query(None, description="Starting month in YYYY-MM format"),
+    end_month: Optional[str] = Query(None, description="Ending month in YYYY-MM format"),
+    force_refresh: bool = False,
+):
+    return get_all_time_returns(
+        budget_per_race=budget_per_race,
+        model_version=model_version,
+        start_month=start_month,
+        end_month=end_month,
+        force_refresh=force_refresh,
+    )
+
+
 @app.get("/api/races/{race_id}")
 def get_race(race_id: int):
     """Full race detail: race info + entries (with horses/jockeys) + predictions."""
@@ -272,8 +290,16 @@ def get_race_betting_analysis(
             raise HTTPException(500, f"Betting analysis failed: {str(e)}")
 
 
+def _clean_param(val):
+    from fastapi.params import Query as QueryParam
+    if isinstance(val, QueryParam):
+        return val.default if val.default is not ... else None
+    return val
+
+
 _daily_returns_cache = {}
 _monthly_returns_cache = {}
+_all_time_returns_cache = {}
 
 
 @app.get("/api/races/date/{date_str}/daily-returns")
@@ -287,7 +313,9 @@ def get_daily_returns(
     Computes aggregated daily betting performance & returns across all 4 strategy modes
     ('auto', 'pure_win', 'hybrid', 'dutching') for a specific race date.
     """
-    cache_key = (date_str, budget_per_race, model_version)
+    budget_val = _clean_param(budget_per_race) or 1000
+    mv_val = _clean_param(model_version)
+    cache_key = (date_str, budget_val, mv_val)
     if not force_refresh and cache_key in _daily_returns_cache:
         return _daily_returns_cache[cache_key]
 
@@ -445,14 +473,17 @@ def get_monthly_returns(
     ('auto', 'pure_win', 'hybrid', 'dutching') for a specific month (YYYY-MM).
     Includes day-by-day progression timeline and available months discovery.
     """
-    target_month = month_str or month
+    target_month = _clean_param(month_str) or _clean_param(month)
+    budget_val = _clean_param(budget_per_race) or 1000
+    mv_val = _clean_param(model_version)
+
     if not target_month:
         target_month = datetime.now().strftime("%Y-%m")
 
     if not re.match(r"^\d{4}-\d{2}$", target_month):
         raise HTTPException(400, f"Invalid month format: '{target_month}'. Expected YYYY-MM (e.g. 2026-08).")
 
-    cache_key = (target_month, budget_per_race, model_version)
+    cache_key = (target_month, budget_val, mv_val)
     if not force_refresh and cache_key in _monthly_returns_cache:
         return _monthly_returns_cache[cache_key]
 
@@ -497,6 +528,12 @@ def get_monthly_returns(
         """)).fetchall()
         available_months = [r[0] for r in month_rows]
 
+        if not available_months:
+            raise HTTPException(404, "No prediction months available in the database.")
+
+        if target_month not in available_months:
+            raise HTTPException(404, f"No predictions found for month {target_month}. Available months: {', '.join(available_months)}")
+
         # 2. Get distinct race dates for target month
         date_rows = s.execute(
             text("SELECT DISTINCT date FROM races WHERE date LIKE :m ORDER BY date"),
@@ -507,7 +544,7 @@ def get_monthly_returns(
         if not race_dates:
             raise HTTPException(404, f"No race days found for month {target_month}")
 
-        # 3. Monthly aggregated stats and daily timeline
+        # 3. Process daily returns across race dates in chronological order
         month_stats = {
             m: {
                 "total_staked": 0,
@@ -525,91 +562,63 @@ def get_monthly_returns(
         total_finished_races_in_month = 0
 
         for d_str in race_dates:
-            races = s.execute(
-                text("SELECT id, race_number, course_id FROM races WHERE date = :d ORDER BY course_id, race_number"),
-                {"d": d_str},
-            ).fetchall()
-            if not races:
+            try:
+                d_res = get_daily_returns(
+                    date_str=d_str,
+                    budget_per_race=budget_val,
+                    model_version=mv_val,
+                    force_refresh=force_refresh,
+                )
+            except Exception as ex:
+                log.warning(f"Error computing daily returns for {d_str}: {ex}")
                 continue
 
-            total_races_in_month += len(races)
+            d_strats = d_res.get("strategies", {})
+            d_total_races = d_res.get("total_races", 0)
+            d_has_results = d_res.get("has_results", False)
 
-            d_mode_stats = {
-                m: {
-                    "staked": 0,
-                    "payout": 0,
-                    "bets_placed": 0,
-                    "bets_won": 0,
-                    "profit": 0,
-                    "roi_pct": 0.0,
-                }
-                for m in modes
-            }
+            total_races_in_month += d_total_races
+            if d_has_results:
+                total_finished_races_in_month += d_total_races
 
-            d_finished_count = 0
-            for r in races:
-                try:
-                    analysis = analyze_race_betting(
-                        race_id=r.id,
-                        budget=budget_per_race,
-                        strategy_mode="auto",
-                        model_version=model_version,
-                        session=s,
-                        include_all_modes=True,
-                    )
-                    results_by_mode = analysis.get("all_strategies_results", {})
-                    is_race_finished = any(res.get("is_settled", False) for res in results_by_mode.values())
-                    if is_race_finished:
-                        d_finished_count += 1
-
-                    for m in modes:
-                        s_res = results_by_mode.get(m, {})
-                        if not s_res:
-                            continue
-
-                        stk = s_res.get("staked", 0)
-                        pay = s_res.get("payout", 0)
-                        is_settled = s_res.get("is_settled", False)
-
-                        if not is_settled:
-                            if stk > 0:
-                                month_stats[m]["pending_staked"] += stk
-                                month_stats[m]["pending_races"] += 1
-                            continue
-
-                        if stk > 0:
-                            d_mode_stats[m]["staked"] += stk
-                            d_mode_stats[m]["payout"] += pay
-                            d_mode_stats[m]["bets_placed"] += 1
-                            month_stats[m]["total_staked"] += stk
-                            month_stats[m]["total_payout"] += pay
-                            month_stats[m]["bets_placed"] += 1
-                            if pay > stk:
-                                d_mode_stats[m]["bets_won"] += 1
-                                month_stats[m]["bets_won"] += 1
-                except Exception:
-                    pass
-
-            total_finished_races_in_month += d_finished_count
-
-            # Compute profits & ROI per day
+            d_mode_stats = {}
             for m in modes:
-                prof = d_mode_stats[m]["payout"] - d_mode_stats[m]["staked"]
-                d_mode_stats[m]["profit"] = prof
-                d_mode_stats[m]["roi_pct"] = round((prof / d_mode_stats[m]["staked"] * 100), 1) if d_mode_stats[m]["staked"] > 0 else 0.0
+                s_stat = d_strats.get(m, {})
+                stk = s_stat.get("staked", 0)
+                pay = s_stat.get("payout", 0)
+                profit = s_stat.get("profit", 0)
+                roi_pct = s_stat.get("roi_pct", 0.0)
+                bets_placed = s_stat.get("bets_placed", 0)
+                bets_won = s_stat.get("bets_won", 0)
 
-            auto_d = d_mode_stats["auto"]
+                d_mode_stats[m] = {
+                    "staked": stk,
+                    "payout": pay,
+                    "profit": profit,
+                    "roi_pct": roi_pct,
+                    "bets_placed": bets_placed,
+                    "bets_won": bets_won,
+                }
+
+                month_stats[m]["total_staked"] += stk
+                month_stats[m]["total_payout"] += pay
+                month_stats[m]["bets_placed"] += bets_placed
+                month_stats[m]["bets_won"] += bets_won
+                month_stats[m]["pending_staked"] += s_stat.get("pending_staked", 0)
+                month_stats[m]["pending_races"] += s_stat.get("pending_races", 0)
+
+            auto_d = d_mode_stats.get("auto", {})
             daily_timeline.append({
                 "date": d_str,
-                "total_races": len(races),
-                "finished_races": d_finished_count,
-                "has_results": d_finished_count > 0,
-                "staked": auto_d["staked"],
-                "payout": auto_d["payout"],
-                "profit": auto_d["profit"],
-                "roi_pct": auto_d["roi_pct"],
-                "bets_placed": auto_d["bets_placed"],
-                "bets_won": auto_d["bets_won"],
+                "total_races": d_total_races,
+                "finished_races": d_total_races if d_has_results else 0,
+                "has_results": d_has_results,
+                "staked": auto_d.get("staked", 0),
+                "payout": auto_d.get("payout", 0),
+                "profit": auto_d.get("profit", 0),
+                "roi_pct": auto_d.get("roi_pct", 0.0),
+                "bets_placed": auto_d.get("bets_placed", 0),
+                "bets_won": auto_d.get("bets_won", 0),
                 "strategies": d_mode_stats,
             })
 
@@ -654,12 +663,224 @@ def get_monthly_returns(
             "total_race_days": len(race_dates),
             "total_races": total_races_in_month,
             "total_finished_races": total_finished_races_in_month,
-            "budget_per_race": budget_per_race,
+            "budget_per_race": budget_val,
             "strategies": strategies_summary,
             "daily_timeline": daily_timeline,
             "available_months": available_months,
         }
         _monthly_returns_cache[cache_key] = res_obj
+        return res_obj
+
+
+@app.get("/api/races/all-time-returns")
+@app.get("/api/portfolio/all-time")
+def get_all_time_returns(
+    budget_per_race: int = Query(1000, ge=100, le=1000000, description="Base stake budget per race in yen"),
+    model_version: Optional[str] = Query(None, description="Model version for predictions"),
+    start_month: Optional[str] = Query(None, description="Starting month in YYYY-MM format"),
+    end_month: Optional[str] = Query(None, description="Ending month in YYYY-MM format"),
+    force_refresh: bool = False,
+):
+    """
+    Computes all-time aggregated betting performance & returns across all 4 strategy modes
+    ('auto', 'pure_win', 'hybrid', 'dutching') from January 2026 to the present/latest month.
+    Includes chronological monthly breakdown and high-level portfolio milestones.
+    """
+    budget_val = _clean_param(budget_per_race) or 1000
+    mv_val = _clean_param(model_version)
+    sm_val = _clean_param(start_month)
+    em_val = _clean_param(end_month)
+
+    cache_key = (budget_val, mv_val, sm_val, em_val)
+    if not force_refresh and cache_key in _all_time_returns_cache:
+        return _all_time_returns_cache[cache_key]
+
+    modes = ["auto", "pure_win", "hybrid", "dutching"]
+    strategy_meta_map = {
+        "auto": {
+            "id": "auto",
+            "name": "AI Auto (Optimal)",
+            "icon": "🧠",
+            "tagline": "AI Dynamic Per-Race Optimal Routing",
+        },
+        "pure_win": {
+            "id": "pure_win",
+            "name": "Pure Win (Max ROI)",
+            "icon": "⚡",
+            "tagline": "100% Single Top Value Pick",
+        },
+        "hybrid": {
+            "id": "hybrid",
+            "name": "Balanced (Win + Exotics)",
+            "icon": "🎯",
+            "tagline": "75% Core Win + 25% Elite Exotics",
+        },
+        "dutching": {
+            "id": "dutching",
+            "name": "Dual Dutching (Low DD)",
+            "icon": "🛡️",
+            "tagline": "Dual Value Win Split — Lowest Drawdown",
+        },
+    }
+
+    with get_session() as s:
+        # 1. Discover all available prediction months in chronological order
+        month_rows = s.execute(text("""
+            SELECT DISTINCT substr(date, 1, 7) AS ym
+            FROM races
+            WHERE id IN (SELECT race_id FROM predictions)
+            ORDER BY ym ASC
+        """)).fetchall()
+        all_available_months = [r[0] for r in month_rows]
+
+        if not all_available_months:
+            raise HTTPException(404, "No prediction months available in the database.")
+
+        target_months = [
+            m for m in all_available_months
+            if (not sm_val or m >= sm_val) and (not em_val or m <= em_val)
+        ]
+
+        if not target_months:
+            raise HTTPException(404, f"No predictions found in range {sm_val or 'start'} to {em_val or 'end'}. Available months: {', '.join(all_available_months)}")
+
+        # Query earliest and latest dates
+        date_bounds = s.execute(text("""
+            SELECT min(r.date), max(r.date)
+            FROM races r
+            WHERE r.id IN (SELECT race_id FROM predictions)
+              AND substr(r.date, 1, 7) >= :sm
+              AND substr(r.date, 1, 7) <= :em
+        """), {"sm": target_months[0], "em": target_months[-1]}).fetchone()
+        period_start = date_bounds[0] if date_bounds and date_bounds[0] else f"{target_months[0]}-01"
+        period_end = date_bounds[1] if date_bounds and date_bounds[1] else f"{target_months[-1]}-28"
+
+        all_time_stats = {
+            m: {
+                "total_staked": 0,
+                "total_payout": 0,
+                "bets_placed": 0,
+                "bets_won": 0,
+                "pending_staked": 0,
+                "pending_races": 0,
+            }
+            for m in modes
+        }
+
+        monthly_breakdown = []
+        total_race_days = 0
+        total_races = 0
+        total_finished_races = 0
+
+        for m_str in target_months:
+            try:
+                m_data = get_monthly_returns(
+                    month_str=m_str,
+                    budget_per_race=budget_val,
+                    model_version=mv_val,
+                    force_refresh=force_refresh,
+                )
+            except Exception as ex:
+                log.warning(f"Error computing monthly returns for {m_str}: {ex}")
+                continue
+
+            if not m_data or "strategies" not in m_data:
+                continue
+
+            total_race_days += m_data.get("total_race_days", 0)
+            total_races += m_data.get("total_races", 0)
+            total_finished_races += m_data.get("total_finished_races", 0)
+
+            for mode in modes:
+                s_stat = m_data["strategies"].get(mode, {})
+                all_time_stats[mode]["total_staked"] += s_stat.get("staked", 0)
+                all_time_stats[mode]["total_payout"] += s_stat.get("payout", 0)
+                all_time_stats[mode]["bets_placed"] += s_stat.get("bets_placed", 0)
+                all_time_stats[mode]["bets_won"] += s_stat.get("bets_won", 0)
+                all_time_stats[mode]["pending_staked"] += s_stat.get("pending_staked", 0)
+                all_time_stats[mode]["pending_races"] += s_stat.get("pending_races", 0)
+
+            auto_m = m_data["strategies"].get("auto", {})
+            monthly_breakdown.append({
+                "month": m_str,
+                "month_name": m_data.get("month_name", m_str),
+                "total_race_days": m_data.get("total_race_days", 0),
+                "total_races": m_data.get("total_races", 0),
+                "total_finished_races": m_data.get("total_finished_races", 0),
+                "has_results": m_data.get("has_results", False),
+                "staked": auto_m.get("staked", 0),
+                "payout": auto_m.get("payout", 0),
+                "profit": auto_m.get("profit", 0),
+                "roi_pct": auto_m.get("roi_pct", 0.0),
+                "bets_placed": auto_m.get("bets_placed", 0),
+                "bets_won": auto_m.get("bets_won", 0),
+                "strike_rate": auto_m.get("strike_rate", 0.0),
+                "strategies": m_data["strategies"],
+            })
+
+        strategies_summary = {}
+        for mode in modes:
+            stats = all_time_stats[mode]
+            staked = stats["total_staked"]
+            payout = stats["total_payout"]
+            bets_placed = stats["bets_placed"]
+            bets_won = stats["bets_won"]
+            profit = payout - staked
+            roi_pct = round((profit / staked * 100), 1) if staked > 0 else 0.0
+            strike_rate = round((bets_won / bets_placed * 100), 1) if bets_placed > 0 else 0.0
+            meta = strategy_meta_map.get(mode, {})
+
+            strategies_summary[mode] = {
+                "id": mode,
+                "name": meta.get("name", mode.title()),
+                "icon": meta.get("icon", "📊"),
+                "tagline": meta.get("tagline", ""),
+                "staked": staked,
+                "payout": round(payout),
+                "profit": round(profit),
+                "roi_pct": roi_pct,
+                "bets_placed": bets_placed,
+                "bets_won": bets_won,
+                "strike_rate": strike_rate,
+                "pending_staked": stats["pending_staked"],
+                "pending_races": stats["pending_races"],
+            }
+
+        # Best month calculation (highest net profit for auto strategy)
+        best_month = None
+        if monthly_breakdown:
+            profitable_months = [m for m in monthly_breakdown if m["profit"] > 0]
+            if profitable_months:
+                best_month = max(profitable_months, key=lambda x: x["profit"])
+            else:
+                best_month = max(monthly_breakdown, key=lambda x: x["profit"])
+
+        try:
+            start_dt = datetime.strptime(target_months[0], "%Y-%m")
+            end_dt = datetime.strptime(target_months[-1], "%Y-%m")
+            start_str = start_dt.strftime("%B %Y")
+            end_str = end_dt.strftime("%B %Y")
+            period_label = f"{start_str} – Present" if target_months[-1] == all_available_months[-1] else f"{start_str} – {end_str}"
+        except Exception:
+            period_label = f"{target_months[0]} – {target_months[-1]}"
+
+        res_obj = {
+            "period_start": period_start,
+            "period_end": period_end,
+            "period_label": period_label,
+            "start_month": target_months[0],
+            "end_month": target_months[-1],
+            "has_results": total_finished_races > 0,
+            "total_race_days": total_race_days,
+            "total_races": total_races,
+            "total_finished_races": total_finished_races,
+            "budget_per_race": budget_val,
+            "strategies": strategies_summary,
+            "monthly_breakdown": monthly_breakdown,
+            "best_month": best_month,
+            "available_months": list(reversed(all_available_months)),
+        }
+        _all_time_returns_cache[cache_key] = res_obj
         return res_obj
 
 
@@ -1326,6 +1547,7 @@ def sync_date_results(
         synced_ids = step_results(date_str, force=force)
         _daily_returns_cache.clear()
         _monthly_returns_cache.clear()
+        _all_time_returns_cache.clear()
         return {
             "status": "success",
             "message": f"Synced results for {len(synced_ids)} races on {date_str}",

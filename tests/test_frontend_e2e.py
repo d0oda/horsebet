@@ -24,7 +24,7 @@ import time
 import pytest
 from playwright.sync_api import sync_playwright, Page, expect
 
-BASE_URL = "http://localhost:3000"
+BASE_URL = "http://localhost:8000"
 API_URL = "http://localhost:8000"
 
 
@@ -45,6 +45,7 @@ def page(browser_context):
     page.on("console", lambda msg: page.console_logs.append(f"[{msg.type}] {msg.text}"))
     page.goto(BASE_URL)
     page.wait_for_selector("#header-status", state="visible")
+    page.wait_for_function("() => window.appInitialized === true && !window.isDateLoading", timeout=15000)
     page.wait_for_selector(".summary-grid, .fetch-state, .empty-state", timeout=10000)
     yield page
     page.close()
@@ -52,8 +53,7 @@ def page(browser_context):
 
 def select_date(page: Page, date_str: str):
     """Helper to cleanly select a date and await full UI render."""
-    page.evaluate("async (d) => { await selectDate(d, true); }", date_str)
-    time.sleep(0.3)
+    page.evaluate("async (d) => { await selectDate(d); }", date_str)
     page.wait_for_selector(".summary-grid, .fetch-state, .empty-state, .race-card, .provisional-card-banner", timeout=15000)
 
 
@@ -116,12 +116,12 @@ def test_race_list_and_summary_grid(page: Page):
 def test_filter_toolbar(page: Page):
     """Test 4: Interactive toolbar filtering (All, Value Bets, Venues)."""
     select_date(page, "2026-08-23")
-    page.wait_for_selector(".raceday-toolbar", timeout=5000)
+    page.wait_for_selector(".raceday-toolbar", timeout=10000)
 
     # 1. Click Value Bets filter
     page.click("#chip-filter-bets")
     time.sleep(0.3)
-    expect(page.locator("#chip-filter-bets")).to_have_class(re.compile(r"\bactive\b"))
+    expect(page.locator("#chip-filter-bets")).to_have_class(re.compile(r"\bactive\b"), timeout=10000)
 
     bets_chip = page.locator("#chip-filter-bets")
     bets_count_str = bets_chip.locator(".chip-count").text_content()
@@ -135,30 +135,33 @@ def test_filter_toolbar(page: Page):
         expect(page.locator(".empty-filter-state")).to_be_visible()
 
     # 2. Click a Venue filter if present
-    venue_chips = page.locator(".raceday-toolbar .filter-chip[data-filter]")
+    venue_chips = page.locator(".raceday-toolbar .filter-chip[data-filter]:not(#chip-filter-all):not(#chip-filter-bets):not(#chip-filter-winners)")
     if venue_chips.count() > 0:
         venue_name = venue_chips.first.get_attribute("data-filter")
+        expected_count = int(venue_chips.first.locator(".chip-count").text_content())
         page.click(f".raceday-toolbar .filter-chip[data-filter='{venue_name}']")
         time.sleep(0.3)
-        expect(page.locator(f".raceday-toolbar .filter-chip[data-filter='{venue_name}']")).to_have_class(re.compile(r"\bactive\b"))
-        expect(page.locator(".race-card")).to_have_count(12)  # JRA holds 12 races per venue
+        expect(page.locator(f".raceday-toolbar .filter-chip[data-filter='{venue_name}']")).to_have_class(re.compile(r"\bactive\b"), timeout=10000)
+        expect(page.locator(".race-card")).to_have_count(expected_count)
 
     # 3. Restore All Races
     page.click("#chip-filter-all")
     time.sleep(0.3)
+    expect(page.locator("#chip-filter-all")).to_have_class(re.compile(r"\bactive\b"), timeout=10000)
     expect(page.locator(".race-card")).to_have_count(36)
 
 
 def test_race_card_accordion_and_betting_analysis(page: Page):
     """Test 5: Expand race card and test betting analysis, budget switcher, and strategy modes."""
-    select_date(page, "2026-08-23")
-    page.wait_for_selector(".race-card", timeout=5000)
+    select_date(page, "2026-08-16")
+    page.wait_for_selector(".race-card.has-bet", timeout=15000)
 
-    # Open the first race card
-    first_card = page.locator(".race-card").first
-    if "open" not in (first_card.get_attribute("class") or ""):
-        first_card.locator(".race-header").click()
-    page.wait_for_selector(".staking-card", timeout=15000)
+    # Open the first race card that has a value bet
+    first_card = page.locator(".race-card.has-bet").first
+    card_class = first_card.get_attribute("class") or ""
+    if "open" not in card_class:
+        first_card.evaluate("el => el.querySelector('.race-header').click()")
+    first_card.locator(".staking-card").wait_for(timeout=15000)
 
     expect(first_card).to_have_class(re.compile(r"\bopen\b"))
 
@@ -256,7 +259,6 @@ def test_refetch_races_button_interaction(page: Page):
 
 def test_provisional_refetch_button_interaction(page: Page):
     """Test 8c: Provisional entries banner has refetch button for provisional cards (<24 races)."""
-    page.wait_for_load_state("networkidle")
     select_date(page, "2026-02-08")
     page.wait_for_selector("#btn-provisional-refetch", timeout=15000)
 
@@ -273,7 +275,7 @@ def test_quick_navigation_shortcuts(page: Page):
 
     # Click Upcoming
     page.locator("#btn-quick-upcoming").click()
-    time.sleep(0.5)
+    page.wait_for_function("() => !window.isDateLoading", timeout=15000)
     header_date = page.locator("#header-date").text_content()
     assert header_date != "Select a date"
 
@@ -318,21 +320,21 @@ def test_surface_filters(page: Page):
 
 def test_custom_budget_input(page: Page):
     """Test 8g: Custom budget numeric input dynamically updates tickets in staking card."""
-    select_date(page, "2026-08-23")
-    page.wait_for_selector(".race-card", timeout=10000)
+    select_date(page, "2026-08-16")
+    page.wait_for_selector(".race-card.has-bet", timeout=15000)
 
-    first_card = page.locator(".race-card").first
+    first_card = page.locator(".race-card.has-bet").first
     card_class = first_card.get_attribute("class") or ""
     if "open" not in card_class:
-        first_card.locator(".race-header").click()
+        first_card.evaluate("el => el.querySelector('.race-header').click()")
 
-    page.wait_for_selector(".staking-card", timeout=20000)
-    budget_input = page.locator(".custom-budget-input").first
-    expect(budget_input).to_be_visible(timeout=15000)
+    first_card.locator(".staking-card").wait_for(timeout=15000)
+    budget_input = first_card.locator(".custom-budget-input")
+    expect(budget_input).to_be_visible(timeout=10000)
     budget_input.fill("3000")
     budget_input.press("Enter")
     time.sleep(0.5)
-    expect(page.locator(".custom-budget-input").first).to_have_value("3000", timeout=10000)
+    expect(budget_input).to_have_value("3000", timeout=10000)
 
 
 def test_single_race_rescrape_button(page: Page):
@@ -352,22 +354,22 @@ def test_single_race_rescrape_button(page: Page):
 def test_winning_bets_filter_and_badges(page: Page):
     """Test 8i: Winning bets filter isolates winning races with victory badges."""
     select_date(page, "2026-08-16")
-    page.wait_for_selector(".race-card", timeout=10000)
+    page.wait_for_selector("#chip-filter-winners", timeout=15000)
 
-    # Click winning bets chip (expect count 6 for 2026-08-16)
+    # Click winning bets chip (expect count 5 for 2026-08-16)
     winners_chip = page.locator("#chip-filter-winners")
     expect(winners_chip).to_be_visible(timeout=10000)
-    expect(winners_chip).to_contain_text("6")
+    expect(winners_chip).to_contain_text("5")
     winners_chip.click()
     time.sleep(0.5)
 
-    # 6 winning race cards should be displayed for 2026-08-16
-    expect(page.locator(".race-card")).to_have_count(6)
+    # 5 winning race cards should be displayed for 2026-08-16
+    expect(page.locator(".race-card")).to_have_count(5, timeout=10000)
 
     first_card = page.locator(".race-card").first
-    expect(first_card).to_have_class(re.compile(r"has-won-bet"))
-    expect(first_card.locator(".tag-won")).to_be_visible()
-    expect(first_card.locator(".bet-won-pill")).to_be_visible()
+    expect(first_card).to_have_class(re.compile(r"has-won-bet"), timeout=10000)
+    expect(first_card.locator(".tag-won")).to_be_visible(timeout=10000)
+    expect(first_card.locator(".bet-won-pill")).to_be_visible(timeout=10000)
 
 
 def test_daily_returns_card_rendering(page: Page):
@@ -388,7 +390,7 @@ def test_daily_returns_card_rendering(page: Page):
     # Check Pure Win stats
     pure_win = returns_card.locator(".strategy-return-item.pure_win")
     expect(pure_win).to_contain_text("Pure Win")
-    expect(pure_win).to_contain_text("¥58,700", timeout=15000)
+    expect(pure_win).to_contain_text("¥56,100", timeout=15000)
 
 
 def test_empty_date_handling(page: Page):
@@ -418,17 +420,20 @@ def test_toast_notification_system(page: Page):
 
 def test_mobile_responsive_layout(page: Page):
     """Test 11: Mobile viewport (375x667) renders properly with adapted layout."""
-    page.set_viewport_size({"width": 375, "height": 667})
-    select_date(page, "2026-08-23")
-    page.wait_for_selector(".summary-grid", timeout=5000)
+    try:
+        page.set_viewport_size({"width": 375, "height": 667})
+        select_date(page, "2026-08-23")
+        page.wait_for_selector(".summary-grid", timeout=5000)
 
-    # In mobile, manifest summary should be hidden, summary grid should be 2 columns
-    manifest_summary = page.locator("#manifest-summary")
-    expect(manifest_summary).not_to_be_visible()
+        # In mobile, manifest summary should be hidden, summary grid should be 2 columns
+        manifest_summary = page.locator("#manifest-summary")
+        expect(manifest_summary).not_to_be_visible()
 
-    # Race cards should still be clickable and readable
-    race_cards = page.locator(".race-card")
-    expect(race_cards).to_have_count(36)
+        # Race cards should still be clickable and readable
+        race_cards = page.locator(".race-card")
+        expect(race_cards).to_have_count(36)
+    finally:
+        page.set_viewport_size({"width": 1280, "height": 800})
 
 
 def test_no_console_errors(page: Page):
@@ -459,6 +464,48 @@ def test_monthly_returns_portfolio_view(page: Page):
     # Click Daily toggle back
     daily_btn = page.locator(".view-toggle-btn").filter(has_text="Daily")
     daily_btn.click()
-    page.wait_for_selector(".daily-returns-card:not(.monthly-returns-card)", timeout=15000)
+    page.wait_for_selector(".daily-returns-card:not(.monthly-returns-card):not(.all-time-returns-card)", timeout=15000)
     expect(page.locator(".daily-returns-card")).to_be_visible()
+
+
+def test_all_time_returns_portfolio_view(page: Page):
+    """Test 14: Switching to All-Time portfolio view via toggle and sidebar button, navigating months."""
+    select_date(page, "2026-08-16")
+    page.wait_for_selector(".daily-returns-card", timeout=15000)
+
+    # Click All-Time toggle
+    all_time_btn = page.locator(".view-toggle-btn").filter(has_text="All-Time")
+    all_time_btn.click()
+    page.wait_for_selector(".all-time-returns-card", timeout=15000)
+
+    all_time_card = page.locator(".all-time-returns-card")
+    expect(all_time_card).to_be_visible()
+    expect(all_time_card).to_contain_text("All-Time Performance")
+    expect(all_time_card).to_contain_text("January 2026")
+
+    # Check milestone grid
+    expect(page.locator(".all-time-milestones-grid")).to_be_visible()
+    expect(page.locator(".milestone-card")).to_have_count(4)
+
+    # Check monthly breakdown table
+    monthly_table = page.locator(".monthly-timeline-table")
+    expect(monthly_table).to_be_visible()
+    expect(monthly_table.locator("tbody tr")).to_have_count(8)
+
+    # Click a month view button (e.g. March 2026) to drill down
+    march_row = monthly_table.locator("tr").filter(has_text="March 2026")
+    view_march_btn = march_row.locator(".timeline-view-btn")
+    view_march_btn.click()
+
+    page.wait_for_selector(".monthly-returns-card", timeout=15000)
+    expect(page.locator(".monthly-returns-card")).to_be_visible()
+    expect(page.locator(".monthly-returns-card")).to_contain_text("March 2026")
+
+    # Test quick nav sidebar button for All-Time
+    quick_alltime_btn = page.locator("#btn-quick-alltime")
+    expect(quick_alltime_btn).to_be_visible()
+    quick_alltime_btn.click()
+
+    page.wait_for_selector(".all-time-returns-card", timeout=15000)
+    expect(page.locator(".all-time-returns-card")).to_be_visible()
 

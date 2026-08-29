@@ -165,9 +165,20 @@ class StakingPlan:
     simple_bet_label: str
     resolved_mode: str = "unknown"  # Actual strategy executed (differs from requested when mode="auto")
 
+    @property
+    def total_staked(self) -> int:
+        """Total yen amount staked across all portfolio tickets."""
+        return sum(t.stake for t in self.portfolio_tickets)
+
+    @property
+    def tickets(self) -> List[BetTicket]:
+        """Alias for portfolio_tickets."""
+        return self.portfolio_tickets
+
     def to_dict(self) -> dict:
         return {
             "budget": self.budget,
+            "total_staked": self.total_staked,
             "tickets": [t.to_dict() for t in self.portfolio_tickets],
             "simple_bet": self.simple_bet.to_dict(),
             "simple_bet_label": self.simple_bet_label,

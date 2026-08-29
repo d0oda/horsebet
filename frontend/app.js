@@ -25,6 +25,18 @@ const racePanelInner = document.getElementById('race-panel-inner');
 const manifestSummary = document.getElementById('manifest-summary');
 const manifestList    = document.getElementById('manifest-list');
 
+// ── Global Helper Attachments ──
+window.selectDate = selectDate;
+window.jumpToUpcomingDate = jumpToUpcomingDate;
+window.jumpToToday = jumpToToday;
+window.jumpToLatestResults = jumpToLatestResults;
+window.jumpToAllTime = jumpToAllTime;
+window.switchPortfolioView = switchPortfolioView;
+window.loadDailyReturns = loadDailyReturns;
+window.loadMonthlyReturns = loadMonthlyReturns;
+window.loadAllTimeReturns = loadAllTimeReturns;
+window.showToast = showToast;
+
 // ── Init ──
 async function init() {
   const now = new Date();
@@ -53,14 +65,17 @@ async function init() {
   renderCalendar();
   renderManifestList();
 
-  // Auto-select today if it has data, or the latest available date
-  const todayStr = toDateStr(new Date());
-  if (manifest.some(d => d.date === todayStr)) {
-    await selectDate(todayStr);
-  } else if (manifest.length > 0) {
-    const sorted = [...manifest].sort((a, b) => b.date.localeCompare(a.date));
-    await selectDate(sorted[0].date);
+  // Auto-select today if it has data, or the latest available date (if not already selecting)
+  if (activeSelectDateToken === 0) {
+    const todayStr = toDateStr(new Date());
+    if (manifest.some(d => d.date === todayStr)) {
+      await selectDate(todayStr);
+    } else if (manifest.length > 0) {
+      const sorted = [...manifest].sort((a, b) => b.date.localeCompare(a.date));
+      await selectDate(sorted[0].date);
+    }
   }
+  window.appInitialized = true;
 }
 
 // ── Quick Date Jumpers ──
@@ -211,10 +226,12 @@ function renderManifestList() {
 }
 
 let activeSelectDateToken = 0;
-// ── Select a date ──
 async function selectDate(dateStr) {
   const currentToken = ++activeSelectDateToken;
+  window.isDateLoading = true;
   selectedDate = dateStr;
+  window.selectedDate = dateStr;
+  portfolioViewMode = 'daily';
   openRaceIds = new Set();
   raceDetailCache = {};
   currentFilter = 'all';
@@ -236,32 +253,39 @@ async function selectDate(dateStr) {
   // Always try to load races from the API — manifest is just a cache hint
   racePanelInner.innerHTML = `<div class="loading-state"><div class="spinner"></div><p style="color:var(--text-muted);font-size:12px">Checking ${dateStr}…</p></div>`;
 
-  let races = [];
   try {
-    const res = await fetch(`${API_BASE}/api/races?date=${dateStr}&limit=100`);
-    if (currentToken !== activeSelectDateToken) return;
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    races = (await res.json()).races || [];
-  } catch (e) {
-    if (currentToken !== activeSelectDateToken) return;
-    racePanelInner.innerHTML = `
-      <div class="empty-state">
-        <div class="empty-icon">⚠️</div>
-        <div class="empty-title">API error</div>
-        <div class="empty-msg">${escHtml(String(e))}<br><br>Is the API server running at ${API_BASE}?</div>
-      </div>`;
-    return;
-  }
+    let races = [];
+    try {
+      const res = await fetch(`${API_BASE}/api/races?date=${dateStr}&limit=100`);
+      if (currentToken !== activeSelectDateToken) return;
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      races = (await res.json()).races || [];
+    } catch (e) {
+      if (currentToken !== activeSelectDateToken) return;
+      racePanelInner.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-icon">⚠️</div>
+          <div class="empty-title">API error</div>
+          <div class="empty-msg">${escHtml(String(e))}<br><br>Is the API server running at ${API_BASE}?</div>
+        </div>`;
+      return;
+    }
 
-  if (currentToken !== activeSelectDateToken) return;
-  const manifestEntry = manifest.find(m => m.date === dateStr);
+    if (currentToken !== activeSelectDateToken) return;
+    const manifestEntry = manifest.find(m => m.date === dateStr);
 
-  if (races.length === 0) {
-    // No races in DB for this date — offer to fetch
-    renderNoRacesState(dateStr);
-  } else {
-    // Races exist — render them (some may have predictions, some may not)
-    await renderRacePanel(races, manifestEntry || { date: dateStr, races: races.length, bets: 0, winners: 0 }, dateStr);
+    if (races.length === 0) {
+      // No races in DB for this date — offer to fetch
+      renderNoRacesState(dateStr);
+    } else {
+      // Races exist — render them (some may have predictions, some may not)
+      await renderRacePanel(races, manifestEntry || { date: dateStr, races: races.length, bets: 0, winners: 0 }, dateStr);
+    }
+  } finally {
+    if (currentToken === activeSelectDateToken) {
+      window.isDateLoading = false;
+      window.loadedDate = dateStr;
+    }
   }
 }
 
@@ -601,7 +625,7 @@ async function rescrapeSingleRace(raceId, dateStr) {
   }
 }
 
-let portfolioViewMode = 'daily'; // 'daily' | 'monthly'
+let portfolioViewMode = 'daily'; // 'daily' | 'monthly' | 'all-time'
 let currentSelectedMonth = '2026-08';
 
 async function switchPortfolioView(mode, month = null) {
@@ -612,19 +636,57 @@ async function switchPortfolioView(mode, month = null) {
   }
   if (portfolioViewMode === 'daily') {
     await loadDailyReturns(selectedDate);
-  } else {
+  } else if (portfolioViewMode === 'monthly') {
     await loadMonthlyReturns(currentSelectedMonth || (selectedDate ? selectedDate.slice(0, 7) : '2026-08'));
+  } else if (portfolioViewMode === 'all-time') {
+    await loadAllTimeReturns();
+  }
+}
+
+function ensureReturnsContainer() {
+  let container = document.getElementById('daily-returns-container');
+  if (!container) {
+    const panel = document.getElementById('race-panel-inner');
+    if (panel) {
+      if (panel.querySelector('.empty-state') || !panel.querySelector('#races-list')) {
+        panel.innerHTML = `
+          <div id="daily-returns-container" style="display:none;margin-bottom:18px;"></div>
+          <div class="races-list" id="races-list"></div>
+        `;
+      } else {
+        const div = document.createElement('div');
+        div.id = 'daily-returns-container';
+        div.style.display = 'none';
+        div.style.marginBottom = '18px';
+        panel.prepend(div);
+      }
+      container = document.getElementById('daily-returns-container');
+    }
+  }
+  return container;
+}
+
+async function jumpToAllTime() {
+  portfolioViewMode = 'all-time';
+  ensureReturnsContainer();
+  await switchPortfolioView('all-time');
+  const container = document.getElementById('daily-returns-container');
+  if (container) {
+    container.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 }
 
 // ── Load and render daily returns for all 4 strategies ──
 async function loadDailyReturns(dateStr, force = false) {
-  const container = document.getElementById('daily-returns-container');
-  if (!container) return;
-
   if (portfolioViewMode === 'monthly') {
     return loadMonthlyReturns(currentSelectedMonth || (dateStr ? dateStr.slice(0, 7) : '2026-08'), force);
   }
+  if (portfolioViewMode === 'all-time') {
+    return loadAllTimeReturns(force);
+  }
+
+  const container = ensureReturnsContainer();
+  if (!container) return;
 
   try {
     const res = await fetch(`${API_BASE}/api/races/date/${dateStr}/daily-returns?budget_per_race=1000${force ? '&force_refresh=true' : ''}`);
@@ -650,6 +712,7 @@ async function loadDailyReturns(dateStr, force = false) {
             <div class="returns-view-toggle">
               <button class="view-toggle-btn active" onclick="switchPortfolioView('daily')">📅 Daily</button>
               <button class="view-toggle-btn" onclick="switchPortfolioView('monthly')">🗓️ Monthly</button>
+              <button class="view-toggle-btn" onclick="switchPortfolioView('all-time')">🌐 All-Time</button>
             </div>
             <span class="returns-title">Daily Returns & P&L — ${formatDate(dateStr)} (¥1,000 / race)</span>
           </div>
@@ -722,7 +785,11 @@ async function loadDailyReturns(dateStr, force = false) {
 
 // ── Load and render monthly returns across all 4 strategies ──
 async function loadMonthlyReturns(monthStr, force = false) {
-  const container = document.getElementById('daily-returns-container');
+  if (portfolioViewMode === 'all-time') {
+    return loadAllTimeReturns(force);
+  }
+
+  const container = ensureReturnsContainer();
   if (!container) return;
 
   currentSelectedMonth = monthStr;
@@ -730,6 +797,9 @@ async function loadMonthlyReturns(monthStr, force = false) {
   try {
     const res = await fetch(`${API_BASE}/api/races/month/${monthStr}/monthly-returns?budget_per_race=1000${force ? '&force_refresh=true' : ''}`);
     if (!res.ok) {
+      if (monthStr !== '2026-08') {
+        return loadMonthlyReturns('2026-08', force);
+      }
       container.style.display = 'none';
       return;
     }
@@ -760,6 +830,7 @@ async function loadMonthlyReturns(monthStr, force = false) {
             <div class="returns-view-toggle">
               <button class="view-toggle-btn" onclick="switchPortfolioView('daily')">📅 Daily</button>
               <button class="view-toggle-btn active" onclick="switchPortfolioView('monthly')">🗓️ Monthly</button>
+              <button class="view-toggle-btn" onclick="switchPortfolioView('all-time')">🌐 All-Time</button>
             </div>
             <span class="returns-title">Monthly Overview — ${escHtml(data.month_name || monthStr)} (${data.total_race_days} Race Days · ${data.total_races} Races)</span>
           </div>
@@ -897,6 +968,206 @@ async function loadMonthlyReturns(monthStr, force = false) {
   }
 }
 
+// ── Load and render all-time returns across all 4 strategies (Jan 2026 to Present) ──
+async function loadAllTimeReturns(force = false) {
+  const container = ensureReturnsContainer();
+  if (!container) return;
+
+  try {
+    const res = await fetch(`${API_BASE}/api/portfolio/all-time?budget_per_race=1000${force ? '&force_refresh=true' : ''}`);
+    if (!res.ok) {
+      container.style.display = 'none';
+      return;
+    }
+    const data = await res.json();
+    if (!data || !data.strategies) {
+      container.style.display = 'none';
+      return;
+    }
+
+    const strategies = data.strategies;
+    const hasResults = data.has_results;
+    const monthlyList = data.monthly_breakdown || [];
+    const bestMonth = data.best_month;
+    const autoStrat = strategies.auto || {};
+
+    container.style.display = 'block';
+
+    let html = `
+      <div class="daily-returns-card all-time-returns-card">
+        <div class="daily-returns-header">
+          <div class="returns-title-group">
+            <span class="returns-badge">📊 PORTFOLIO PERFORMANCE</span>
+            <div class="returns-view-toggle">
+              <button class="view-toggle-btn" onclick="switchPortfolioView('daily')">📅 Daily</button>
+              <button class="view-toggle-btn" onclick="switchPortfolioView('monthly')">🗓️ Monthly</button>
+              <button class="view-toggle-btn active" onclick="switchPortfolioView('all-time')">🌐 All-Time</button>
+            </div>
+            <span class="returns-title">All-Time Performance — ${escHtml(data.period_label || 'January 2026 – Present')} (${data.total_race_days} Race Days · ${data.total_races.toLocaleString()} Races · ¥1,000 / race)</span>
+          </div>
+          <div class="returns-meta-info">
+            ${hasResults ? `<span class="returns-status-live">🏁 ${data.total_finished_races.toLocaleString()} Races Settled</span>` : `<span class="returns-status-pending">⏳ Official Results Pending</span>`}
+          </div>
+        </div>
+
+        <!-- Strategy 4-Grid -->
+        <div class="strategy-return-grid">
+    `;
+
+    const stratKeys = ['auto', 'pure_win', 'hybrid', 'dutching'];
+    stratKeys.forEach(k => {
+      const s = strategies[k];
+      if (!s) return;
+      const isProfitable = s.profit > 0;
+      const isZero = s.profit === 0;
+      const profitClass = isZero ? 'return-profit-neutral' : isProfitable ? 'return-profit-positive' : 'return-profit-negative';
+      const profitSign = s.profit > 0 ? '+' : '';
+
+      html += `
+        <div class="strategy-return-item ${s.id}">
+          <div class="strategy-item-top">
+            <div class="strategy-name-box">
+              <span class="strategy-item-icon">${s.icon}</span>
+              <div class="strategy-text-wrap">
+                <div class="strategy-item-name">${escHtml(s.name)}</div>
+                <div class="strategy-item-tagline">${escHtml(s.tagline)}</div>
+              </div>
+            </div>
+            ${hasResults && isProfitable ? `<span class="roi-pill positive">+${s.roi_pct}% ROI</span>` : hasResults && !isZero ? `<span class="roi-pill negative">${s.roi_pct}% ROI</span>` : ''}
+          </div>
+
+          <div class="strategy-numbers-row">
+            <div class="strat-stat">
+              <span class="strat-stat-label">STAKED</span>
+              <span class="strat-stat-val">¥${s.staked.toLocaleString()}</span>
+            </div>
+            <div class="strat-stat">
+              <span class="strat-stat-label">PAYOUT</span>
+              <span class="strat-stat-val ${isProfitable ? 'text-green' : ''}">¥${s.payout.toLocaleString()}</span>
+            </div>
+            <div class="strat-stat strat-stat-profit">
+              <span class="strat-stat-label">NET P&L</span>
+              <span class="strat-stat-val ${profitClass}">
+                ${hasResults ? `${profitSign}¥${s.profit.toLocaleString()}` : '—'}
+              </span>
+            </div>
+          </div>
+
+          <div class="strategy-hit-row">
+            <div class="hit-label">Hit Rate:</div>
+            <div class="hit-value">${hasResults ? `<strong>${s.bets_won} / ${s.bets_placed}</strong> wins (${s.strike_rate}%)` : `<strong>${s.bets_placed}</strong> value bets active`}</div>
+          </div>
+        </div>
+      `;
+    });
+
+    html += `
+        </div>
+
+        <!-- All-Time Portfolio Milestones Banner -->
+        <div class="all-time-milestones-grid">
+          <div class="milestone-card">
+            <div class="milestone-icon">💰</div>
+            <div class="milestone-body">
+              <div class="milestone-label">Total Turnover</div>
+              <div class="milestone-val">¥${(autoStrat.staked || 0).toLocaleString()}</div>
+            </div>
+          </div>
+          <div class="milestone-card">
+            <div class="milestone-icon">🏆</div>
+            <div class="milestone-body">
+              <div class="milestone-label">Total Returned</div>
+              <div class="milestone-val text-green">¥${(autoStrat.payout || 0).toLocaleString()}</div>
+            </div>
+          </div>
+          <div class="milestone-card">
+            <div class="milestone-icon">🎯</div>
+            <div class="milestone-body">
+              <div class="milestone-label">All-Time Strike Rate</div>
+              <div class="milestone-val">${autoStrat.strike_rate || 0}% <span class="milestone-sub">(${autoStrat.bets_won || 0}/${autoStrat.bets_placed || 0})</span></div>
+            </div>
+          </div>
+          ${bestMonth ? `
+          <div class="milestone-card milestone-clickable" onclick="switchPortfolioView('monthly', '${bestMonth.month}')" title="Click to view ${escHtml(bestMonth.month_name)} performance">
+            <div class="milestone-icon">⭐</div>
+            <div class="milestone-body">
+              <div class="milestone-label">Best Month</div>
+              <div class="milestone-val text-green">+¥${bestMonth.profit.toLocaleString()} <span class="milestone-sub">(${bestMonth.month_name.split(' ')[0]})</span></div>
+            </div>
+          </div>
+          ` : ''}
+        </div>
+
+        <!-- Monthly Breakdown Table -->
+        <div class="monthly-breakdown-section">
+          <div class="monthly-breakdown-header">
+            <span class="monthly-breakdown-title">🗓️ Monthly Performance Breakdown (${monthlyList.length} Months)</span>
+            <span class="monthly-breakdown-sub">Click any month row or 'View Month' to drill down into daily racecards</span>
+          </div>
+          <div class="monthly-timeline-table-wrap">
+            <table class="monthly-timeline-table">
+              <thead>
+                <tr>
+                  <th>Month</th>
+                  <th>Race Days</th>
+                  <th>Total Races</th>
+                  <th>Value Bets</th>
+                  <th>Staked</th>
+                  <th>Payout</th>
+                  <th>Net P&L</th>
+                  <th>ROI</th>
+                  <th>Hit Rate</th>
+                  <th style="text-align:center;">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+    `;
+
+    monthlyList.forEach(m => {
+      const isRowProfitable = m.profit > 0;
+      const isRowZero = m.profit === 0;
+      const pnlClass = isRowZero ? 'neutral' : isRowProfitable ? 'positive' : 'negative';
+      const pnlSign = m.profit > 0 ? '+' : '';
+
+      html += `
+        <tr onclick="switchPortfolioView('monthly', '${m.month}')" title="View monthly breakdown for ${escHtml(m.month_name)}">
+          <td><strong>${escHtml(m.month_name)}</strong></td>
+          <td>${m.total_race_days}</td>
+          <td>${m.total_races}</td>
+          <td>${m.bets_placed}</td>
+          <td>¥${m.staked.toLocaleString()}</td>
+          <td class="${isRowProfitable ? 'text-green' : ''}">¥${m.payout.toLocaleString()}</td>
+          <td>
+            <span class="timeline-pnl-badge ${pnlClass}">
+              ${pnlSign}¥${m.profit.toLocaleString()}
+            </span>
+          </td>
+          <td class="${isRowProfitable ? 'text-green' : isRowZero ? '' : 'text-red'}">
+            <strong>${m.roi_pct > 0 ? '+' : ''}${m.roi_pct}%</strong>
+          </td>
+          <td>${m.bets_won} / ${m.bets_placed} (${m.strike_rate}%)</td>
+          <td style="text-align:center;">
+            <button class="timeline-view-btn" onclick="event.stopPropagation(); switchPortfolioView('monthly', '${m.month}')">View Month →</button>
+          </td>
+        </tr>
+      `;
+    });
+
+    html += `
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    `;
+
+    container.innerHTML = html;
+  } catch (e) {
+    console.error('Failed to load all-time returns:', e);
+    container.style.display = 'none';
+  }
+}
+
 // ── Filter races by type/venue/surface/winners ──
 function setRaceFilter(filterName) {
   currentFilter = filterName;
@@ -934,9 +1205,15 @@ function renderRaceCardsList() {
   } else if (currentFilter === 'winners') {
     filtered = currentRaces.filter(r => r.bet_won);
   } else if (currentFilter === 'turf') {
-    filtered = currentRaces.filter(r => (r.surface || '').toLowerCase() === 'turf' || (r.surface || '').includes('芝'));
+    filtered = currentRaces.filter(r => {
+      const s = (r.surface || 'turf').toLowerCase();
+      return s !== 'dirt' && !s.includes('ダ');
+    });
   } else if (currentFilter === 'dirt') {
-    filtered = currentRaces.filter(r => (r.surface || '').toLowerCase() === 'dirt' || (r.surface || '').includes('ダ'));
+    filtered = currentRaces.filter(r => {
+      const s = (r.surface || '').toLowerCase();
+      return s === 'dirt' || s.includes('ダ');
+    });
   } else if (currentFilter !== 'all') {
     filtered = currentRaces.filter(r => (r.course_name || `Course ${r.course_id}`) === currentFilter);
   }
@@ -1126,7 +1403,7 @@ async function renderRacePanel(races, manifestEntry, dateStr) {
 
   racePanelInner.innerHTML = html;
   renderRaceCardsList();
-  loadDailyReturns(dateStr);
+  await loadDailyReturns(dateStr);
 }
 
 // ── Build a race card (shows bet status immediately from race list data) ──
@@ -1138,7 +1415,8 @@ function buildRaceCard(race) {
   card.dataset.raceId = race.id;
 
   const surface = (race.surface || 'turf').toLowerCase();
-  const surfaceTag = surface === 'dirt'
+  const isDirt = surface === 'dirt' || surface.includes('ダ');
+  const surfaceTag = isDirt
     ? `<span class="tag tag-dirt">Dirt</span>`
     : `<span class="tag tag-turf">Turf</span>`;
 
@@ -1238,7 +1516,8 @@ async function toggleRace(card, race) {
     const hasPreds = (raceDetailCache[race.id]?.predictions?.length || 0) > 0;
     const tags = card.querySelector('.race-tags');
     if (tags) {
-      const isDirt = (race.surface || '').toLowerCase() === 'dirt';
+      const surface = (race.surface || 'turf').toLowerCase();
+      const isDirt = surface === 'dirt' || surface.includes('ダ');
       const surfaceTag = isDirt
         ? `<span class="tag tag-dirt">Dirt</span>`
         : `<span class="tag tag-turf">Turf</span>`;
@@ -2022,6 +2301,17 @@ function formatOddsTime(ts) {
   if (match) return `${match[1].padStart(2, '0')}:${match[2]}`;
   return s;
 }
+
+// ── Expose global navigation helpers for HTML onclick handlers ──
+window.jumpToUpcomingDate = jumpToUpcomingDate;
+window.jumpToToday = jumpToToday;
+window.jumpToLatestResults = jumpToLatestResults;
+window.jumpToAllTime = jumpToAllTime;
+window.switchPortfolioView = switchPortfolioView;
+window.loadDailyReturns = loadDailyReturns;
+window.loadMonthlyReturns = loadMonthlyReturns;
+window.loadAllTimeReturns = loadAllTimeReturns;
+window.selectDate = selectDate;
 
 // ── Start ──
 init();

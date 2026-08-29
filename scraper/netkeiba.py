@@ -260,11 +260,16 @@ def _parse_weight(weight_str: str) -> tuple[Optional[int], Optional[int]]:
     """Parse horse weight string like '480(+4)' into (weight, change)."""
     if not weight_str:
         return None, None
-    match = re.match(r"(\d+)\(([+-]?\d+)\)", weight_str.strip())
+    s = weight_str.strip()
+    match = re.match(r"(\d+)\(([+-]?\d+)\)", s)
     if match:
         return int(match.group(1)), int(match.group(2))
+    # Handle non-numeric change like 474(前計不) or 480(計不)
+    match_fallback = re.match(r"(\d+)\(.*?\)", s)
+    if match_fallback:
+        return int(match_fallback.group(1)), None
     try:
-        return int(weight_str.strip()), None
+        return int(s), None
     except ValueError:
         return None, None
 

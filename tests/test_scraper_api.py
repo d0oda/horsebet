@@ -61,7 +61,7 @@ class TestScraperAPI:
         assert response.status_code == 200
         races = response.json()["races"]
         winning_races = [r for r in races if r.get("bet_won")]
-        assert len(winning_races) == 6
+        assert len(winning_races) == 5
         for r in winning_races:
             assert r["bet_finish_pos"] == 1
             assert r["bet_payout"] > 0

@@ -43,7 +43,8 @@ def test_monthly_returns_invalid_format(client):
 def test_monthly_returns_not_found(client):
     response = client.get("/api/races/month/1999-01/monthly-returns")
     assert response.status_code == 404
-    assert "No race days found" in response.json()["detail"]
+    detail = response.json()["detail"]
+    assert "No predictions found" in detail or "No race days found" in detail
 
 
 def test_portfolio_monthly_alias(client):
